@@ -5,7 +5,7 @@
 Accepts option (a) from `data/aira-stack-s1/report.md` section 7 Decision-2.
 
 **Why this and not native:** the pilot demo needs no phone and no AI, so a URL is the fastest route
-to the MBZUAI counselor; app-store review for a health app would delay the trial without helping it;
+to the pilot counselor; app-store review for a health app would delay the trial without helping it;
 the counselor's real working surface is a laptop; and a native wrapper can reuse the same codebase
 later without a rewrite.
 

@@ -266,7 +266,7 @@ Two facts from the prior study must govern the pages, or we will mis-weight them
    **So Aira's pages must not be privacy-only.** Lead with the felt benefit and the one thing no one
    else has (the local caseload cockpit), and let architectural privacy be the *trust differentiator
    that we pass effortlessly and can prove* — not the whole pitch.
-2. **The economic buyer at MBZUAI is the institution, not the counselor.** The counselor is the
+2. **The economic buyer at the pilot client is the institution, not the counselor.** The counselor is the
    champion; university IT/procurement/legal decide. So the site needs **two doors**: a warm
    clinician-facing story *and* a cool, linkable **institutional security/compliance one-pager** that a
    security reviewer can forward. Bryl's whole site is solo-clinician; Mentalyc's security FAQ is the
@@ -288,7 +288,7 @@ Lead options for the H1 (pick/A-B test; all are architecturally true for V1):
   app store, no one else's server."*
 - **C (buyer's-outcome-led):** *"Notes done. Caseload clear. Nothing ever left your laptop."*
 
-**Nouns.** Use **"counselor"** (matches the MBZUAI role) and **"caseload"/"students"** — the prior
+**Nouns.** Use **"counselor"** (matches the pilot client's role) and **"caseload"/"students"** — the prior
 study's own framing is "80 students." Prefer **"client"** or **"student"** over **"patient"**:
 counseling convention and every competitor use "client," and a university wellbeing service uses
 "student." *(Flag: internal Aira materials sometimes say "patient"; recommend standardising the outward
@@ -381,7 +381,7 @@ Answer the category's taught fears — Aira answers most of them *better*:
 ## 2.6 Pricing presentation
 
 - **Model:** the competitors mostly meter per-note or per-session for *solo* buyers. Aira's launch buyer
-  is an **institution** (MBZUAI), so recommend **per-counselor / institutional pricing**, not
+  is an **institution** (the pilot client), so recommend **per-counselor / institutional pricing**, not
   per-session metering — and *do not race to the $16–$29 solo-utility floor* (prior study §G: the
   local-first niche is full of cheap utilities; anchor on trust + insight value sold into a budget).
 - **Presentation patterns worth borrowing:** public, legible pricing; a clear trial; "no card to try";
@@ -399,7 +399,7 @@ As a pre-launch product Aira **cannot and must not fabricate counts or logos.** 
 
 - **Lead with architecture-as-proof** (the honest early-stage substitute): the verifiability demo
   (§2.3) *is* proof; a clear architecture diagram is proof; "runs offline, check it yourself" is proof.
-- **Bank the MBZUAI relationship** into a credentialed champion quote/case study **only with explicit
+- **Bank the pilot-client relationship** into a credentialed champion quote/case study **only with explicit
   consent** — one licensed-counselor testimonial with credentials outweighs a fake "10,000+."
 - **Compliance signalling:** state what's *architecturally* true (on-device, encrypted, no transfer) and
   route regulatory claims to the counsel-reviewed institutional one-pager. **Do not display HIPAA/UAE
@@ -443,7 +443,7 @@ source URL; no legal/compliance conclusion asserted (regulatory wording flagged 
 copy captured only as internal evidence and **not** reproduced onto any Aira surface — recommendations
 extract patterns/mechanics only; no recommended claim exceeds V1's architecture.
 
-**Open item for the captain (not settleable here):** the MBZUAI health-vs-social-care-vs-internal
+**Open item for the captain (not settleable here):** the pilot client's health-vs-social-care-vs-internal
 regulatory classification remains the pending question that determines how strongly the institutional
 one-pager can lean on the UAE data-localisation advantage. It is with the captain separately; the page
 copy above is written to hold up either way (architectural facts, not regulatory verdicts).

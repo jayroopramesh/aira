@@ -5,7 +5,7 @@
 Aira: a privacy-first, **local-first** documentation + longitudinal-insight web app for mental-health
 counselors. All patient data stays **encrypted on the therapist's own device** under a password only
 they hold, and is never uploaded. Browser-based, zero-backend. **Launch market: UAE** (first client is
-a counselor at MBZUAI, Abu Dhabi). **Second market: India.**
+a counselor at a university counseling service in Abu Dhabi). **Second market: India.**
 
 > **Naming / architecture note.** The prior brief (`handoff.md`) renamed the product to "Galene" and
 > described a **cloud-hybrid** architecture (in-region UAE backend, tokenized transcripts leave the
@@ -64,7 +64,7 @@ flagged again there.
   region has: **DoH Abu Dhabi Circular 147 (2022) orders licensed health entities to drop cloud
   services even when UAE-hosted**, and health data generally may not leave the UAE. Cloud SaaS
   competitors are structurally disadvantaged here. The one fact that must be pinned down before selling:
-  **is MBZUAI's counseling service regulated as health (DoH) or social-care (DCD), or neither?** — it
+  **is the pilot client's counseling service regulated as health (DoH) or social-care (DCD), or neither?** — it
   changes which rulebook applies. The economic buyer is the **university** (IT + procurement + legal),
   not the counselor.
 - **F — Cheap wins.** The genuinely cheap ones for a zero-backend app: consent-capture + audit log,
@@ -364,7 +364,7 @@ regulated-institution lane deliberately.
 
 ---
 
-## E. The MBZUAI / UAE launch context
+## E. The pilot client / UAE launch context
 
 *Not legal advice — publicly documented sources only; items needing local counsel are flagged. Full
 citations in Appendix E.*
@@ -404,11 +404,10 @@ citations in Appendix E.*
 
 ### The buying context
 
-- **MBZUAI** is a **public graduate university established and funded by the Abu Dhabi government**
-  (2019), with a formal centralized **procurement function** (https://procurementmag.com/company/mbzuai).
-  Its counseling is run through **Educational Affairs** by a Student Counselor / Wellbeing Specialist,
-  an *employee within a department* — **not an independent software buyer**
-  (https://mbzuai.ac.ae/student-resources/educational-affairs/).
+- **The pilot client** is a **public graduate university funded by the Abu Dhabi government**, with a
+  formal centralized **procurement function**. Its counseling is run through student **Educational
+  Affairs** by a Student Counselor / Wellbeing Specialist, an *employee within a department* — **not an
+  independent software buyer**.
 - **Practical read:** the counselor is your **champion**, but the **economic buyer is the university**
   (IT security + procurement + legal/DPO). A per-seat pilot on a department card is plausible as a
   foot-in-the-door, but scaling will draw institutional security review. **Prepare a one-page security/
@@ -416,14 +415,14 @@ citations in Appendix E.*
 
 ### The one fact to pin down before selling (needs local counsel)
 
-**Is MBZUAI's counseling service regulated as (a) a DoH-licensed *health* facility, (b) a **DCD**
+**Is the pilot client's counseling service regulated as (a) a DoH-licensed *health* facility, (b) a **DCD**
 (Department of Community Development) *social-care* service, or (c) an internal university student-
 services function outside both?** Abu Dhabi splits mental-health regulation this way, and it determines
 whether ADHICS + Circular 147 + the ICT Health Law bind it at all
 (https://www.therapyroute.com/article/mental-health-licensing-regulation-in-the-uae-2025-guide-by-therapyroute).
 **COULD NOT VERIFY publicly — this is the single most important compliance fact to confirm with UAE
 counsel, and it is a genuine open decision for the founder (flagged in the completion section).** Also
-unverified: MBZUAI's exact procurement thresholds (department-level vs central tender).
+unverified: the pilot client's exact procurement thresholds (department-level vs central tender).
 
 ### India (second market) — quick pass
 
@@ -520,7 +519,7 @@ since on-device inference is more constrained than a datacenter GPU — the priv
 because privacy is a gate, not a purchase driver. Two further risks: **(1)** the longitudinal analytics
 that justify the premium are the *hardest* thing to compute on-device (no server to crunch a caseload),
 so Aira is betting on doing the hard thing *and* the constrained thing simultaneously; **(2)** the
-regulator-alignment argument (Circular 147) only bites **if** MBZUAI's counseling is DoH-regulated — and
+regulator-alignment argument (Circular 147) only bites **if** the pilot client's counseling is DoH-regulated — and
 that is unverified (Section E). If it turns out to be an internal university function outside health
 regulation, the compliance-forcing advantage weakens to a general-trust advantage, and Aira is back to
 competing on note-quality and time-saved against better-funded incumbents.
@@ -528,8 +527,8 @@ competing on note-quality and time-saved against better-funded incumbents.
 **Mitigation implied by this:** make note-quality/speed *non-negotiably competitive first*, treat
 privacy as the trust gate you pass effortlessly (because it's architecturally true), and make the
 **longitudinal caseload cockpit** the thing the counselor can't get anywhere else — because that, not
-privacy alone, is what a budget-holding institution will actually pay for. And confirm the MBZUAI
-regulatory status early, because it determines how strong the launch-market moat really is.
+privacy alone, is what a budget-holding institution will actually pay for. And confirm the pilot
+client's regulatory status early, because it determines how strong the launch-market moat really is.
 
 ---
 
@@ -672,7 +671,7 @@ regulatory status early, because it determines how strong the launch-market moat
   https://www.lexology.com/library/detail.aspx?g=31a37267-4fd0-4c17-ad9c-dcd292f16493
 - ADHICS v2.0: https://www.cyberarrow.io/blog/adhics-abu-dhabi-healthcare-information-and-cyber-security-standard/
 - DoH vs DCD licensing: https://www.therapyroute.com/article/mental-health-licensing-regulation-in-the-uae-2025-guide-by-therapyroute
-- MBZUAI: https://mbzuai.ac.ae/student-resources/educational-affairs/ · https://procurementmag.com/company/mbzuai
+- Pilot client (public graduate university, Abu Dhabi) — institutional procurement and student educational-affairs profiles; identifying sources withheld to keep the client's identity private to the team.
 - India DPDP: https://www.livelaw.in/articles/cross-border-transfer-healthcare-data-reconciling-india-dpdpa-gdpr-542388 ·
   https://www.dpdpa.com/dpdparules/rule15.html
 
@@ -706,7 +705,7 @@ regulatory status early, because it determines how strong the launch-market moat
 - Synthesized into this report. Every non-obvious claim carries a URL; unverifiable facts are marked
   COULD NOT VERIFY.
 
-**Open decision that belongs to the founder (not resolvable by research):** whether MBZUAI's counseling
+**Open decision that belongs to the founder (not resolvable by research):** whether the pilot client's counseling
 service is DoH-regulated (health), DCD-regulated (social care), or an internal university function —
 which determines how strong the regulatory moat for local-first actually is, and needs UAE local
 counsel. Flagged to the completion gate.

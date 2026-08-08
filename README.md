@@ -1,10 +1,8 @@
-<h1 align="center" style="margin:0;">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/aira-mascot-sit.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/assets/aira-mascot.png">
-    <img alt="Aira mascot — a seafoam elephant" src="docs/assets/aira-mascot.png" height="140" style="max-width:100%;">
-  </picture>
-</h1>
+<p align="center" style="margin:0;">
+  <img alt="Aira mascot — a seafoam elephant reading with glasses" src="docs/assets/aira-mascot.png" height="150" style="max-width:100%;">
+</p>
+<h1 align="center">A&nbsp;I&nbsp;R&nbsp;A</h1>
+<!-- Slogan below is a placeholder and may change. Do not hard-code or reference it elsewhere. -->
 <h3 align="center" style="margin:0;margin-top:0;">
 The counseling record that never leaves your device.
 </h3>
@@ -43,8 +41,8 @@ V1 is:
   browser tab because on-device storage on iPhone is deleted after seven idle days unless the app is
   installed to the home screen;
 - **English-only** and **clinician-facing only**;
-- aimed at a **solo counselor** — the first client is a counselor at **MBZUAI in Abu Dhabi**
-  (launch market: UAE).
+- aimed at a **solo counselor** — the first client is a counselor at **a university counseling
+  service in Abu Dhabi** (launch market: UAE).
 
 What V1 deliberately is **not** — and why — is spelled out in [`AGENTS.md`](AGENTS.md). Read that
 before writing product copy or wiring up a model.

@@ -110,7 +110,7 @@ Two gaps: **(1) Arabic transcription quality**, and **(2) the missing LLM for fl
 |---|---|---|---|
 | **Installable PWA, on-device only** (base/Moonshine models, extractive notes) | Keeps invariant 2 fully intact; generous cached storage; survives iOS 7-day eviction | None — data never leaves device | **Recommended baseline.** Not "any browser tab", but "any browser, installed." Honest and still browser-delivered. |
 | **Smaller/better-fit model** (Moonshine Tiny Arabic 27M instead of Whisper) | Arabic WER ~21% at tiny size, iPhone-friendly | None | **Recommended for Arabic** — *pending* verification of its web/ONNX build (Decision-1). |
-| **Drop Arabic from V1**, ship English/European transcription only; Arabic sessions get manual/typed notes + de-id + longitudinal | Ships something honest now; de-risks the hardest leg | None | **Recommended fallback if Moonshine doesn't pan out.** The first client is bilingual (MBZUAI, English-medium); English transcription + Arabic *analysis* may be enough for the pilot. |
+| **Drop Arabic from V1**, ship English/European transcription only; Arabic sessions get manual/typed notes + de-id + longitudinal | Ships something honest now; de-risks the hardest leg | None | **Recommended fallback if Moonshine doesn't pan out.** The first client is bilingual (the pilot client is English-medium); English transcription + Arabic *analysis* may be enough for the pilot. |
 | **Small native/Electron companion** for heavy model work (large Whisper, bigger de-id, even a small local LLM) | Real note narration; better Arabic; no cloud | Keeps data local, but **breaks "any browser"** — it's an install, per-OS packaging, updates | Fallback if browser ASR quality is a dealbreaker. Contradicts the stated browser-first requirement; flag to founder. |
 | **Bring-your-own-key cloud model** (therapist pastes an OpenAI/Anthropic key for note narration / hard Arabic) | Best quality, trivially | **Breaks invariant 2 — audio/transcript leaves the device to a US API.** Also breaks the old in-region rule. | **Only as an explicit, off-by-default, clearly-labelled "you are sending data to X" toggle.** Never the default. Say so loudly. |
 
@@ -203,7 +203,7 @@ Optimizing for the founder's stated preference: **quality, simplicity, robustnes
 
 ---
 
-## 6. Section E — Build sequence (vertical slices, each demoable to the MBZUAI counselor)
+## 6. Section E — Build sequence (vertical slices, each demoable to the pilot counselor)
 
 Sizes are rough engineering effort, assuming one strong full-stack dev. The point of vertical slices is that each ends in something you can *show*.
 
@@ -216,7 +216,7 @@ Sizes are rough engineering effort, assuming one strong full-stack dev. The poin
 | **4** | **★ Arabic transcription** (Moonshine-Tiny or decision fallback) + RTL polish. | "Record an Arabic session; get usable Arabic text." | **L** | **HIGHEST RISK — de-risk before promising it.** Whisper-size Arabic is not good enough; Moonshine's web build is unverified. |
 | **5** | Hardening: recovery-key UX, storage-pressure warnings, export hygiene, CSP/COEP, accessibility, brand polish. | Pilot-ready. | **M** | Low–med. |
 
-**Sequencing logic:** Slice 0 and 1 are low-risk and *fully demonstrate the differentiated product* (private local vault + deterministic caseload insight) **without any ML** — that's your fastest credible demo to the MBZUAI counselor and it de-risks the whole business case before you spend effort on the fragile ASR legs. **Slice 4 (Arabic) carries the most technical risk and should be spiked in parallel from day one** (the Moonshine web-build verification is cheap and decisive — do it before committing the slice).
+**Sequencing logic:** Slice 0 and 1 are low-risk and *fully demonstrate the differentiated product* (private local vault + deterministic caseload insight) **without any ML** — that's your fastest credible demo to the pilot counselor and it de-risks the whole business case before you spend effort on the fragile ASR legs. **Slice 4 (Arabic) carries the most technical risk and should be spiked in parallel from day one** (the Moonshine web-build verification is cheap and decisive — do it before committing the slice).
 
 **Highest-risk item overall to de-risk first:** *Arabic transcription in-browser* (Slice 4). Second: *iOS persistence + memory* (touches Slices 0 and 2 — test on a real mid-range iPhone early, not the simulator).
 
