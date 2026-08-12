@@ -118,6 +118,56 @@ variable "container_app_max_replicas" {
   description = "Sized for the captain's under-10-operators v1 scale (aira-storage-plan-s8/decision-model-choice.md) -- a couple of scaled-out replicas is headroom, not a real ceiling."
 }
 
+# --- Self-hosted LLM (GPU VM, llm.tf) ---
+# Back in scope per captain amendment (2026-08-13, superseding
+# aira-storage-plan-s8/decision-model-choice.md's earlier "no server LLM"
+# call) -- captain has Azure credits for a GPU VM. ~$1,670/mo list at the
+# NV18 default; see infra/README.md cost table.
+
+variable "llm_vm_enabled" {
+  type        = bool
+  default     = true
+  description = "Creates the GPU VM (llm.tf) when true. Set false to omit the ~$1,670/mo (NV18 default) GPU spend entirely, e.g. while the model choice is still open."
+}
+
+variable "llm_vm_size" {
+  type        = string
+  default     = "Standard_NV18ads_A10_v5"
+  description = <<-EOT
+    NVadsA10v5-family size (1x NVIDIA A10 GPU per 18 vCPU increment). Default
+    NV18ads_A10_v5 is sized for a single quantized 14B model. Bump to
+    NV36ads_A10_v5 (2x A10) or down to NV6ads_A10_v5/NV12ads_A10_v5 for a
+    smaller model -- a one-line change, no other resource depends on the size.
+  EOT
+
+  validation {
+    condition     = can(regex("^Standard_NV[0-9]+ad(m)?s_A10_v5$", var.llm_vm_size))
+    error_message = "llm_vm_size must be an NVadsA10v5-family size, e.g. Standard_NV6ads_A10_v5, Standard_NV12ads_A10_v5, Standard_NV18ads_A10_v5, Standard_NV36ads_A10_v5, Standard_NV36adms_A10_v5, Standard_NV72ads_A10_v5."
+  }
+}
+
+variable "llm_vm_admin_username" {
+  type    = string
+  default = "airaops"
+}
+
+variable "llm_vm_admin_ssh_public_key" {
+  type        = string
+  description = "NOT defaulted. SSH public key (e.g. contents of ~/.ssh/id_ed25519.pub) for admin_username on the GPU VM. Supply via TF_VAR_llm_vm_admin_ssh_public_key or -var at plan/apply time -- never commit a value."
+}
+
+variable "llm_os_disk_size_gb" {
+  type        = number
+  default     = 256
+  description = "OS disk size for the GPU VM. 256 GiB covers the base image plus one quantized 14B model with headroom; bump if storing multiple model variants."
+}
+
+variable "llm_serving_port" {
+  type        = number
+  default     = 8000
+  description = "Port the model-serving container (vLLM/llama.cpp) listens on inside the GPU VM. Opened from snet-app only (llm.tf NSG rule)."
+}
+
 # --- Key Vault (escrow store) ---
 
 variable "keyvault_purge_protection_enabled" {

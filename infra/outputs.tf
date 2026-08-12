@@ -17,3 +17,12 @@ output "container_app_url" {
 output "log_analytics_workspace_id" {
   value = azurerm_log_analytics_workspace.main.id
 }
+
+output "llm_vm_enabled" {
+  value = var.llm_vm_enabled
+}
+
+output "llm_endpoint_url" {
+  value       = local.llm_endpoint_url
+  description = "Private (VNet-only) URL of the self-hosted model-serving endpoint. Empty when llm_vm_enabled is false."
+}

@@ -47,6 +47,16 @@ resource "azurerm_subnet" "private_endpoints" {
   address_prefixes     = ["10.20.4.0/24"]
 }
 
+# Plain subnet for the self-hosted LLM GPU VM (llm.tf) -- no delegation, no
+# public endpoint. Reached by the Container Apps environment (snet-app) over
+# the VNet, not the internet.
+resource "azurerm_subnet" "llm" {
+  name                 = "snet-llm"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = ["10.20.5.0/24"]
+}
+
 resource "azurerm_private_dns_zone" "postgres" {
   name                = "privatelink.postgres.database.azure.com"
   resource_group_name = azurerm_resource_group.main.name

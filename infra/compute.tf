@@ -1,10 +1,9 @@
 # Small container host for the auth + escrow API. Azure Container Apps
 # (Consumption plan, scale-to-zero) rather than an always-on App Service plan
 # -- matches the under-10-operators sizing decision
-# (aira-storage-plan-s8/decision-model-choice.md). v1 server scope is auth +
-# escrow only, no LLM endpoint -- summarization runs on a captain-operated
-# local model, not this server. Revisit if sustained traffic ever justifies a
-# fixed-capacity plan.
+# (aira-storage-plan-s8/decision-model-choice.md). LLM_ENDPOINT_URL points at
+# the self-hosted GPU VM (llm.tf) when var.llm_vm_enabled, blank otherwise.
+# Revisit compute plan if sustained traffic ever justifies fixed capacity.
 #
 # container_app_image defaults to the dummy hello-world app in infra/app/
 # (built + pushed to GHCR by .github/workflows/infra.yml) so this module
@@ -73,6 +72,10 @@ resource "azurerm_container_app" "api" {
       env {
         name  = "KEY_VAULT_URI"
         value = azurerm_key_vault.escrow.vault_uri
+      }
+      env {
+        name  = "LLM_ENDPOINT_URL"
+        value = local.llm_endpoint_url
       }
       env {
         name  = "AZURE_REGION"

@@ -1,0 +1,51 @@
+#cloud-config
+# Prepares the GPU VM to serve a quantized 14B model -- installs the
+# container runtime and the NVIDIA container toolkit so a vLLM or llama.cpp
+# container can use the GPU (the NVIDIA driver itself is installed
+# separately, by the azurerm_virtual_machine_extension in llm.tf, not here).
+#
+# Deliberately does NOT download any model -- that's a multi-GB, license-
+# gated step the captain runs by hand post-apply (see the README this file
+# writes to the VM, and infra/README.md "Serving the model").
+
+package_update: true
+packages:
+  - docker.io
+
+runcmd:
+  # NVIDIA Container Toolkit -- lets `docker run --gpus all` see the GPU
+  # driver installed by the VM extension.
+  - curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+  - curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+  - apt-get update
+  - apt-get install -y nvidia-container-toolkit
+  - nvidia-ctk runtime configure --runtime=docker
+  - systemctl restart docker
+  - systemctl enable docker
+  - mkdir -p /opt/aira-llm
+  - |
+    cat > /opt/aira-llm/README.md << 'EOF'
+    # Serving the Aira summarization model on this VM
+
+    Nothing is downloaded or running yet -- this VM only has Docker + the
+    NVIDIA container toolkit ready. Model choice is still open
+    (aira-storage-plan-s8-decision-model-choice re-scoped to server-hosted;
+    see infra/README.md), so pick one from the storage plan's shortlist
+    (quantized Qwen3-14B, Falcon-H1, or Jais) and:
+
+    1. Download the quantized weights (GGUF for llama.cpp, or
+       AWQ/GPTQ for vLLM) from Hugging Face, e.g.:
+       huggingface-cli download <org>/<model>-GGUF --local-dir /opt/aira-llm/model
+
+    2. Serve with vLLM (OpenAI-compatible API on :8000):
+       docker run --gpus all -p 8000:8000 -v /opt/aira-llm/model:/model \
+         vllm/vllm-openai:latest --model /model --quantization awq
+
+       ...or llama.cpp:
+       docker run --gpus all -p 8000:8000 -v /opt/aira-llm/model:/model \
+         ghcr.io/ggerganov/llama.cpp:server-cuda -m /model/model.gguf --port 8000 --host 0.0.0.0
+
+    3. Confirm it answers on the port set by var.llm_serving_port
+       (default 8000) -- the container app's LLM_ENDPOINT_URL points here
+       over the VNet (compute.tf).
+    EOF

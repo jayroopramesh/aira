@@ -1,6 +1,7 @@
 # Copy to terraform.tfvars and fill in. Do not commit terraform.tfvars itself
-# (see .gitignore) -- and never put postgres_admin_password in ANY file;
-# pass it via TF_VAR_postgres_admin_password at plan/apply time instead.
+# (see .gitignore) -- and never put postgres_admin_password or
+# llm_vm_admin_ssh_public_key in ANY file; pass both via TF_VAR_* at
+# plan/apply time instead.
 
 project_name = "aira"
 environment  = "prod"
@@ -16,6 +17,14 @@ container_app_image = "ghcr.io/jayroopramesh/aira-dummy:latest"
 # decision aira-tofu-plan-s10-decision-keyvault-purge-protection) before any
 # real escrow key is ever stored.
 keyvault_purge_protection_enabled = false
+
+# Self-hosted LLM GPU VM (llm.tf) -- ~$1,670/mo list at this default size,
+# captain has Azure credits. Set llm_vm_enabled = false to omit it entirely.
+llm_vm_enabled        = true
+llm_vm_size           = "Standard_NV18ads_A10_v5"
+llm_vm_admin_username = "airaops"
+llm_os_disk_size_gb   = 256
+llm_serving_port      = 8000
 
 common_tags = {
   project    = "aira"
