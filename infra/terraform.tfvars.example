@@ -1,0 +1,45 @@
+# Copy to terraform.tfvars and fill in. Do not commit terraform.tfvars itself
+# (see .gitignore) -- and never put postgres_admin_password,
+# llm_vm_admin_ssh_public_key, or a real azure_key in ANY file; pass all
+# three via TF_VAR_* at plan/apply time instead.
+
+project_name = "aira"
+environment  = "prod"
+location     = "uaenorth"
+
+postgres_sku_name   = "B_Standard_B1ms"
+postgres_storage_mb = 32768
+postgres_ha_enabled = false
+
+container_app_image = "ghcr.io/jayroopramesh/aira-dummy:latest"
+
+# !!! DUMMY PHASE ONLY -- see variables.tf. Must flip to true (captain
+# decision aira-tofu-plan-s10-decision-keyvault-purge-protection) before any
+# real escrow key is ever stored.
+keyvault_purge_protection_enabled = false
+
+# Self-hosted LLM GPU VM (llm.tf) -- OFF by default for the demo phase (the
+# captain is running Foundry serverless instead, below). Flip to true
+# (~$1,670/mo list at this default size) if a self-hosted model is wanted
+# again.
+llm_vm_enabled        = false
+llm_vm_size           = "Standard_NV18ads_A10_v5"
+llm_vm_admin_username = "airaops"
+llm_os_disk_size_gb   = 256
+llm_serving_port      = 8000
+
+# Azure AI Foundry serverless (demo phase, captain-run DeepSeek-V3 -- not
+# created by this module). Named azure_endpoint/azure_key to match the
+# captain's own connection script exactly. Leave as placeholders here;
+# paste the real values from the Foundry portal into Key Vault post-apply,
+# or pass azure_key via TF_VAR_azure_key at apply time. See
+# infra/README.md "Foundry serverless endpoint (demo phase)".
+azure_endpoint = "REPLACE_WITH_FOUNDRY_ENDPOINT"
+# azure_key is sensitive -- leave unset here, pass via TF_VAR_azure_key
+# instead.
+
+common_tags = {
+  project    = "aira"
+  managed-by = "opentofu"
+  data-class = "phi-adjacent"
+}
