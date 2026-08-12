@@ -81,3 +81,31 @@ resource "azurerm_key_vault_secret" "postgres_admin_password" {
 
   depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]
 }
+
+# Client-side wiring for the captain's Azure AI Foundry serverless
+# deployment (DeepSeek-V3, demo phase, no sensitive data) -- the Foundry
+# account/deployment itself is NOT created by this module, the captain runs
+# it himself. Named azure-endpoint/azure-key (not foundry-*) to match the
+# captain's own connection script exactly (azure-ai-inference SDK,
+# AZURE_ENDPOINT/AZURE_KEY -- see infra/app/server.py). These start as
+# obvious placeholders (variables.tf); the captain pastes the real values
+# from the Foundry portal after applying, then re-applies -- see
+# infra/README.md "Foundry serverless endpoint (demo phase)". Same vault as
+# the Postgres admin password above: this is operational app config, not an
+# escrow key, but the vault already gives it audit logging and RBAC-scoped
+# read access for the API's identity.
+resource "azurerm_key_vault_secret" "azure_endpoint" {
+  name         = "azure-endpoint"
+  value        = var.azure_endpoint
+  key_vault_id = azurerm_key_vault.escrow.id
+
+  depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]
+}
+
+resource "azurerm_key_vault_secret" "azure_key" {
+  name         = "azure-key"
+  value        = var.azure_key
+  key_vault_id = azurerm_key_vault.escrow.id
+
+  depends_on = [azurerm_role_assignment.deployer_kv_secrets_officer]
+}

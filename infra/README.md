@@ -3,8 +3,10 @@
 OpenTofu module for Aira's v1 server on **Azure, UAE North**. This is the
 **dummy-application phase**: the infra is real (or will be, once applied),
 but the app it runs is a placeholder hello-world container, not the real
-auth+escrow API (which doesn't exist yet), and the GPU VM has no model
-loaded onto it yet either.
+auth+escrow API (which doesn't exist yet). For the demo phase, the LLM is
+Azure AI Foundry serverless (DeepSeek-V3), which the captain runs himself --
+this module only wires the client side, with placeholder credentials until
+he pastes the real ones in.
 
 **Nothing here has been applied.** `tofu validate` passes; `tofu plan`/`apply`
 need real Azure credentials this repo does not have and must not be run
@@ -15,7 +17,8 @@ until the captain logs in and explicitly approves. See "Waiting on" below.
 | Decision | Source | Effect here |
 |---|---|---|
 | Azure, UAE North, OpenTofu | `aira-storage-plan-s8/decision-region-provider.md` | `var.location = "uaenorth"`, `azurerm` provider throughout |
-| Server-hosted LLM on a self-hosted GPU VM (**amended**, see below) | captain amendment, 2026-08-13 | `llm.tf` -- an NVadsA10v5-family GPU VM (default `Standard_NV18ads_A10_v5`), no cloud/serverless inference API. `var.llm_vm_enabled` toggles it off entirely if needed. |
+| Demo-phase LLM: Azure AI Foundry serverless, captain-run (**amended**, see below) | captain amendment, 2026-08-13 | `AZURE_ENDPOINT` / `AZURE_KEY` container-app secrets (named to match the captain's own connection script), sourced from Key Vault (`keyvault.tf`), placeholder values until the captain pastes the real ones -- see "Foundry serverless endpoint (demo phase)" below. The Foundry account/deployment itself is **not created by this module**. |
+| Self-hosted GPU VM for the LLM -- present, OFF by default | captain amendment, 2026-08-13, superseded for the demo phase by the row above | `llm.tf` -- an NVadsA10v5-family GPU VM (default `Standard_NV18ads_A10_v5`), kept in the repo and ready but `var.llm_vm_enabled = false` by default. |
 | Under 10 operators, next few months | `aira-storage-plan-s8/decision-model-choice.md` | Smallest sane SKUs everywhere (below); `container_app_min_replicas = 0` (scale-to-zero), `container_app_max_replicas = 2` |
 | Dev/Test posture for the dummy phase | captain-provided Azure VM workload-environment screenshot | No HA (`postgres_ha_enabled = false`), no zone redundancy, minimal backup retention (`postgres_backup_retention_days = 7`, Postgres Flexible Server's floor), no geo-redundant backup. Revisit once this stops being a dummy deployment. |
 | GitHub Actions, OIDC only -- no Azure DevOps | captain, explicit | `.github/workflows/infra.yml`; no service-principal secret anywhere |
@@ -23,17 +26,28 @@ until the captain logs in and explicitly approves. See "Waiting on" below.
 
 ### LLM endpoint decision history
 
-The original design (`aira-tofu-plan-s10`) implemented the storage plan's
-"no server LLM endpoint" call
-(`aira-storage-plan-s8/decision-model-choice.md`): local, captain-operated
-summarization model, nothing server-side. **The captain amended this on
-2026-08-13**, after this decision record was already written: Azure credits
-change the cost calculus, and the model now runs server-side on a
-self-hosted GPU VM instead. `llm.tf` implements the amendment; the original
-decision record is left as-is (it's a historical record of what was decided
-*then*), and this README is the current source of truth for what's actually
-built. Which specific model to run is still open (storage plan §7 item 3) --
-`llm.tf` provisions the GPU, not the model; see "Serving the model" below.
+This has moved three times, all on 2026-08-13, all captain-driven -- the
+original decision records are left as-is (historical record of what was
+decided *then*); this README is the current source of truth for what's
+actually built:
+
+1. **Original design** (`aira-tofu-plan-s10`) implemented the storage
+   plan's "no server LLM endpoint" call
+   (`aira-storage-plan-s8/decision-model-choice.md`): local,
+   captain-operated summarization model, nothing server-side.
+2. **First amendment**: Azure credits change the cost calculus -- the model
+   moves server-side, onto a self-hosted GPU VM (`llm.tf`). Model choice
+   itself (storage plan §7 item 3) stays open; `llm.tf` provisions the GPU,
+   not the model -- see "Serving the model" below.
+3. **Second amendment (current)**: for the demo phase, the captain is
+   running **DeepSeek-V3 on Azure AI Foundry serverless himself** (no
+   sensitive data) instead of self-hosting. `llm_vm_enabled` flips to
+   `false` by default -- `llm.tf` stays in the repo, parameterized and
+   ready, for whenever self-hosting is wanted again. The client-side wiring
+   for Foundry (`AZURE_ENDPOINT`/`AZURE_KEY`, matching the captain's own
+   connection script) is new, along with a `/summarize` route on the dummy
+   app proving the path works -- see "Foundry serverless endpoint (demo
+   phase)" below.
 
 ### A note on "D-series" VM sizing
 
@@ -83,7 +97,8 @@ infra/
 ├── terraform.tfvars.example              # copy to terraform.tfvars; admin password/SSH key NOT included, ever
 ├── .gitignore                              # .terraform/, *.tfstate*, backend.hcl, terraform.tfvars
 ├── app/
-│   ├── server.js                             # dummy hello-world app -- 20-line Node server, echoes health + region
+│   ├── server.py                             # dummy app -- health+region, plus /summarize proving the Foundry path
+│   ├── requirements.txt                      # azure-ai-inference (for /summarize)
 │   └── Dockerfile
 ├── cloud-init/
 │   └── llm-vm-init.yaml                        # GPU VM bootstrap: Docker + NVIDIA container toolkit, no model download
@@ -187,11 +202,19 @@ gone.
 
 ## Dummy app
 
-`infra/app/server.js` -- a 20-line Node server with no dependencies, no
-auth, no escrow logic. Responds to any path with:
-```json
-{"status":"ok","service":"aira-dummy","region":"uaenorth","path":"/","timestamp":"..."}
-```
+`infra/app/` -- a small Python app, no auth, no escrow logic, two routes:
+
+- `GET /` (or any other path) -- health + region:
+  ```json
+  {"status":"ok","service":"aira-dummy","region":"uaenorth","path":"/","timestamp":"..."}
+  ```
+- `GET /summarize` -- proves the Foundry serverless path end to end, using
+  **exactly the captain's own connection script** (`azure-ai-inference`
+  `ChatCompletionsClient`, see "Foundry serverless endpoint" below and
+  `server.py`). Returns the model's reply as JSON when `AZURE_ENDPOINT`/
+  `AZURE_KEY` are set to real values, or a clear `not_configured` message
+  (HTTP 503) when they're still the placeholders.
+
 `.github/workflows/infra.yml`'s `build-dummy-app` job builds and pushes it
 to `ghcr.io/jayroopramesh/aira-dummy` on every push to `main` touching
 `infra/app/**`, tagged `latest` and `<sha>`. **The GHCR package defaults to
@@ -201,7 +224,41 @@ credentials into the container app (`registry` block in `compute.tf`, not
 currently configured). Replace `container_app_image` with the real built API
 image once the auth+escrow API exists (§ below).
 
-## Serving the model
+## Foundry serverless endpoint (demo phase)
+
+The captain is standing up **DeepSeek-V3 on Azure AI Foundry serverless**
+himself, outside this module (demo phase, no sensitive data) -- nothing
+here creates the Foundry account or deployment. This module only wires the
+*client side*: `AZURE_ENDPOINT` and `AZURE_KEY` are container-app secrets
+(`compute.tf`), sourced from Key Vault (`keyvault.tf`), so the API never
+gets the raw key as a plain env value. Named to match the captain's own
+connection script exactly (`azure-ai-inference` SDK,
+`ChatCompletionsClient(endpoint=..., credential=AzureKeyCredential(...))`)
+-- `infra/app/server.py`'s `/summarize` route uses this same pattern
+verbatim.
+
+Both start as obvious placeholders
+(`REPLACE_WITH_FOUNDRY_ENDPOINT`/`REPLACE_WITH_FOUNDRY_API_KEY`,
+`variables.tf`). To wire in the real deployment after applying:
+
+1. Open the **Azure AI Foundry portal** -> your project -> **Deployments**
+   -> the DeepSeek-V3 deployment -> **Endpoint** tab.
+2. Copy the **Target URI** and **Key**.
+3. Either:
+   - Set them directly on the Key Vault secrets (fastest, no re-apply
+     needed): `az keyvault secret set --vault-name <kv name from outputs>
+     --name azure-endpoint --value "<Target URI>"` and the same for
+     `azure-key` -- then restart the container app revision to pick up the
+     new secret values, or
+   - Set `azure_endpoint` in `terraform.tfvars` and `TF_VAR_azure_key` in
+     the environment, then `tofu plan`/`apply` again.
+4. Confirm with `curl <container_app_url from outputs>/summarize` -- expect
+   `{"status":"ok","reply":"..."}`.
+
+## Serving the model (self-hosted GPU VM -- off by default)
+
+`llm_vm_enabled` is `false` by default for the demo phase (above); this
+section applies once/if it's flipped back to `true`.
 
 `llm.tf` provisions the GPU (an NVadsA10v5-family VM, one NVIDIA A10 per 18
 vCPU increment) and, via `azurerm_virtual_machine_extension`, the NVIDIA

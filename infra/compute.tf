@@ -1,9 +1,14 @@
 # Small container host for the auth + escrow API. Azure Container Apps
 # (Consumption plan, scale-to-zero) rather than an always-on App Service plan
 # -- matches the under-10-operators sizing decision
-# (aira-storage-plan-s8/decision-model-choice.md). LLM_ENDPOINT_URL points at
-# the self-hosted GPU VM (llm.tf) when var.llm_vm_enabled, blank otherwise.
-# Revisit compute plan if sustained traffic ever justifies fixed capacity.
+# (aira-storage-plan-s8/decision-model-choice.md). Two possible LLM paths are
+# wired, either or both usable: LLM_ENDPOINT_URL points at the self-hosted
+# GPU VM (llm.tf) when var.llm_vm_enabled (off by default); AZURE_ENDPOINT /
+# AZURE_KEY point at the captain's own Azure AI Foundry serverless
+# deployment for the demo phase (placeholders until pasted in, see
+# keyvault.tf) -- named to match the captain's own azure-ai-inference
+# connection script exactly, see infra/app/server.py. Revisit compute plan
+# if sustained traffic ever justifies fixed capacity.
 #
 # container_app_image defaults to the dummy hello-world app in infra/app/
 # (built + pushed to GHCR by .github/workflows/infra.yml) so this module
@@ -78,6 +83,14 @@ resource "azurerm_container_app" "api" {
         value = local.llm_endpoint_url
       }
       env {
+        name        = "AZURE_ENDPOINT"
+        secret_name = "azure-endpoint"
+      }
+      env {
+        name        = "AZURE_KEY"
+        secret_name = "azure-key"
+      }
+      env {
         name  = "AZURE_REGION"
         value = var.location
       }
@@ -89,6 +102,21 @@ resource "azurerm_container_app" "api" {
   secret {
     name                = "db-admin-password"
     key_vault_secret_id = azurerm_key_vault_secret.postgres_admin_password.versionless_id
+    identity            = azurerm_user_assigned_identity.api.id
+  }
+
+  # Placeholder values until the captain pastes the real Foundry portal
+  # values into Key Vault and re-applies -- see keyvault.tf and
+  # infra/README.md "Foundry serverless endpoint (demo phase)".
+  secret {
+    name                = "azure-endpoint"
+    key_vault_secret_id = azurerm_key_vault_secret.azure_endpoint.versionless_id
+    identity            = azurerm_user_assigned_identity.api.id
+  }
+
+  secret {
+    name                = "azure-key"
+    key_vault_secret_id = azurerm_key_vault_secret.azure_key.versionless_id
     identity            = azurerm_user_assigned_identity.api.id
   }
 

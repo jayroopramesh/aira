@@ -119,15 +119,18 @@ variable "container_app_max_replicas" {
 }
 
 # --- Self-hosted LLM (GPU VM, llm.tf) ---
-# Back in scope per captain amendment (2026-08-13, superseding
-# aira-storage-plan-s8/decision-model-choice.md's earlier "no server LLM"
-# call) -- captain has Azure credits for a GPU VM. ~$1,670/mo list at the
-# NV18 default; see infra/README.md cost table.
+# Available but OFF by default: for the demo phase, the captain is running
+# DeepSeek-V3 on Azure AI Foundry serverless himself (no sensitive data) --
+# see the Foundry variables below and infra/README.md "Foundry serverless
+# endpoint (demo phase)". This GPU VM module stays in the repo, parameterized
+# and ready, for whenever a self-hosted model is wanted again -- flip
+# llm_vm_enabled back to true then. ~$1,670/mo list at the NV18 default; see
+# infra/README.md cost table.
 
 variable "llm_vm_enabled" {
   type        = bool
-  default     = true
-  description = "Creates the GPU VM (llm.tf) when true. Set false to omit the ~$1,670/mo (NV18 default) GPU spend entirely, e.g. while the model choice is still open."
+  default     = false
+  description = "Creates the GPU VM (llm.tf) when true. OFF by default -- the demo phase uses Azure AI Foundry serverless (captain-run, see azure_endpoint/azure_key below) instead of a self-hosted model. Set true to bring the ~$1,670/mo (NV18 default) GPU VM back."
 }
 
 variable "llm_vm_size" {
@@ -166,6 +169,31 @@ variable "llm_serving_port" {
   type        = number
   default     = 8000
   description = "Port the model-serving container (vLLM/llama.cpp) listens on inside the GPU VM. Opened from snet-app only (llm.tf NSG rule)."
+}
+
+# --- Azure AI Foundry serverless (demo phase, captain-run) ---
+# The captain is standing up a DeepSeek-V3 deployment on Azure AI Foundry
+# serverless himself, outside this module (demo phase, no sensitive data) --
+# nothing here creates the Foundry account or deployment. These two
+# variables only wire the *client side*: the container app reads them from
+# Key Vault at runtime. Named azure_endpoint/azure_key (not foundry_*) to
+# match the captain's own connection script exactly (azure-ai-inference
+# SDK, AZURE_ENDPOINT/AZURE_KEY env vars -- see infra/app/server.py and
+# infra/README.md "Foundry serverless endpoint (demo phase)"). Both default
+# to an obvious placeholder; the captain pastes the real values from the
+# Foundry portal after applying.
+
+variable "azure_endpoint" {
+  type        = string
+  default     = "REPLACE_WITH_FOUNDRY_ENDPOINT"
+  description = "Azure AI Foundry serverless deployment endpoint URL (Foundry portal -> Deployments -> the DeepSeek-V3 deployment -> Endpoint tab -> Target URI). Placeholder until the captain pastes the real value."
+}
+
+variable "azure_key" {
+  type        = string
+  sensitive   = true
+  default     = "REPLACE_WITH_FOUNDRY_API_KEY"
+  description = "Azure AI Foundry serverless deployment API key (same Endpoint tab -> Key). Placeholder until the captain pastes the real value -- supply via TF_VAR_azure_key at apply time, never in a committed file, once it's real."
 }
 
 # --- Key Vault (escrow store) ---
