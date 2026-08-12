@@ -33,12 +33,12 @@ export default function ReadyScreen() {
           <CheckIcon size={30} color={c.positive} />
         </View>
         <View style={{ height: 18 }} />
-        <Eyebrow color="brand">Prep complete</Eyebrow>
+        <Eyebrow color="brand">Ready</Eyebrow>
         <AppText variant="display" style={{ fontSize: 26, lineHeight: 30, marginTop: 8 }} center>
           You’re ready for {first}
         </AppText>
-        <AppText variant="body" color="ink2" center style={{ marginTop: 10, maxWidth: 380 }}>
-          All prep items are checked. When you begin, Aira captures on-device and drafts a note against these clinical sections.
+        <AppText variant="body" color="ink2" center style={{ marginTop: 10, maxWidth: 400 }}>
+          Last session’s highlights are fresh in mind. When you begin, Aira captures on-device and drafts a note against the SOAP sections.
         </AppText>
         <View style={{ height: 22 }} />
         <Row gap={12}>

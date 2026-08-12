@@ -5,13 +5,14 @@
  * routed through this interface so the real vault slots in without touching callers:
  *
  *   • Argon2id password → key envelope (unlock derives the key; nothing is stored plaintext)
- *   • Recovery-file model (aira-recovery.key) — the ONLY other way in
+ *   • One-time recovery code — the self-service path back in when the password is lost
  *   • Export / import of the encrypted vault
  *
- * The recovery-key policy itself is an OPEN captain decision
- * (backlog: aira-ui-screens-s4-decision-recovery-key-policy). See strings/recovery.ts —
- * all recovery-related copy is isolated there and must not be built beyond the depicted
- * screens until the captain rules.
+ * The account + session lifecycle (create account, one-time recovery reveal, sign-in,
+ * wrong-password) lives in the AuthService seam (services/auth.ts), which delegates the
+ * actual vault open to this contract. The recovery-key policy is captain-resolved
+ * (decision-recovery-key-policy): all recovery-related copy is isolated in
+ * strings/recovery.ts.
  */
 
 export type UnlockResult = { ok: true } | { ok: false; reason: 'wrong-key' | 'locked-out' };
@@ -19,10 +20,10 @@ export type UnlockResult = { ok: true } | { ok: false; reason: 'wrong-key' | 'lo
 export interface VaultStorage {
   /** Whether a vault exists on this device (first-run vs returning). */
   isInitialised(): Promise<boolean>;
-  /** Derive the key from the passcode and attempt to open the vault (no plaintext stored). */
-  unlock(passcode: string): Promise<UnlockResult>;
-  /** Open the vault using a recovery file — the only path when the passcode is lost. */
-  unlockWithRecoveryFile(fileContents: string): Promise<UnlockResult>;
+  /** Derive the key from the login password and open the vault (no plaintext stored). */
+  unlock(password: string): Promise<UnlockResult>;
+  /** Open the vault using the saved recovery code — the path when the password is lost. */
+  unlockWithRecoveryCode(code: string): Promise<UnlockResult>;
   /** Lock the vault (drop the in-memory key). */
   lock(): Promise<void>;
   /** Read/write an opaque encrypted blob for a record id. */
@@ -34,9 +35,9 @@ export interface VaultStorage {
 }
 
 /**
- * A mock that lets the unlock flow render and demo without any crypto. It accepts any
- * 6-digit passcode as correct EXCEPT the sentinel used to demo the wrong-key screen.
- * This is intentionally NOT secure and must be replaced by the real Argon2id vault.
+ * A mock that lets the unlock flow render and demo without any crypto. Sign-in acceptance
+ * is decided in the AuthService (services/auth.ts); this mock simply flips the in-memory
+ * unlocked flag. Intentionally NOT secure — replaced by the real Argon2id vault later.
  */
 export class MockVaultStorage implements VaultStorage {
   private unlocked = false;
@@ -45,13 +46,11 @@ export class MockVaultStorage implements VaultStorage {
   async isInitialised() {
     return true;
   }
-  async unlock(passcode: string): Promise<UnlockResult> {
-    // Demo rule: "000000" reproduces the calm wrong-key state; anything else opens.
-    if (passcode === '000000') return { ok: false, reason: 'wrong-key' };
+  async unlock(_password: string): Promise<UnlockResult> {
     this.unlocked = true;
     return { ok: true };
   }
-  async unlockWithRecoveryFile(): Promise<UnlockResult> {
+  async unlockWithRecoveryCode(): Promise<UnlockResult> {
     this.unlocked = true;
     return { ok: true };
   }

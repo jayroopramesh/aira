@@ -8,8 +8,8 @@ import { EscalateProvider } from '../components/Escalate';
 import { ThemeProvider, useTheme } from '../theme/ThemeProvider';
 
 export const unstable_settings = {
-  // Boot straight to the vault-locked unlock screen.
-  initialRouteName: 'unlock',
+  // Boot into the Welcome flow (signed out); it hands off to unlock, then the app.
+  initialRouteName: 'index',
 };
 
 function RootStack() {
@@ -24,6 +24,7 @@ function RootStack() {
           animation: 'fade',
         }}
       >
+        <Stack.Screen name="welcome" />
         <Stack.Screen name="unlock" />
         <Stack.Screen name="(app)" />
       </Stack>

@@ -48,14 +48,19 @@ export type PrepItem = {
 
 export type NoteSection = {
   id: string;
-  index: number;
+  /** SOAP marker shown in the section gutter: 'S' | 'O' | 'A' | 'P', or a shield for risk. */
+  marker: string;
   title: string;
   /** Body paragraphs. Risk sections render in the clay risk surface. */
   body: string[];
   quote?: string;
+  /** Bulleted body (used by the Plan section). */
+  bullets?: string[];
   isRisk?: boolean;
-  /** Structured rows (used by the Risk & Safety check and Symptom check). */
+  /** Structured rows (used by the Risk & Safety check). */
   rows?: { label: string; value: string }[];
+  /** The symptom-measures table renders under this section (the Objective section). */
+  hasMeasures?: boolean;
 };
 
 export type ReviewCode = {
@@ -73,7 +78,8 @@ export type DraftNote = {
   sections: NoteSection[];
   measures: { measure: string; today: string; prev: string; band: string }[];
   reviewCodes: ReviewCode[];
-  tasks: PrepItem[];
+  /** Rail prescriptions — clinician-written, or generated from the Plan section. */
+  prescriptions: PrepItem[];
 };
 
 export type Client = {

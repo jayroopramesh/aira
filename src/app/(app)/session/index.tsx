@@ -1,9 +1,10 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, TextInput, View } from 'react-native';
+import { Highlights } from '../../../components/Highlights';
 import { Screen } from '../../../components/Screen';
 import { Waveform } from '../../../components/Waveform';
-import { CheckIcon, MicIcon, ShieldIcon, StopIcon } from '../../../components/icons';
+import { FileUpIcon, MicIcon, ShieldIcon, StopIcon } from '../../../components/icons';
 import { AppText, Avatar, Button, Card, Row, TrustPill } from '../../../components/ui';
 import { CLIENTS_BY_ID } from '../../../data/fixtures';
 import { transcriptionService } from '../../../services/transcription';
@@ -12,8 +13,6 @@ import { useTheme } from '../../../theme/ThemeProvider';
 type Phase = 'precapture' | 'recording' | 'analysing';
 
 export default function SessionCapture() {
-  const theme = useTheme();
-  const c = theme.colors;
   const router = useRouter();
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
   const client = CLIENTS_BY_ID[clientId ?? 'amara'];
@@ -61,20 +60,12 @@ function PreCapture({ client, onStart }: { client: (typeof CLIENTS_BY_ID)[string
             </View>
           </Row>
         </Row>
+        {/* Read-only prep reminder — same family as the drawer / prep screen (no checkboxes). */}
         <Card tone="sunken" elevation="none" radius="md" style={{ marginTop: 14, backgroundColor: c.brandBg, borderColor: c.brandBd }}>
-          <AppText variant="bodyStrong" tint={c.brand}>
-            You prepped {client.lastPlan.length} items for today
+          <AppText variant="bodyStrong" tint={c.brand} style={{ marginBottom: 12 }}>
+            Reminders from last session
           </AppText>
-          {client.lastPlan.map((p) => (
-            <Row key={p.id} gap={8} style={{ marginTop: 8 }}>
-              <View style={{ width: 18, height: 18, borderRadius: 5, backgroundColor: c.brandStrong, alignItems: 'center', justifyContent: 'center' }}>
-                <CheckIcon size={12} color={c.onBrand} />
-              </View>
-              <AppText variant="body" color="ink3" style={{ textDecorationLine: 'line-through' }}>
-                {p.text}
-              </AppText>
-            </Row>
-          ))}
+          <Highlights items={client.lastPlan.map((p) => ({ text: p.text }))} />
         </Card>
       </Card>
 
@@ -110,6 +101,12 @@ function PreCapture({ client, onStart }: { client: (typeof CLIENTS_BY_ID)[string
 
 /* ---------------------------------------------------------------- recording */
 
+/** A therapist note pinned to a moment in the audio (visual mock of timestamp binding). */
+const PINNED_NOTES = [
+  { ts: '08:12', text: 'Sleep log clearly improving — worth reinforcing as a win.' },
+  { ts: '12:47', text: 'Exam anxiety resurfaces the nights before deadlines.' },
+];
+
 function Recording({ client, onStop }: { client: (typeof CLIENTS_BY_ID)[string]; onStop: () => void }) {
   const theme = useTheme();
   const c = theme.colors;
@@ -127,30 +124,90 @@ function Recording({ client, onStop }: { client: (typeof CLIENTS_BY_ID)[string];
   const ss = String(seconds % 60).padStart(2, '0');
 
   return (
-    <View style={{ alignItems: 'center', paddingTop: theme.spacing.xxl }}>
+    <View style={{ alignItems: 'center', paddingTop: theme.spacing.xl }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: c.riskBg, borderRadius: theme.radii.pill, paddingVertical: 8, paddingHorizontal: 16 }}>
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.riskFill }} />
         <AppText variant="bodyStrong" tint={c.risk}>
           Recording · Session {client.sessionNumber} with {client.name}
         </AppText>
       </View>
-      <AppText variant="display" style={{ fontSize: 56, lineHeight: 62, marginTop: 24, fontFamily: theme.type.numeric.fontFamily }}>
+      <AppText variant="display" style={{ fontSize: 56, lineHeight: 62, marginTop: 20, fontFamily: theme.type.numeric.fontFamily }}>
         {mm}:{ss}
       </AppText>
-      <View style={{ height: 20 }} />
+      <View style={{ height: 18 }} />
       <Waveform bars={13} />
-      <View style={{ height: 28 }} />
+
+      {/* Current-word live-transcript readout, under the waveform. */}
+      <View style={{ alignItems: 'center', marginTop: 22, maxWidth: 520 }}>
+        <AppText variant="label" color="ink3" uppercase>
+          Transcribing on-device
+        </AppText>
+        <AppText variant="body" color="ink2" center style={{ marginTop: 6, fontSize: 17, lineHeight: 25 }}>
+          …the mornings are easier now, it’s the{' '}
+          <AppText variant="bodyStrong" tint={c.brand} style={{ fontSize: 17, textDecorationLine: 'underline', textDecorationColor: c.brandBd }}>
+            nights
+          </AppText>
+        </AppText>
+        <AppText variant="small" color="ink3" center style={{ marginTop: 8 }}>
+          Words appear as they’re transcribed — one at a time, never uploaded
+        </AppText>
+      </View>
+
+      {/* Optional therapist notebox — each note pins to a moment in the audio. */}
+      <Card radius="md" style={{ width: '100%', maxWidth: 520, marginTop: 22 }}>
+        <AppText variant="bodyStrong" style={{ fontSize: 13 }}>
+          Your notes for this recording
+        </AppText>
+        <AppText variant="small" color="ink3" style={{ marginTop: 2, lineHeight: 16 }}>
+          Each note pins to the moment in the audio · on replay, the matching note highlights here
+        </AppText>
+        {PINNED_NOTES.map((n) => (
+          <Row key={n.ts} gap={11} style={{ alignItems: 'flex-start', paddingTop: 9, marginTop: 9, borderTopWidth: 1, borderTopColor: c.lineSoft }}>
+            <TimePill label={n.ts} />
+            <AppText variant="small" color="ink2" style={{ flex: 1, fontSize: 12.5, lineHeight: 18 }}>
+              {n.text}
+            </AppText>
+          </Row>
+        ))}
+        <Row gap={11} style={{ alignItems: 'center', paddingTop: 9, marginTop: 9, borderTopWidth: 1, borderTopColor: c.lineSoft }}>
+          <TimePill label={`${mm}:${ss}`} live />
+          <TextInput
+            placeholder="Add a note at this moment…"
+            placeholderTextColor={c.ink3}
+            style={{ flex: 1, minWidth: 0, color: c.ink, fontFamily: theme.type.body.fontFamily, fontSize: 13, paddingVertical: 4 }}
+          />
+        </Row>
+      </Card>
+
+      <View style={{ height: 22 }} />
       <TrustPill label="Audio stays on this device · nothing is uploaded" icon={<ShieldIcon size={13} color={c.brand} />} />
-      <View style={{ height: 24 }} />
-      <Button
-        title="Stop & transcribe"
-        variant="secondary"
-        size="lg"
-        leftIcon={<StopIcon size={16} color={c.risk} />}
-        onPress={onStop}
-      />
-      <AppText variant="small" color="ink3" center style={{ marginTop: 18, maxWidth: 380 }}>
-        When you stop, Aira transcribes on-device, drafts the note, then deletes the recording.
+      <View style={{ height: 22 }} />
+      <Button title="Stop & transcribe" variant="secondary" size="lg" leftIcon={<StopIcon size={16} color={c.risk} />} onPress={onStop} />
+      <AppText variant="small" color="ink3" center style={{ marginTop: 18, maxWidth: 420, lineHeight: 18 }}>
+        <AppText variant="bodyStrong" color="ink2" style={{ fontSize: 12.5 }}>
+          Nothing is authoritative yet — this is a draft you will review and sign.
+        </AppText>{' '}
+        When you stop, Aira transcribes on-device, drafts the note, then deletes the recording (unless you choose to keep it).
+      </AppText>
+    </View>
+  );
+}
+
+/** A small mono time chip; the "live" variant uses the calm clay tint (the current moment). */
+function TimePill({ label, live }: { label: string; live?: boolean }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  return (
+    <View
+      style={{
+        backgroundColor: live ? c.riskBg : c.brandBg,
+        borderRadius: theme.radii.xs,
+        paddingVertical: 3,
+        paddingHorizontal: 7,
+      }}
+    >
+      <AppText variant="small" tint={live ? c.risk : c.brand} style={{ fontSize: 11, fontFamily: theme.type.numeric.fontFamily }}>
+        {label}
       </AppText>
     </View>
   );
@@ -158,24 +215,32 @@ function Recording({ client, onStop }: { client: (typeof CLIENTS_BY_ID)[string];
 
 /* ---------------------------------------------------------------- analysing */
 
+const TRANSCRIPT_LINES: { speaker: string; text: string }[] = [
+  { speaker: 'Amara', text: 'The mornings are easier now — it’s the nights before a deadline that still get me.' },
+  { speaker: 'Dr. Okafor', text: 'And the sleep log — has it been possible to keep it up this fortnight?' },
+  { speaker: 'Amara', text: 'Mostly. I slept through the night for the first time in weeks. Stats is still hanging over me though.' },
+  { speaker: 'Dr. Okafor', text: 'Let’s stay with the worry-window we trialled and shape one that’s specific to the exam.' },
+];
+
 function Analysing({ onDone }: { onDone: () => void }) {
   const theme = useTheme();
   const c = theme.colors;
   const [stage, setStage] = useState<string>('preparing');
+  const [transcript, setTranscript] = useState(
+    TRANSCRIPT_LINES.map((l) => `${l.speaker}: ${l.text}`).join('\n\n'),
+  );
   const controller = useRef(new AbortController());
 
   useEffect(() => {
     const ctrl = controller.current;
-    // One-shot post-session transcription (mocked). The seam models the real whisper.rn
-    // pipeline: preparing → transcribing → on-device de-identification → draft.
+    // One-shot post-session transcription (mocked): preparing → transcribing → de-identify.
     transcriptionService
       .transcribe({ uri: 'mock://session', durationMs: 47 * 60 * 1000 }, { onStage: setStage, signal: ctrl.signal })
-      .then(() => onDone())
       .catch(() => {
-        /* aborted via Stop — fall through to the draft with what's ready */
+        /* aborted via Stop — the drafted-so-far transcript stays editable below */
       });
     return () => ctrl.abort();
-  }, [onDone]);
+  }, []);
 
   const label =
     stage === 'deidentifying' ? 'De-identifying on-device…' : stage === 'transcribing' ? 'Transcribing on-device…' : 'Preparing…';
@@ -197,23 +262,54 @@ function Analysing({ onDone }: { onDone: () => void }) {
         </Row>
       </Card>
 
-      {/* Skeletons */}
+      {/* Skeletons of the drafting note. */}
       <View style={{ height: theme.spacing.xl }} />
-      {[0.42, 0.9, 0.85, 0.6, 0, 0.4, 0.82, 0.95, 0.72, 0, 0.38, 0.78].map((w, i) => (
+      {[0.42, 0.9, 0.85, 0.6, 0, 0.4, 0.82, 0.95, 0.72].map((w, i) => (
         <View
           key={i}
-          style={{
-            height: w === 0 ? 14 : 12,
-            width: w === 0 ? 0 : `${w * 100}%`,
-            backgroundColor: c.brandBg,
-            borderRadius: 6,
-            marginBottom: 14,
-          }}
+          style={{ height: w === 0 ? 14 : 12, width: w === 0 ? 0 : `${w * 100}%`, backgroundColor: c.brandBg, borderRadius: 6, marginBottom: 14 }}
         />
       ))}
-      <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
-        Nothing is authoritative yet — this is a draft you will review and sign. Press <AppText variant="bodyStrong">Stop</AppText> anytime to work with what’s drafted so far.
-      </AppText>
+
+      {/* The transcript in the same window: faint-green rounded box, editable. */}
+      <View style={{ marginTop: theme.spacing.md, backgroundColor: c.positiveBg, borderRadius: theme.radii.lg, borderWidth: 1, borderColor: c.positiveBg, padding: theme.spacing.lg }}>
+        <Row gap={8} style={{ flexWrap: 'wrap' }}>
+          <FileUpIcon size={15} color={c.positive} strokeWidth={2} />
+          <AppText variant="bodyStrong" tint={c.positive} style={{ fontSize: 12.5 }}>
+            Transcript · editable
+          </AppText>
+          <AppText variant="small" color="ink3" style={{ fontSize: 11 }}>
+            on-device · fix any mishears or names before the draft is finalised
+          </AppText>
+        </Row>
+        <View style={{ height: 10 }} />
+        <TextInput
+          multiline
+          value={transcript}
+          onChangeText={setTranscript}
+          style={{
+            backgroundColor: c.elevated,
+            borderWidth: 1,
+            borderColor: c.lineSoft,
+            borderRadius: theme.radii.sm,
+            padding: 14,
+            color: c.ink,
+            fontFamily: theme.type.body.fontFamily,
+            fontSize: 14,
+            lineHeight: 22,
+            minHeight: 150,
+          }}
+        />
+      </View>
+
+      <View style={{ height: theme.spacing.lg }} />
+      <View style={{ alignItems: 'flex-end' }}>
+        <Button
+          title="Next → review the draft note"
+          variant="primary"
+          onPress={() => { controller.current.abort(); onDone(); }}
+        />
+      </View>
     </View>
   );
 }

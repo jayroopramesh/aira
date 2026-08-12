@@ -3,6 +3,7 @@ import React from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HistoryTimeline, StatTile } from '../../../components/clinical';
+import { Highlights } from '../../../components/Highlights';
 import { ArrowRight, CloseIcon } from '../../../components/icons';
 import { AppText, Avatar, Button, Card, Eyebrow, Row, TrustPill } from '../../../components/ui';
 import { CLIENTS_BY_ID } from '../../../data/fixtures';
@@ -64,22 +65,14 @@ export default function ClientDrawer() {
           <View style={{ height: 12 }} />
           <HistoryTimeline entries={client.timeline} />
 
-          {/* Last plan → becomes prep checklist */}
+          {/* Last plan → read-only reminders (no checkboxes; prep is a reminder, not a task). */}
           <View style={{ height: theme.spacing.sm }} />
           <Eyebrow>Last plan &amp; next steps · from {client.lastPlan[0]?.source.replace('from Plan & Next Steps · ', '') ?? 'last session'}, signed</Eyebrow>
           <Card tone="sunken" elevation="none" radius="md" style={{ marginTop: 10, borderColor: c.brandBd, backgroundColor: c.brandBg }}>
-            <AppText variant="bodyStrong" tint={c.brand}>
-              This becomes today’s prep checklist ↓
+            <AppText variant="bodyStrong" tint={c.brand} style={{ marginBottom: 12 }}>
+              Highlights to keep in mind today
             </AppText>
-            <View style={{ height: 10 }} />
-            {client.lastPlan.map((p) => (
-              <Row key={p.id} gap={10} style={{ marginBottom: 10, alignItems: 'flex-start' }}>
-                <View style={{ width: 18, height: 18, borderRadius: 5, borderWidth: 1.5, borderColor: c.brandBd, marginTop: 2 }} />
-                <AppText variant="body" color="ink" style={{ flex: 1 }}>
-                  {p.text}
-                </AppText>
-              </Row>
-            ))}
+            <Highlights items={client.lastPlan.map((p) => ({ text: p.text }))} />
           </Card>
 
           <View style={{ height: theme.spacing.lg }} />
@@ -105,7 +98,7 @@ export default function ClientDrawer() {
         <Row gap={12} style={{ maxWidth: 720, width: '100%', alignSelf: 'center', justifyContent: 'flex-end' }}>
           <Button title="Close" variant="secondary" onPress={() => router.back()} />
           <Button
-            title="Build prep checklist"
+            title="Open prep reminder"
             variant="primary"
             rightIcon={<ArrowRight size={18} color={c.onBrand} />}
             onPress={() => router.replace(`/(app)/today/prep?clientId=${client.id}`)}

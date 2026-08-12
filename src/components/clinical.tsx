@@ -46,7 +46,7 @@ export function StatTile({
 const KIND_STYLE: Record<TimelineEntry['kind'], { label: string; tone: 'brand' | 'accent' | 'risk' }> = {
   session: { label: 'Session', tone: 'brand' },
   intake: { label: 'Intake', tone: 'brand' },
-  journal: { label: 'Journal', tone: 'accent' },
+  journal: { label: 'Companion app', tone: 'accent' },
   safety: { label: 'Safety', tone: 'risk' },
 };
 
