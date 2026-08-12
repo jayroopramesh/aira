@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowRight, CheckIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
@@ -380,6 +380,7 @@ function PrescriptionsRail({ draft }: { draft: DraftNote }) {
   const c = theme.colors;
   const [items, setItems] = useState<Rx[]>(draft.prescriptions.map((p) => ({ ...p })));
   const [generated, setGenerated] = useState(false);
+  const nextRxId = useRef(0);
 
   const toggle = (id: string) => setItems((xs) => xs.map((x) => (x.id === id ? { ...x, checked: !x.checked } : x)));
   const setText = (id: string, text: string) => setItems((xs) => xs.map((x) => (x.id === id ? { ...x, text } : x)));
@@ -399,7 +400,8 @@ function PrescriptionsRail({ draft }: { draft: DraftNote }) {
   };
 
   const add = () => {
-    setItems((xs) => [...xs, { id: `rx-new-${xs.length}`, text: '', source: 'added by you', done: false, isNew: true }]);
+    const id = `rx-new-${++nextRxId.current}`;
+    setItems((xs) => [...xs, { id, text: '', source: 'added by you', done: false, isNew: true }]);
   };
 
   const commit = (id: string) =>
