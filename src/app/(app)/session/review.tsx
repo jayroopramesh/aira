@@ -1,11 +1,11 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useRouter } from 'expo-router';
+import React, { useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowRight, CheckIcon, ShieldIcon } from '../../../components/icons';
+import { ArrowRight, CheckIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
 import { AppText, Badge, Button, Card, Divider, Eyebrow, Row, TrustPill } from '../../../components/ui';
 import { AMARA_DRAFT } from '../../../data/fixtures';
-import { DraftNote, NoteSection } from '../../../data/types';
+import { DraftNote, NoteSection, PrepItem } from '../../../data/types';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 const TABS = ['Note', 'Transcript', 'Context', '+ Screening tools'] as const;
@@ -70,13 +70,9 @@ export default function ReviewNote() {
 
             <View style={{ height: theme.spacing.lg }} />
 
-            {tab === 'Note' ? (
-              <NotePane draft={draft} signed={signed} />
-            ) : (
-              <OtherPane tab={tab} />
-            )}
+            {tab === 'Note' ? <NotePane draft={draft} signed={signed} /> : <OtherPane tab={tab} />}
 
-            {/* On phone, the rail (tasks / codes / sign-off) stacks below the note. */}
+            {/* On phone, the rail (prescriptions / codes / sign-off) stacks below the note. */}
             {!wide ? (
               <View style={{ marginTop: theme.spacing.xl }}>
                 <Divider />
@@ -173,7 +169,7 @@ function Section({ section, measures, editable }: { section: NoteSection; measur
   const c = theme.colors;
   const [regenerating, setRegenerating] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(section.body.join('\n\n'));
+  const [text, setText] = useState([...section.body, ...(section.bullets ?? [])].join('\n\n'));
 
   const isRisk = section.isRisk;
 
@@ -186,9 +182,18 @@ function Section({ section, measures, editable }: { section: NoteSection; measur
     >
       <Row style={{ justifyContent: 'space-between' }}>
         <Row gap={10}>
-          <AppText variant="label" tint={c.brand}>
-            {section.index}
-          </AppText>
+          {/* SOAP gutter marker — a letter for S/O/A/P, a shield for the risk section. */}
+          {isRisk ? (
+            <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: c.riskBg, alignItems: 'center', justifyContent: 'center' }}>
+              <ShieldIcon size={14} color={c.risk} strokeWidth={2.4} />
+            </View>
+          ) : (
+            <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: c.brandBg, alignItems: 'center', justifyContent: 'center' }}>
+              <AppText variant="label" tint={c.brand} style={{ fontSize: 12 }}>
+                {section.marker}
+              </AppText>
+            </View>
+          )}
           <Eyebrow color={isRisk ? 'risk' : 'brand'}>{section.title}</Eyebrow>
         </Row>
         {editable ? (
@@ -214,7 +219,7 @@ function Section({ section, measures, editable }: { section: NoteSection; measur
           <Row gap={8} style={{ marginBottom: 12 }}>
             <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: c.riskFill }} />
             <AppText variant="bodyStrong" tint={c.risk}>
-              Screened this session · routine
+              Screened this session · routine · always present
             </AppText>
           </Row>
           {section.rows?.map((r, i) => (
@@ -252,10 +257,20 @@ function Section({ section, measures, editable }: { section: NoteSection; measur
         />
       ) : (
         <View style={{ opacity: regenerating ? 0.45 : 1 }}>
-          {(editing ? [text] : section.body).map((p, i) => (
-            <AppText key={i} variant="body" color={isRisk ? 'ink' : 'ink'} style={{ marginBottom: 8 }}>
+          {section.body.map((p, i) => (
+            <AppText key={i} variant="body" color="ink" style={{ marginBottom: 8 }}>
               {p}
             </AppText>
+          ))}
+          {section.bullets?.map((b, i) => (
+            <Row key={i} gap={8} style={{ alignItems: 'flex-start', marginBottom: 6 }}>
+              <AppText variant="body" color="ink2">
+                •
+              </AppText>
+              <AppText variant="body" color="ink" style={{ flex: 1 }}>
+                {b}
+              </AppText>
+            </Row>
           ))}
           {section.quote ? (
             <View style={{ borderLeftWidth: 3, borderLeftColor: c.brandBd, paddingLeft: 12, marginTop: 6 }}>
@@ -264,11 +279,16 @@ function Section({ section, measures, editable }: { section: NoteSection; measur
               </AppText>
             </View>
           ) : null}
+          {section.marker === 'P' ? (
+            <AppText variant="small" color="ink3" style={{ marginTop: 10 }}>
+              ↳ These items become the reminders you’ll see when prepping Amara’s next session.
+            </AppText>
+          ) : null}
         </View>
       )}
 
-      {/* Symptom-check measures table sits under section 2. */}
-      {section.index === 2 ? <MeasureTable measures={measures} /> : null}
+      {/* Symptom-measures table sits under the Objective section. */}
+      {section.hasMeasures ? <MeasureTable measures={measures} /> : null}
     </View>
   );
 }
@@ -313,12 +333,13 @@ function MeasureTable({ measures }: { measures: DraftNote['measures'] }) {
 }
 
 function OtherPane({ tab }: { tab: Tab }) {
-  const theme = useTheme();
-  const c = theme.colors;
   const copy: Record<string, string> = {
-    Transcript: 'The de-identified transcript lives here. Identifiers were tokenized on-device before drafting and the audio is deleted after transcription — only this reviewed text remains.',
-    Context: 'Prior-session context Aira grounded the draft against: last plan, latest measures, and standing safety items. Naturalistic journal entries are shown separately and never blended with clinical scores.',
-    '+ Screening tools': 'Generated outputs (e.g. a PHQ-9 / GAD-7 screening summary) appear here as sibling tabs on the same session — added on demand, never overwriting the note.',
+    Transcript:
+      'The de-identified transcript lives here. Identifiers were tokenized on-device before drafting and the audio is deleted after transcription — only this reviewed text remains.',
+    Context:
+      'Prior-session context Aira grounded the draft against: last plan, latest measures, and standing safety items. Companion-app journal entries are shown separately and never blended with clinical scores.',
+    '+ Screening tools':
+      'Generated outputs (e.g. a PHQ-9 / GAD-7 screening summary) appear here as sibling tabs on the same session — added on demand, never overwriting the note.',
   };
   return (
     <Card tone="sunken" elevation="none" radius="md">
@@ -333,100 +354,265 @@ function OtherPane({ tab }: { tab: Tab }) {
 
 function ReviewRail({ draft, signed, onSign }: { draft: DraftNote; signed: boolean; onSign: () => void }) {
   const theme = useTheme();
-  const c = theme.colors;
   return (
     <View style={{ gap: theme.spacing.lg }}>
-      {/* Tasks for next session */}
-      <View>
-        <Row style={{ justifyContent: 'space-between' }}>
-          <Eyebrow>Tasks for next session</Eyebrow>
-          <Badge label={String(draft.tasks.length)} tone="neutral" />
-        </Row>
-        <View style={{ height: 12 }} />
-        {draft.tasks.map((t) => (
-          <Row key={t.id} gap={10} style={{ alignItems: 'flex-start', marginBottom: 14 }}>
-            <View style={{ width: 18, height: 18, borderRadius: 5, borderWidth: 1.5, borderColor: c.line, marginTop: 1 }} />
-            <View style={{ flex: 1 }}>
-              <AppText variant="body">{t.text}</AppText>
-              <AppText variant="small" color="ink3" style={{ marginTop: 2 }}>
-                {t.source}
-              </AppText>
-            </View>
-          </Row>
-        ))}
-      </View>
-
+      <PrescriptionsRail draft={draft} />
       <Divider />
-
-      {/* Suggested review codes */}
-      <View>
-        <Row style={{ justifyContent: 'space-between' }}>
-          <Eyebrow>Suggested review codes</Eyebrow>
-          <Badge label={String(draft.reviewCodes.length)} tone="neutral" />
-        </Row>
-        <View style={{ height: 12 }} />
-        {draft.reviewCodes.map((rc) => (
-          <Row key={rc.code} gap={12} style={{ alignItems: 'flex-start', marginBottom: 14 }}>
-            <View style={{ backgroundColor: c.brandBg, borderRadius: theme.radii.xs, paddingVertical: 4, paddingHorizontal: 8 }}>
-              <AppText variant="small" tint={c.brand} style={{ fontFamily: theme.type.numeric.fontFamily, fontSize: 12 }}>
-                {rc.code}
-              </AppText>
-            </View>
-            <AppText variant="body" color="ink2" style={{ flex: 1 }}>
-              {rc.label}
-            </AppText>
-            <AppText variant="small" color="ink3">
-              {rc.relevance}
-            </AppText>
-          </Row>
-        ))}
-        <AppText variant="small" color="ink3" style={{ marginTop: 2 }}>
-          Suggestions only · you confirm or replace each. The risk &amp; safety check lives in the note body, not here.
-        </AppText>
-      </View>
-
+      <ReviewCodes draft={draft} />
       <Divider />
-
-      {/* Sign-off / audio-deleted */}
-      {signed ? (
-        <>
-          <Card tone="elevated" elevation="none" radius="md" style={{ backgroundColor: c.positiveBg, borderColor: c.positiveBg }}>
-            <Row gap={8}>
-              <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: c.positive, alignItems: 'center', justifyContent: 'center' }}>
-                <CheckIcon size={14} color={c.onBrand} />
-              </View>
-              <AppText variant="bodyStrong" tint={c.positive}>
-                Recording deleted
-              </AppText>
-            </Row>
-            <AppText variant="body" color="ink2" style={{ marginTop: 10 }}>
-              The recording never left this device, and it’s now gone. Only the de-identified draft you reviewed remains. This happens after every session — a promise you can watch keep itself.
-            </AppText>
-          </Card>
-          <Card tone="elevated" elevation="none" radius="md" style={{ backgroundColor: c.positiveBg, borderColor: c.positiveBg }}>
-            <AppText variant="bodyStrong">Sign-off</AppText>
-            <Row gap={8} style={{ marginTop: 8 }}>
-              <CheckIcon size={16} color={c.positive} />
-              <AppText variant="body" color="ink2" style={{ flex: 1 }}>
-                Signed by Dr. Okafor · 12 Aug 11:18 · read-only
-              </AppText>
-            </Row>
-          </Card>
-        </>
-      ) : (
-        <Card tone="elevated" radius="md" elevation="sm">
-          <AppText variant="bodyStrong">Sign-off</AppText>
-          <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
-            You are the final authority. Signing marks this note authoritative and makes it read-only. You can still append an addendum later.
-          </AppText>
-          <View style={{ height: 14 }} />
-          <Row gap={10}>
-            <Button title="Edit first" variant="secondary" onPress={() => {}} />
-            <Button title="Sign off" variant="primary" leftIcon={<CheckIcon size={16} color={c.onBrand} />} onPress={onSign} />
-          </Row>
-        </Card>
-      )}
+      {signed ? <AudioTrust /> : null}
+      <SignOff signed={signed} onSign={onSign} />
     </View>
+  );
+}
+
+/* -------------------------------------------------------- prescriptions --- */
+
+type Rx = PrepItem & { generated?: boolean; checked?: boolean; isNew?: boolean };
+
+/**
+ * Prescriptions rail (round-2 change #6, renamed from "Tasks for next session"). The
+ * clinician writes prescriptions ("+ Add", inline editable) or pulls them from the Plan
+ * section ("Generate from notes", tagged "generated"). Checklist ticking lives here.
+ */
+function PrescriptionsRail({ draft }: { draft: DraftNote }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const [items, setItems] = useState<Rx[]>(draft.prescriptions.map((p) => ({ ...p })));
+  const [generated, setGenerated] = useState(false);
+  const nextRxId = useRef(0);
+
+  const toggle = (id: string) => setItems((xs) => xs.map((x) => (x.id === id ? { ...x, checked: !x.checked } : x)));
+  const setText = (id: string, text: string) => setItems((xs) => xs.map((x) => (x.id === id ? { ...x, text } : x)));
+
+  const generateFromNotes = () => {
+    if (generated) return;
+    const plan = draft.sections.find((s) => s.marker === 'P');
+    const pulled: Rx[] = (plan?.bullets ?? []).map((b, i) => ({
+      id: `gen-${i}`,
+      text: b,
+      source: 'from Plan',
+      done: false,
+      generated: true,
+    }));
+    setItems((xs) => [...xs, ...pulled]);
+    setGenerated(true);
+  };
+
+  const add = () => {
+    const id = `rx-new-${++nextRxId.current}`;
+    setItems((xs) => [...xs, { id, text: '', source: 'added by you', done: false, isNew: true }]);
+  };
+
+  const commit = (id: string) =>
+    setItems((xs) => xs.flatMap((x) => (x.id === id ? (x.text.trim() === '' ? [] : [{ ...x, text: x.text.trim(), isNew: false }]) : [x])));
+
+  return (
+    <View>
+      <Row style={{ justifyContent: 'space-between' }}>
+        <Eyebrow>Prescriptions</Eyebrow>
+        <Badge label={String(items.length)} tone="neutral" />
+      </Row>
+
+      <Row gap={8} style={{ marginTop: 12, flexWrap: 'wrap' }}>
+        <Button
+          title="Generate from notes"
+          variant="ghost"
+          leftIcon={<SparklesIcon size={15} color={c.brand} />}
+          onPress={generateFromNotes}
+          disabled={generated}
+        />
+        <Button title="Add" variant="secondary" leftIcon={<PlusIcon size={15} color={c.ink} />} onPress={add} />
+      </Row>
+
+      <View style={{ height: 12 }} />
+      {items.map((t) => (
+        <Row key={t.id} gap={10} style={{ alignItems: 'flex-start', marginBottom: 14 }}>
+          <Pressable
+            onPress={() => toggle(t.id)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: !!t.checked }}
+            hitSlop={6}
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: 5,
+              borderWidth: 1.5,
+              borderColor: t.checked ? c.brandStrong : c.line,
+              backgroundColor: t.checked ? c.brandStrong : 'transparent',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginTop: 1,
+            }}
+          >
+            {t.checked ? <CheckIcon size={12} color={c.onBrand} /> : null}
+          </Pressable>
+          <View style={{ flex: 1 }}>
+            {t.isNew ? (
+              <TextInput
+                autoFocus
+                placeholder="New prescription…"
+                placeholderTextColor={c.ink3}
+                value={t.text}
+                onChangeText={(v) => setText(t.id, v)}
+                onBlur={() => commit(t.id)}
+                onSubmitEditing={() => commit(t.id)}
+                style={{ color: c.ink, fontFamily: theme.type.body.fontFamily, fontSize: 15, borderBottomWidth: 1, borderBottomColor: c.line, paddingVertical: 2 }}
+              />
+            ) : (
+              <Row gap={7} style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+                <AppText variant="body" style={{ textDecorationLine: t.checked ? 'line-through' : 'none', color: t.checked ? c.ink3 : c.ink }}>
+                  {t.text}
+                </AppText>
+                {t.generated ? <Badge label="generated" tone="brand" /> : null}
+              </Row>
+            )}
+            <AppText variant="small" color="ink3" style={{ marginTop: 2 }}>
+              {t.source}
+            </AppText>
+          </View>
+        </Row>
+      ))}
+      <AppText variant="small" color="ink3" style={{ marginTop: 2, lineHeight: 17 }}>
+        Your prescriptions — write them, or <AppText variant="bodyStrong" color="ink3">Generate from notes</AppText> to pull actions from the Plan section. Tick as you assign.
+      </AppText>
+    </View>
+  );
+}
+
+function ReviewCodes({ draft }: { draft: DraftNote }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  return (
+    <View>
+      <Row style={{ justifyContent: 'space-between' }}>
+        <Eyebrow>Suggested review codes</Eyebrow>
+        <Badge label={String(draft.reviewCodes.length)} tone="neutral" />
+      </Row>
+      <View style={{ height: 12 }} />
+      {draft.reviewCodes.map((rc) => (
+        <Row key={rc.code} gap={12} style={{ alignItems: 'flex-start', marginBottom: 14 }}>
+          <View style={{ backgroundColor: c.brandBg, borderRadius: theme.radii.xs, paddingVertical: 4, paddingHorizontal: 8 }}>
+            <AppText variant="small" tint={c.brand} style={{ fontFamily: theme.type.numeric.fontFamily, fontSize: 12 }}>
+              {rc.code}
+            </AppText>
+          </View>
+          <AppText variant="body" color="ink2" style={{ flex: 1 }}>
+            {rc.label}
+          </AppText>
+          <AppText variant="small" color="ink3">
+            {rc.relevance}
+          </AppText>
+        </Row>
+      ))}
+      <AppText variant="small" color="ink3" style={{ marginTop: 2 }}>
+        Suggestions only · you confirm or replace each. The risk &amp; safety check lives in the note body, not here.
+      </AppText>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------ audio trust --- */
+
+/**
+ * Audio-trust moment (round-2 change #7). Deletion is the DEFAULT — the honest copy says the
+ * recording is already gone. A visible "Keep the audio" toggle lets the clinician retain it;
+ * kept, the copy is equally honest and notes that replay-with-notes becomes available.
+ */
+function AudioTrust() {
+  const theme = useTheme();
+  const c = theme.colors;
+  const [kept, setKept] = useState(false);
+
+  const tint = kept ? c.brand : c.positive;
+  const bg = kept ? c.brandBg : c.positiveBg;
+
+  return (
+    <Card tone="elevated" elevation="none" radius="md" style={{ backgroundColor: bg, borderColor: bg }}>
+      <Row gap={9}>
+        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: tint, alignItems: 'center', justifyContent: 'center' }}>
+          <CheckIcon size={12} color={c.onBrand} />
+        </View>
+        <AppText variant="bodyStrong" tint={tint}>
+          {kept ? 'Audio kept for this session' : 'Recording deleted'}
+        </AppText>
+      </Row>
+      <AppText variant="small" color="ink2" style={{ marginTop: 8, lineHeight: 18 }}>
+        {kept
+          ? 'You chose to keep this recording. It stays encrypted on this device and never leaves it. Keeping the audio is what makes replay-with-notes possible for this session.'
+          : 'The recording never left this device, and it’s now gone — deletion is the default after every session. Only the de-identified draft you reviewed remains.'}
+      </AppText>
+
+      <Pressable
+        onPress={() => setKept((v) => !v)}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: kept }}
+        style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1, marginTop: 12 })}
+      >
+        <Row gap={9}>
+          <View
+            style={{
+              width: 34,
+              height: 19,
+              borderRadius: 999,
+              padding: 1,
+              backgroundColor: kept ? c.brand : c.sunken,
+              borderWidth: 1,
+              borderColor: kept ? c.brand : c.line,
+              alignItems: kept ? 'flex-end' : 'flex-start',
+              justifyContent: 'center',
+            }}
+          >
+            <View style={{ width: 15, height: 15, borderRadius: 8, backgroundColor: c.elevated }} />
+          </View>
+          <AppText variant="small" tint={c.ink2} style={{ fontSize: 12 }}>
+            Keep the audio for this session instead
+          </AppText>
+        </Row>
+      </Pressable>
+
+      {kept ? (
+        <Row gap={7} style={{ marginTop: 10, alignItems: 'flex-start' }}>
+          <View style={{ marginTop: 1 }}>
+            <PlayIcon size={13} color={c.brand} />
+          </View>
+          <AppText variant="small" tint={c.brand} style={{ flex: 1, fontSize: 11.5, lineHeight: 16 }}>
+            Replay-with-notes is now available — your timestamped notes highlight as it plays.
+          </AppText>
+        </Row>
+      ) : null}
+    </Card>
+  );
+}
+
+function SignOff({ signed, onSign }: { signed: boolean; onSign: () => void }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  if (signed) {
+    return (
+      <Card tone="elevated" elevation="none" radius="md" style={{ backgroundColor: c.positiveBg, borderColor: c.positiveBg }}>
+        <AppText variant="bodyStrong">Sign-off</AppText>
+        <Row gap={8} style={{ marginTop: 8 }}>
+          <CheckIcon size={16} color={c.positive} />
+          <AppText variant="body" color="ink2" style={{ flex: 1 }}>
+            Signed by Dr. Okafor · 12 Aug 11:18 · read-only
+          </AppText>
+        </Row>
+      </Card>
+    );
+  }
+  return (
+    <Card tone="elevated" radius="md" elevation="sm">
+      <AppText variant="bodyStrong">Sign-off</AppText>
+      <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
+        You are the final authority. Signing marks this note authoritative and makes it read-only. You can still append an addendum later.
+      </AppText>
+      <View style={{ height: 14 }} />
+      <Row gap={10}>
+        <Button title="Edit first" variant="secondary" onPress={() => {}} />
+        <Button title="Sign off" variant="primary" leftIcon={<CheckIcon size={16} color={c.onBrand} />} onPress={onSign} />
+      </Row>
+    </Card>
   );
 }
 
@@ -437,7 +623,7 @@ function SessionList({ signed = false }: { signed?: boolean }) {
     {
       label: 'Session 5 · today',
       time: '10:30',
-      sub: 'Presenting concerns, symptom che…',
+      sub: 'Subjective, objective, risk check, plan…',
       status: signed ? 'Signed · you' : 'Draft · review',
       active: true,
       tone: (signed ? 'positive' : 'draft') as 'positive' | 'draft',

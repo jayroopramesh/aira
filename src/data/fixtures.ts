@@ -416,33 +416,30 @@ export const AMARA_DRAFT: DraftNote = {
   sessionLabel: 'Session 5 — 12 Aug',
   sourceLine: 'From a 47-min voice note · transcribed on-device · Identifiers never left this device',
   status: 'draft',
+  // SOAP order (round-2 change #9): Subjective · Objective · Risk & Safety Check · Assessment · Plan.
+  // Risk is its own always-present section, between Objective and Assessment.
   sections: [
     {
-      id: 'sec-1',
-      index: 1,
-      title: 'Presenting Concerns',
+      id: 'sec-s',
+      marker: 'S',
+      title: 'Subjective',
       body: [
         'Amara attended for a scheduled individual session during re-engagement week. She described the past fortnight as "steadier," with fewer early-morning waking episodes since starting the sleep log. Ongoing academic pressure remains the central concern, particularly an upcoming statistics exam and a sense of being "behind everyone else" as a first-generation student.',
       ],
       quote: 'The mornings are easier now — it’s the nights before a deadline that still get me.',
     },
     {
-      id: 'sec-2',
-      index: 2,
-      title: 'Symptom Check',
-      body: ['Re-administered standardised measures this session; both continue to trend down from intake.'],
-    },
-    {
-      id: 'sec-3',
-      index: 3,
-      title: 'Clinical Impression',
+      id: 'sec-o',
+      marker: 'O',
+      title: 'Objective',
+      hasMeasures: true,
       body: [
-        'Presentation is consistent with an adjustment response with anxious and depressive features, showing steady improvement in response to behavioural activation and sleep intervention. Cognitive themes centre on perfectionism and belonging. No new risk indicators emerged this session.',
+        'Re-administered standardised measures this session; both continue to trend down from intake. Presented as engaged and reflective, with brighter affect than at intake.',
       ],
     },
     {
-      id: 'sec-4',
-      index: 4,
+      id: 'sec-risk',
+      marker: 'risk',
       title: 'Risk & Safety Check',
       isRisk: true,
       rows: [
@@ -455,14 +452,23 @@ export const AMARA_DRAFT: DraftNote = {
       ],
     },
     {
-      id: 'sec-5',
-      index: 5,
-      title: 'Plan & Next Steps',
+      id: 'sec-a',
+      marker: 'A',
+      title: 'Assessment',
       body: [
-        '• Continue sleep log; aim for consistent wake time across weekends.',
-        '• Practise exam-specific cognitive reframe; assign one worry-window per day.',
-        '• Re-administer PHQ-9 & GAD-7 next session; re-screen passive ideation (routine).',
-        '• Book Session 6 for the week of 26 Aug.',
+        'Presentation is consistent with an adjustment response with anxious and depressive features, showing steady improvement in response to behavioural activation and sleep intervention. Cognitive themes centre on perfectionism and belonging. No new risk indicators emerged this session.',
+      ],
+    },
+    {
+      id: 'sec-p',
+      marker: 'P',
+      title: 'Plan',
+      body: [],
+      bullets: [
+        'Continue sleep log; aim for consistent wake time across weekends.',
+        'Introduce exam-specific cognitive reframe; assign one worry-window per day.',
+        'Re-administer PHQ-9 & GAD-7 next session; re-screen passive ideation (routine).',
+        'Book Session 6 for the week of 26 Aug (post-exam).',
       ],
     },
   ],
@@ -476,10 +482,9 @@ export const AMARA_DRAFT: DraftNote = {
     { code: 'Z63.8', label: 'Other specified problems related to primary support', relevance: 'med' },
     { code: 'G47.00', label: 'Insomnia, unspecified', relevance: 'med' },
   ],
-  tasks: [
-    { id: 'nt1', text: 'Review sleep log', source: 'from Plan & Next Steps', done: false },
-    { id: 'nt2', text: 'Exam-specific cognitive reframe', source: 'from Plan & Next Steps', done: false },
-    { id: 'nt3', text: 'Re-administer PHQ-9 & GAD-7', source: 'screening tools', done: false },
-    { id: 'nt4', text: 'Book Session 6 · week of 26 Aug', source: 'from Plan & Next Steps', done: false },
+  // Rail prescriptions start clinician-written; "Generate from notes" pulls the Plan bullets.
+  prescriptions: [
+    { id: 'rx1', text: 'Sleep-hygiene handout + consistent wake time', source: 'added by you', done: false },
+    { id: 'rx2', text: 'Daily worry-window (10 min, same time)', source: 'added by you', done: false },
   ],
 };

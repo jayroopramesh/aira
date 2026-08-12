@@ -112,7 +112,7 @@ function PatternsView({ clientId }: { clientId: string }) {
                 On her mind — not on your report
               </AppText>
               <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
-                Naturalistic self-report from {client.name.split(' ')[0]}’s journal. Unsigned · never blended with clinical scores.
+                From {client.name.split(' ')[0]}’s <AppText variant="bodyStrong" color="ink2">companion app</AppText> — journal entries she chooses to share. Unsigned · self-reported · never blended with clinical scores.
               </AppText>
               {client.naturalistic.map((n, i) => (
                 <View key={i} style={{ marginTop: 14 }}>

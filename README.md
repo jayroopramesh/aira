@@ -7,26 +7,28 @@ This repository is the **Expo (React Native) application** — the production ap
 approved click-through prototype. Expo **replaces** the earlier SvelteKit plan as *the* Aira app
 (captain decision, 2026-08-12).
 
-> **Status:** v1 foundation. Four navigable workflows with mocked services. Crypto, transcription,
-> and live data are stubbed behind interfaces (see [Service seams](#service-seams)). The
-> recovery-key policy is an open captain decision (see [Locked v1 constraints](#locked-v1-constraints)).
+> **Status:** v1 foundation. Five navigable workflows with mocked services. Auth (account +
+> one-time recovery code), crypto, transcription, and live data are stubbed behind interfaces
+> (see [Service seams](#service-seams)). The recovery-key policy is captain-resolved
+> (see [Locked v1 constraints](#locked-v1-constraints)).
 
 ---
 
 ## What's here
 
-Four workflows, built to the s4 prototype's steps and phone-adapted:
+Five workflows, built to the s4 prototype's steps and phone-adapted:
 
 | Workflow | Steps |
 |---|---|
-| **Unlock** | greeting + mascot → keypad/dots → calm wrong-key state → decrypt transition → recovery-file screen |
-| **Get ready** | day dashboard (countdown, session cards) → client drawer (scores, timeline, last plan) → derived prep checklist → ready state |
-| **Session summary** | pre-capture → recording (waveform, on-device chip) → analysing (with Stop) → draft note (labeled clinical sections; three-pane on web, stacked on phone) → per-section edit/regenerate → sign-off → audio-deleted trust moment |
-| **Patterns** | caseload table (search, status chips, sparklines, sober risk column) → client patterns (plain-language headline *before* charts; banded chart; sparse dot-strip rule) → history timeline → acute-risk review |
+| **Welcome** (boots here when signed out) | onboarding (what Aira is · what Aira does) → create account (Emirates ID + "why?", phone, name, email, password) → one-time recovery code (reveal once, copy/save, "I saved it" gate) → login |
+| **Unlock** | login (username + password, "Encrypted with your login") → calm wrong-password state (inline recovery-code fallback) → decrypt transition |
+| **Get ready** | day dashboard (countdown, session cards) → client drawer (scores, timeline, last plan) → read-only prep reminder → ready state |
+| **Session summary** | pre-capture (read-only reminders) → recording (waveform, current-word live readout, timestamped notebox) → analysing (editable transcript) → SOAP note (S · O · Risk & Safety · A · P; three-pane on web, stacked on phone) → per-section edit/regenerate → Prescriptions rail → sign-off → audio-trust moment (delete-by-default, keep toggle) |
+| **Patterns** | caseload table (search, status chips, sparklines, sober risk column) → client patterns (plain-language headline *before* charts; banded chart; sparse dot-strip rule; companion-app journal box) → history timeline → acute-risk review |
 
 The standing calm **Escalate** affordance sits on every screen (never alarm-red, never modal — a
-dismissible sheet). The **mascot** appears only on human surfaces (unlock, wordmark); it is banned
-from charts, tables, and the risk queue.
+dismissible sheet). The **mascot** appears only on human surfaces (welcome onboarding, unlock/login,
+wordmark); it is banned from charts, tables, the risk queue, and the in-session capture screen.
 
 Rendered captures of every state (light, dark, and phone width) live in
 [`docs/screenshots/`](./docs/screenshots).
@@ -88,8 +90,8 @@ src/theme/
 - **Dark mode** is a full inversion of the palette; the theme toggle (top-right) pins a manual
   override over the system setting.
 - Reusable primitives live in `src/components/ui.tsx` (`Card`, `Button`, `Chip`, `Badge`,
-  `RiskDot`, `TrustPill`, `Avatar`, …); the mascot, charts, keypad, waveform, and escalate sheet
-  are their own components.
+  `RiskDot`, `TrustPill`, `Avatar`, …); the mascot, auth surface, highlights, charts, waveform, and
+  escalate sheet are their own components.
 
 ### Locked design decisions applied
 - Default radius 16 (8 on buttons/inputs, 22 on hero shells, pill on chips/trust/escalate).
@@ -103,16 +105,28 @@ src/theme/
 
 ## Service seams
 
-Patient data never leaves the device. Two future foundations are stubbed behind interfaces so the
+Patient data never leaves the device. Three future foundations are stubbed behind interfaces so the
 real implementations slot in without touching callers.
+
+### Auth / session — `src/services/auth.ts`
+- `AuthService` is the account + session seam in front of the vault. It models the captain-approved
+  recovery-key policy with realistic in-memory state transitions
+  (`none → awaiting-recovery-save → active`): account creation, the **one-time recovery code**
+  (generated once, revealed once), sign-in (username + password), the calm wrong-password state, and
+  the recovery-code fallback. v1 ships `MockAuthService` (the password chosen at account creation is
+  accepted, in addition to the demo default `clinicvault`; anything else drives the wrong-password
+  state). It delegates the actual vault open to `VaultStorage`. **No
+  real crypto and no server calls** — the real impl (registry check + Argon2id envelope + server-side
+  key escrow) slots in behind the same interface.
 
 ### Data / vault — `src/services/storage.ts`, `src/data/repository.ts`
 - `ClientRepository` is the seam the **encrypted vault** slots behind. v1 reads typed in-memory
   fixtures (`src/data/fixtures.ts` — the Amara K. cohort + the report's fictional clients, **no real
   PHI**). A future `VaultClientRepository` implements the same interface, decrypting on read.
-- `VaultStorage` is the **Argon2id-envelope** contract (unlock, recovery file, export/import).
-  v1 ships `MockVaultStorage` (no crypto — any 6-digit code opens; `000000` demos the wrong-key
-  state). **Crypto is deliberately not implemented in this task.**
+- `VaultStorage` is the **Argon2id-envelope** contract (unlock by password, recovery-code unlock,
+  read/write, export/import). v1 ships `MockVaultStorage` (no crypto — it just flips the in-memory
+  unlocked flag; acceptance is decided in `AuthService`). **Crypto is deliberately not implemented
+  in this task.**
 
 ### Transcription — `src/services/transcription.ts`
 Shaped to the whisper.cpp spike (`aira-whisper-spike-s5`). Transcription itself is **out of scope**;
@@ -136,19 +150,21 @@ states demo end-to-end with no native module.
   `VaultStorage` / `ClientRepository`.
 - **Draft until sign-off.** No generated note is authoritative until the clinician signs; signing
   makes it read-only.
-- **Recovery-key policy is an OPEN captain decision**
-  (backlog: `aira-ui-screens-s4-decision-recovery-key-policy`). The unlock + recovery screens are
-  built exactly as the prototype depicts (recovery-file model). **All** recovery copy is isolated in
-  `src/strings/recovery.ts`, marked `PENDING captain decision`. Nothing is built beyond the depicted
-  screens.
+- **Recovery-key policy is captain-resolved** (`decision-recovery-key-policy`). Account creation
+  collects Emirates ID + phone + name + email + password; a **one-time recovery code** is shown once
+  at setup and is the self-service path if the password is forgotten. Aira additionally escrows the
+  decrypt key server-side, released only on a manual, mutually-approved basis — deliberately **not**
+  surfaced as a UI button. Setup framing is stern but truthful (effectively unrecoverable without
+  claiming impossibility). **All** recovery + login copy is isolated in `src/strings/recovery.ts`.
 
 ### What is stubbed
 | Area | Status |
 |---|---|
-| Encryption / vault (Argon2id, recovery file, export/import) | **Stubbed** — `MockVaultStorage`, no crypto |
+| Auth (account creation, one-time recovery code, sign-in) | **Stubbed** — `MockAuthService`, in-memory state, no server |
+| Encryption / vault (Argon2id, recovery-code unlock, export/import) | **Stubbed** — `MockVaultStorage`, no crypto |
 | Transcription (whisper.rn) | **Stubbed** — `MockTranscriptionService`, mocked timing; needs a dev build |
 | Live / persisted data | **Stubbed** — typed in-memory fixtures behind `ClientRepository` |
-| Recovery-key policy | **Pending captain decision** — screens depicted, copy isolated |
+| Server-side key escrow (manual recovery path) | **Not built** — policy-only; never surfaced in UI |
 
 ---
 
@@ -157,15 +173,16 @@ states demo end-to-end with no native module.
 ```
 src/
   app/                 expo-router routes
-    unlock/            pre-auth: keypad, wrong-key, decrypt, recovery
+    welcome/           onboarding (intro · how) → create account → one-time recovery code
+    unlock/            pre-auth: login (username + password), wrong-password, decrypt
     (app)/             authed shell (top bar + workflow tab switcher + escalate)
-      today/           Get ready: dashboard → drawer → prep → ready
-      session/         Session summary: capture → recording → analysing → review
+      today/           Get ready: dashboard → drawer → prep reminder → ready
+      session/         Session summary: capture → recording → analysing → review (SOAP)
       patterns/        Patterns: caseload → client patterns → history → risk review
-  components/          Mascot, charts, keypad, waveform, escalate sheet, ui primitives
+  components/          Mascot, auth surface, Highlights, charts, waveform, escalate sheet, ui primitives
   theme/               tokens + ThemeProvider
   data/                types, fixtures (no PHI), repository interface
-  services/            storage (vault) + transcription seams
-  strings/             recovery.ts (PENDING captain decision)
+  services/            auth (account/session) + storage (vault) + transcription seams
+  strings/             recovery.ts (login + recovery copy, captain-resolved policy)
 docs/screenshots/      rendered captures of every workflow step (light/dark/phone)
 ```

@@ -26,12 +26,15 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
 (`.github/workflows/infra.yml`) — no Azure DevOps.
 
 ## Structural rules to preserve (locked design decisions)
-- Mascot only on human surfaces (unlock, wordmark) — never on charts/tables/risk queue.
+- Mascot only on human surfaces (welcome onboarding, unlock/login, wordmark) — never on
+  charts/tables/risk queue or the in-session capture screen.
 - Risk is clay, never alarm-red; colour is never the only signal (always paired with a word).
 - Escalate is a standing, dismissible sheet — never modal, never alarm.
 - Sparse series (≤ 2 readings) render as a dot-strip with no trend line.
-- Recovery-key copy is isolated in `src/strings/recovery.ts` (PENDING captain decision); don't
-  build recovery behaviour beyond the depicted screens.
+- Login + recovery copy is isolated in `src/strings/recovery.ts`; the recovery-key policy is
+  captain-resolved (`decision-recovery-key-policy`): account creation + one-time recovery code,
+  shown once. The account/session lifecycle lives in the `AuthService` seam (`src/services/auth.ts`,
+  mocked); the server-side key-escrow support path is policy-only and never surfaced in UI.
 - Patient data never leaves the device: persist through `ClientRepository` / `VaultStorage`; ASR
   through `TranscriptionService` (one-shot, model downloaded on first run, whisper.rn needs a dev
   build — not Expo Go).
