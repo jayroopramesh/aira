@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars and fill in. Do not commit terraform.tfvars itself
+# (see .gitignore) -- and never put postgres_admin_password in ANY file;
+# pass it via TF_VAR_postgres_admin_password at plan/apply time instead.
+
+project_name = "aira"
+environment  = "prod"
+location     = "uaenorth"
+
+postgres_sku_name   = "B_Standard_B1ms"
+postgres_storage_mb = 32768
+postgres_ha_enabled = false
+
+container_app_image = "ghcr.io/jayroopramesh/aira-dummy:latest"
+
+# !!! DUMMY PHASE ONLY -- see variables.tf. Must flip to true (captain
+# decision aira-tofu-plan-s10-decision-keyvault-purge-protection) before any
+# real escrow key is ever stored.
+keyvault_purge_protection_enabled = false
+
+common_tags = {
+  project    = "aira"
+  managed-by = "opentofu"
+  data-class = "phi-adjacent"
+}

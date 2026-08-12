@@ -17,6 +17,14 @@ constraints — don't duplicate it here.
 - Design tokens are ported verbatim from `aira-ui-s3/design-direction.html`; the prototype spec is
   `aira-ui-screens-s4/screens.html`. Treat those as source-of-truth for any UI change.
 
+## Server infra (`infra/`)
+OpenTofu module for the v1 server on Azure (UAE North) — dummy-application phase, nothing applied
+yet. Runbook, decisions applied, cost table, and open items are all in `infra/README.md`; don't
+duplicate them here. Sharp edges specific to working on it: Homebrew is broken on the dev machine
+(`/opt/homebrew` ownership), so `az` was installed via `pip3 install --user azure-cli` and `tofu`
+via the standalone-binary method — see `infra/README.md` "Prerequisites". CI is GitHub Actions only
+(`.github/workflows/infra.yml`) — no Azure DevOps.
+
 ## Structural rules to preserve (locked design decisions)
 - Mascot only on human surfaces (unlock, wordmark) — never on charts/tables/risk queue.
 - Risk is clay, never alarm-red; colour is never the only signal (always paired with a word).

@@ -1,0 +1,167 @@
+# Aira infra CI. GitHub Actions only -- the captain explicitly dropped Azure
+# DevOps (aira-tofu-plan-s10/report.md §7): OIDC federated login removes the
+# stored service-principal secret both reference guides relied on, and the
+# repo is already GitHub-hosted.
+#
+# `plan` runs on every PR touching infra/** -- read-only, no apply. `apply`
+# is workflow_dispatch-only, gated behind the `production-infra` GitHub
+# Environment (configure required reviewers there) -- it never runs
+# automatically. `build-dummy-app` builds+pushes the placeholder app
+# (infra/app/) that container_app_image defaults to, so the module has
+# something pullable to run.
+#
+# Required repo secrets (not created by this workflow):
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID  -- OIDC federated
+#     app registration, scoped to this repo (captain sets up post-az-login)
+#   TFSTATE_RG, TFSTATE_STORAGE_ACCOUNT                      -- from
+#     infra/bootstrap's outputs (infra/README.md step 2)
+#   POSTGRES_ADMIN_PASSWORD                                  -- from a secrets
+#     manager, never committed
+
+name: infra
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+  push:
+    branches: [main]
+    paths:
+      - "infra/app/**"
+  workflow_dispatch: {}
+
+env:
+  TOFU_VERSION: "1.9.1"
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # required for OIDC federated login
+      contents: read
+      pull-requests: write # to comment the plan on the PR, if wired up later
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+
+      - name: tofu fmt -check
+        run: tofu fmt -recursive -check
+
+      - name: Azure login (OIDC, no stored secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: tofu init
+        run: |
+          tofu init \
+            -backend-config="resource_group_name=${{ secrets.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ secrets.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=aira.tfstate"
+
+      - name: tofu validate
+        run: tofu validate
+
+      - name: tofu plan
+        env:
+          TF_VAR_postgres_admin_password: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+        run: tofu plan -out=tfplan
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: infra/tfplan
+          retention-days: 5
+
+  apply:
+    # Manual only -- never runs on push or PR. Gated on the `production-infra`
+    # GitHub Environment; configure required reviewers there so this is a
+    # human-approved step, not an automatic one.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment:
+      name: production-infra
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+
+      - name: Azure login (OIDC, no stored secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: tofu init
+        run: |
+          tofu init \
+            -backend-config="resource_group_name=${{ secrets.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ secrets.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=aira.tfstate"
+
+      - name: tofu plan
+        env:
+          TF_VAR_postgres_admin_password: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+        run: tofu plan -out=tfplan
+
+      - name: tofu apply
+        run: tofu apply -auto-approve tfplan
+
+  build-dummy-app:
+    # Builds+pushes the dummy hello-world app (infra/app/) that
+    # container_app_image defaults to. Runs on push to main so the image
+    # exists by the time anyone applies; workflow_dispatch lets it be run
+    # by hand too. No Azure credentials involved -- GHCR only.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: infra/app
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/aira-dummy:latest
+            ghcr.io/${{ github.repository_owner }}/aira-dummy:${{ github.sha }}
