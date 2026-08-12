@@ -169,7 +169,7 @@ function Section({ section, measures, editable }: { section: NoteSection; measur
   const c = theme.colors;
   const [regenerating, setRegenerating] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(section.body.join('\n\n'));
+  const [text, setText] = useState([...section.body, ...(section.bullets ?? [])].join('\n\n'));
 
   const isRisk = section.isRisk;
 

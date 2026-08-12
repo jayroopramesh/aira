@@ -72,6 +72,7 @@ export interface AuthService {
 export class MockAuthService implements AuthService {
   private status: AccountStatus = 'none';
   private recoveryCode: string[] = [...RECOVERY_WORDS];
+  private createdPassword: string | null = null;
 
   constructor(private readonly vault: VaultStorage) {}
 
@@ -79,9 +80,10 @@ export class MockAuthService implements AuthService {
     return this.status;
   }
 
-  async createAccount(_details: AccountDetails): Promise<{ recoveryCode: string[] }> {
+  async createAccount(details: AccountDetails): Promise<{ recoveryCode: string[] }> {
     // A real impl derives the vault key from the password and escrows a wrapped copy;
-    // here we just move state forward and hand back the one-time code.
+    // here we remember the chosen password, move state forward, and hand back the code.
+    this.createdPassword = details.password;
     this.recoveryCode = [...RECOVERY_WORDS];
     this.status = 'awaiting-recovery-save';
     return { recoveryCode: this.recoveryCode };
@@ -96,16 +98,23 @@ export class MockAuthService implements AuthService {
   }
 
   async signIn(_username: string, password: string): Promise<UnlockResult> {
-    // Demo rule: DEMO_PASSWORD opens; anything else reproduces the calm wrong-password state.
-    if (password !== DEMO_PASSWORD) return { ok: false, reason: 'wrong-key' };
+    // Demo rule: the password chosen at account creation or DEMO_PASSWORD opens;
+    // anything else reproduces the calm wrong-password state.
+    const accepted = password === DEMO_PASSWORD || (this.createdPassword !== null && password === this.createdPassword);
+    if (!accepted) return { ok: false, reason: 'wrong-key' };
     const res = await this.vault.unlock(password);
     if (res.ok) this.status = 'active';
     return res;
   }
 
   async signInWithRecoveryCode(code: string): Promise<UnlockResult> {
-    // Any non-empty code opens in the mock; the real impl checks the saved envelope.
-    if (!code.trim()) return { ok: false, reason: 'wrong-key' };
+    // The entered words must match the canonical 12-word code (no crypto — a plain
+    // normalized word-sequence check); the real impl checks the saved envelope.
+    const normalize = (s: string) => s.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const entered = normalize(code);
+    const expected = normalize(this.recoveryCode.join(' '));
+    const matches = entered.length === expected.length && entered.every((w, i) => w === expected[i]);
+    if (!matches) return { ok: false, reason: 'wrong-key' };
     const res = await this.vault.unlockWithRecoveryCode(code);
     if (res.ok) this.status = 'active';
     return res;

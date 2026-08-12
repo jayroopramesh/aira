@@ -11,7 +11,7 @@ import { useTheme } from '../../../theme/ThemeProvider';
 
 /**
  * In-place client drawer (Heidi/Time2book pattern): latest scores, history timeline, and
- * the last signed plan — which is explicitly flagged as becoming today's prep checklist.
+ * the last signed plan — surfaced as read-only prep reminders (Highlights).
  * Presented as a bottom sheet on phone / modal on web.
  */
 export default function ClientDrawer() {

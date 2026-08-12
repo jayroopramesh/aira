@@ -113,8 +113,9 @@ real implementations slot in without touching callers.
   recovery-key policy with realistic in-memory state transitions
   (`none → awaiting-recovery-save → active`): account creation, the **one-time recovery code**
   (generated once, revealed once), sign-in (username + password), the calm wrong-password state, and
-  the recovery-code fallback. v1 ships `MockAuthService` (demo password `clinicvault` opens; anything
-  else drives the wrong-password state). It delegates the actual vault open to `VaultStorage`. **No
+  the recovery-code fallback. v1 ships `MockAuthService` (the password chosen at account creation is
+  accepted, in addition to the demo default `clinicvault`; anything else drives the wrong-password
+  state). It delegates the actual vault open to `VaultStorage`. **No
   real crypto and no server calls** — the real impl (registry check + Argon2id envelope + server-side
   key escrow) slots in behind the same interface.
 

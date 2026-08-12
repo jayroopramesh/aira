@@ -104,7 +104,7 @@ export type Client = {
   // Detail:
   measures: MeasureSeries[];
   timeline: TimelineEntry[];
-  lastPlan: PrepItem[]; // the last signed plan → becomes prep checklist
+  lastPlan: PrepItem[]; // the last signed plan → shown as read-only prep reminders
   naturalistic?: { date: string; body: string }[];
   // Risk-review specifics (only for acute clients):
   safety?: {
