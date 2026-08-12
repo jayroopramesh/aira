@@ -33,7 +33,6 @@ flows (dark shots emulate `prefers-color-scheme: dark`, which the theme follows)
 ## Patterns
 - `r2r3-patterns-1-caseload` · caseload table (search, chips, sparklines, sober risk column)
 - `r2r3-patterns-2-client` · client patterns; naturalistic box labelled **companion app**
-- `r2r3-patterns-companion` · same client view (companion-app framing focus)
 - `r2r3-patterns-3-history` · session-history timeline (journal entries → "Companion app")
 - `r2r3-patterns-4-risk` · acute-risk review (clay, calm, the word "review")
 - `r2r3-patterns-5-escalate` · standing Escalate sheet (never alarm-red, never modal)
