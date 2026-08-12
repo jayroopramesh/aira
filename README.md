@@ -1,7 +1,21 @@
-# Aira
+<div align="center">
+  <img src="assets/brand/logo.png" alt="Aira" width="140" height="140" />
 
-Privacy-first documentation and longitudinal-insight support for mental-health counselors.
-Patient data stays on the counselor's own device, encrypted under a password only they hold.
+  <h1>Aira</h1>
+
+  <p><strong>Your sessions, understood — and kept only by you.</strong></p>
+
+  <p>
+    <img alt="Expo SDK 57" src="https://img.shields.io/badge/Expo-SDK%2057-000020?style=flat&logo=expo&logoColor=white">
+    <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-6.x-3178C6?style=flat&logo=typescript&logoColor=white">
+    <img alt="Platforms" src="https://img.shields.io/badge/platform-iOS%20%7C%20Android%20%7C%20Web-6b7280">
+  </p>
+</div>
+
+Aira is a privacy-first documentation and longitudinal-insight app for mental-health counselors: a
+post-session scribe that turns a recorded session into a draft SOAP note, then surfaces
+plain-language patterns across a caseload over time. Patient data stays **on the counselor's own
+device**, encrypted under a password only they hold — nothing is synced to a server.
 
 This repository is the **Expo (React Native) application** — the production app that realises the
 approved click-through prototype. Expo **replaces** the earlier SvelteKit plan as *the* Aira app
@@ -11,6 +25,12 @@ approved click-through prototype. Expo **replaces** the earlier SvelteKit plan a
 > one-time recovery code), crypto, transcription, and live data are stubbed behind interfaces
 > (see [Service seams](#service-seams)). The recovery-key policy is captain-resolved
 > (see [Locked v1 constraints](#locked-v1-constraints)).
+
+<p align="center">
+  <img src="docs/screenshots/r2r3-today-1-dashboard-light.png" alt="Get ready dashboard (light)" width="32%" />
+  <img src="docs/screenshots/r2r3-session-4-note-soap-dark.png" alt="SOAP note, session summary (dark)" width="32%" />
+  <img src="docs/screenshots/r2r3-patterns-2-client-light.png" alt="Client patterns view (light)" width="32%" />
+</p>
 
 ---
 
