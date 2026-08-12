@@ -19,8 +19,6 @@ export const recoveryStrings = {
   loginSubtitle: 'Sign in to decrypt today’s notes. Everything below stays on this device.',
   usernameLabel: 'Username',
   passwordLabel: 'Password',
-  showLabel: 'Show',
-  hideLabel: 'Hide',
   signInCta: 'Sign in & decrypt',
   demoWrongLink: 'See a wrong-password state',
   createAccountLink: 'New to Aira? Create an account',
@@ -39,6 +37,7 @@ export const recoveryStrings = {
   recoveryCodeHint:
     'Enter the 12-word code you saved when you created your vault. It unlocks the vault and lets you set a new password.',
   recoveryCodeCta: 'Unlock with recovery code',
+  recoveryCodeError: 'That code didn’t match — check the 12 words and spacing.',
 
   // Decrypt transition
   decryptingEyebrow: 'Signed in',

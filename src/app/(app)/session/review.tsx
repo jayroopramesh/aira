@@ -368,7 +368,7 @@ function ReviewRail({ draft, signed, onSign }: { draft: DraftNote; signed: boole
 
 /* -------------------------------------------------------- prescriptions --- */
 
-type Rx = PrepItem & { generated?: boolean; checked?: boolean };
+type Rx = PrepItem & { generated?: boolean; checked?: boolean; isNew?: boolean };
 
 /**
  * Prescriptions rail (round-2 change #6, renamed from "Tasks for next session"). The
@@ -399,8 +399,11 @@ function PrescriptionsRail({ draft }: { draft: DraftNote }) {
   };
 
   const add = () => {
-    setItems((xs) => [...xs, { id: `rx-new-${xs.length}`, text: '', source: 'added by you', done: false }]);
+    setItems((xs) => [...xs, { id: `rx-new-${xs.length}`, text: '', source: 'added by you', done: false, isNew: true }]);
   };
+
+  const commit = (id: string) =>
+    setItems((xs) => xs.flatMap((x) => (x.id === id ? (x.text.trim() === '' ? [] : [{ ...x, text: x.text.trim(), isNew: false }]) : [x])));
 
   return (
     <View>
@@ -443,12 +446,15 @@ function PrescriptionsRail({ draft }: { draft: DraftNote }) {
             {t.checked ? <CheckIcon size={12} color={c.onBrand} /> : null}
           </Pressable>
           <View style={{ flex: 1 }}>
-            {t.text === '' ? (
+            {t.isNew ? (
               <TextInput
                 autoFocus
                 placeholder="New prescription…"
                 placeholderTextColor={c.ink3}
+                value={t.text}
                 onChangeText={(v) => setText(t.id, v)}
+                onBlur={() => commit(t.id)}
+                onSubmitEditing={() => commit(t.id)}
                 style={{ color: c.ink, fontFamily: theme.type.body.fontFamily, fontSize: 15, borderBottomWidth: 1, borderBottomColor: c.line, paddingVertical: 2 }}
               />
             ) : (

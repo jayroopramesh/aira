@@ -88,22 +88,6 @@ export function SearchIcon({ size = 18, color = 'currentColor', strokeWidth = 2 
   );
 }
 
-export function BiometricIcon({ size = 22, color = 'currentColor', strokeWidth = 1.8 }: IconProps) {
-  return (
-    <Svg {...base(size, strokeWidth)} stroke={color}>
-      <Path d="M5 8a10 10 0 0114 0M8 11a6 6 0 018 0M12 14v3M9 17v1M15 16v2" />
-    </Svg>
-  );
-}
-
-export function BackspaceIcon({ size = 22, color = 'currentColor', strokeWidth = 1.8 }: IconProps) {
-  return (
-    <Svg {...base(size, strokeWidth)} stroke={color}>
-      <Path d="M21 5H8L2 12l6 7h13a1 1 0 001-1V6a1 1 0 00-1-1zM17 9l-6 6M11 9l6 6" />
-    </Svg>
-  );
-}
-
 export function CheckIcon({ size = 16, color = 'currentColor', strokeWidth = 2.4 }: IconProps) {
   return (
     <Svg {...base(size, strokeWidth)} stroke={color}>

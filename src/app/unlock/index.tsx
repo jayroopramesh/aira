@@ -36,6 +36,7 @@ export default function UnlockScreen() {
   const [password, setPassword] = useState('clinicvault');
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState('');
+  const [recoveryError, setRecoveryError] = useState(false);
 
   const goDecrypt = useCallback(() => {
     setPhase('decrypting');
@@ -49,8 +50,9 @@ export default function UnlockScreen() {
   }, [username, password, goDecrypt]);
 
   const unlockWithRecovery = useCallback(async () => {
-    const res = await authService.signInWithRecoveryCode(recoveryCode || 'harbor lantern cedar');
+    const res = await authService.signInWithRecoveryCode(recoveryCode);
     if (res.ok) goDecrypt();
+    else setRecoveryError(true);
   }, [recoveryCode, goDecrypt]);
 
   if (phase === 'decrypting') return <Decrypting />;
@@ -103,10 +105,14 @@ export default function UnlockScreen() {
               <AuthField
                 label={R.recoveryCodeLabel}
                 value={recoveryCode}
-                onChangeText={setRecoveryCode}
+                onChangeText={(v) => {
+                  setRecoveryCode(v);
+                  setRecoveryError(false);
+                }}
                 placeholder={R.recoveryCodePlaceholder}
                 autoCapitalize="none"
-                hint={R.recoveryCodeHint}
+                error={recoveryError}
+                hint={recoveryError ? R.recoveryCodeError : R.recoveryCodeHint}
               />
               <AuthSubmit title={R.recoveryCodeCta} onPress={unlockWithRecovery} />
             </View>
