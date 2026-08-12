@@ -27,8 +27,8 @@ Five workflows, built to the s4 prototype's steps and phone-adapted:
 | **Patterns** | caseload table (search, status chips, sparklines, sober risk column) → client patterns (plain-language headline *before* charts; banded chart; sparse dot-strip rule; companion-app journal box) → history timeline → acute-risk review |
 
 The standing calm **Escalate** affordance sits on every screen (never alarm-red, never modal — a
-dismissible sheet). The **mascot** appears only on human surfaces (unlock, wordmark); it is banned
-from charts, tables, and the risk queue.
+dismissible sheet). The **mascot** appears only on human surfaces (welcome onboarding, unlock/login,
+wordmark); it is banned from charts, tables, the risk queue, and the in-session capture screen.
 
 Rendered captures of every state (light, dark, and phone width) live in
 [`docs/screenshots/`](./docs/screenshots).
@@ -90,8 +90,8 @@ src/theme/
 - **Dark mode** is a full inversion of the palette; the theme toggle (top-right) pins a manual
   override over the system setting.
 - Reusable primitives live in `src/components/ui.tsx` (`Card`, `Button`, `Chip`, `Badge`,
-  `RiskDot`, `TrustPill`, `Avatar`, …); the mascot, charts, keypad, waveform, and escalate sheet
-  are their own components.
+  `RiskDot`, `TrustPill`, `Avatar`, …); the mascot, auth surface, highlights, charts, waveform, and
+  escalate sheet are their own components.
 
 ### Locked design decisions applied
 - Default radius 16 (8 on buttons/inputs, 22 on hero shells, pill on chips/trust/escalate).
