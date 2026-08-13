@@ -8,7 +8,7 @@ import { AppText, Badge, Button, Card, Divider, Eyebrow, Row, TrustPill } from '
 import { ZeroState } from '../../../components/ZeroState';
 import { hasGroq } from '../../../config/env';
 import { useClient, useDraftNote } from '../../../data/DataProvider';
-import { DraftNote, NoteSection, PrepItem } from '../../../data/types';
+import { Client, DraftNote, NoteSection, PrepItem } from '../../../data/types';
 import { authService } from '../../../services/auth';
 import { useTheme } from '../../../theme/ThemeProvider';
 
@@ -62,7 +62,7 @@ export default function ReviewNote() {
   const showSessions = !!client && client.sessionNumber > 1;
 
   const rail = <ReviewRail draft={draft} signed={signed} onSign={sign} clinician={clinician} signedAt={signedAt} />;
-  const sessions = <SessionList name={client?.name ?? 'this client'} signed={signed} />;
+  const sessions = client ? <SessionList client={client} signed={signed} /> : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
@@ -763,55 +763,62 @@ function SignOff({ signed, onSign, clinician, signedAt }: { signed: boolean; onS
   );
 }
 
-function SessionList({ name, signed = false }: { name: string; signed?: boolean }) {
+/**
+ * The session-history rail — derived from THIS client's own timeline (N1), never a hardcoded fixture
+ * list. The top entry is the session currently under review (Draft/Signed by you); earlier entries
+ * are labelled by their real type, so the rail can never assert another client's history under this
+ * client's name.
+ */
+function SessionList({ client, signed }: { client: Client; signed: boolean }) {
   const theme = useTheme();
   const c = theme.colors;
-  const rows = [
-    {
-      label: 'Session 5 · today',
-      time: '10:30',
-      sub: 'Subjective, objective, risk check, plan…',
-      status: signed ? 'Signed · you' : 'Draft · review',
-      active: true,
-      tone: (signed ? 'positive' : 'draft') as 'positive' | 'draft',
-    },
-    { label: 'Session 4', time: '5 Apr', sub: 'Sleep hygiene focus; PHQ-9 11.', status: 'Signed · you', active: false, tone: 'positive' as const },
-    { label: 'Session 3', time: '8 Mar', sub: 'First-gen pressure; values action.', status: 'Signed · you', active: false, tone: 'positive' as const },
-    { label: 'Session 2', time: '9 Feb', sub: 'Passive ideation screened — no plan.', status: 'Signed · you', active: false, tone: 'positive' as const },
-    { label: 'Intake', time: '12 Jan', sub: 'PHQ-9 18 · GAD-7 14.', status: 'Signed · you', active: false, tone: 'positive' as const },
-  ];
+
+  const statusFor = (kind: string, active: boolean): { label: string; tone: 'positive' | 'draft' | 'brand' | 'neutral' } => {
+    if (active) return signed ? { label: 'Signed · you', tone: 'positive' } : { label: 'Draft · review', tone: 'draft' };
+    if (kind === 'session' || kind === 'intake') return { label: 'Signed · you', tone: 'positive' };
+    if (kind === 'safety') return { label: 'Safety check', tone: 'brand' };
+    return { label: kind.charAt(0).toUpperCase() + kind.slice(1), tone: 'neutral' };
+  };
+
   return (
     <View>
-      <Eyebrow>Sessions · {name}</Eyebrow>
+      <Eyebrow>Sessions · {client.name}</Eyebrow>
       <View style={{ height: 12 }} />
-      {rows.map((r) => (
-        <View
-          key={r.label}
-          style={{
-            backgroundColor: r.active ? c.brandBg : 'transparent',
-            borderRadius: theme.radii.sm,
-            padding: 12,
-            marginBottom: 6,
-            borderLeftWidth: r.active ? 3 : 0,
-            borderLeftColor: c.brand,
-          }}
-        >
-          <Row style={{ justifyContent: 'space-between' }}>
-            <AppText variant="bodyStrong" style={{ fontSize: 14 }}>
-              {r.label}
-            </AppText>
-            <AppText variant="small" color="ink3" style={{ fontSize: 11 }}>
-              {r.time}
-            </AppText>
-          </Row>
-          <AppText variant="small" color="ink3" numberOfLines={1} style={{ marginTop: 4 }}>
-            {r.sub}
-          </AppText>
-          <View style={{ marginTop: 8 }}>
-            <Badge label={r.status} tone={r.tone} />
+      {client.timeline.map((entry, i) => {
+        const active = i === 0;
+        const status = statusFor(entry.kind, active);
+        const sub = entry.scores || entry.body;
+        return (
+          <View
+            key={entry.id}
+            style={{
+              backgroundColor: active ? c.brandBg : 'transparent',
+              borderRadius: theme.radii.sm,
+              padding: 12,
+              marginBottom: 6,
+              borderLeftWidth: active ? 3 : 0,
+              borderLeftColor: c.brand,
+            }}
+          >
+            <Row style={{ justifyContent: 'space-between' }}>
+              <AppText variant="bodyStrong" style={{ fontSize: 14 }}>
+                {entry.title ?? (entry.kind.charAt(0).toUpperCase() + entry.kind.slice(1))}
+              </AppText>
+              <AppText variant="small" color="ink3" style={{ fontSize: 11 }}>
+                {entry.date}
+              </AppText>
+            </Row>
+            {sub ? (
+              <AppText variant="small" color="ink3" numberOfLines={1} style={{ marginTop: 4 }}>
+                {sub}
+              </AppText>
+            ) : null}
+            <View style={{ marginTop: 8 }}>
+              <Badge label={status.label} tone={status.tone} />
+            </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
