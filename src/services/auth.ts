@@ -3,9 +3,9 @@
  *
  * This is where the Welcome flow (create account → one-time recovery code) and the
  * Unlock flow (username + password, wrong-password, recovery-code fallback) get their
- * state. It is a MOCK: no real crypto, no server calls. It models the captain-approved
- * recovery-key policy (see strings/recovery.ts) with realistic in-memory state
- * transitions so the screens demo end-to-end:
+ * state. It models the captain-approved recovery-key policy (see strings/recovery.ts);
+ * the app-wide handle is `SupabaseAuthService` (real signup/login) when accounts are
+ * configured and `MockAuthService` (no crypto, no server calls) otherwise:
  *
  *   none ──createAccount()──▶ awaiting-recovery-save ──markRecoverySaved()──▶ active
  *   active ──signIn()/signInWithRecoveryCode()──▶ unlocked vault (delegated to VaultStorage)
@@ -13,8 +13,8 @@
  * The recovery code is generated ONCE at account creation and never exposed again — the
  * one-time reveal on the recovery screen is the only time it is shown. Aira additionally
  * escrows the decrypt key server-side (manual, mutually-approved release only); that path
- * is deliberately NOT surfaced in the UI. The real implementation replaces this mock with
- * an Argon2id envelope + registry check without touching callers.
+ * is deliberately NOT surfaced in the UI. The production implementation adds an Argon2id
+ * envelope + registry check behind the same interface without touching callers.
  */
 
 import { hasSupabase } from '../config/env';

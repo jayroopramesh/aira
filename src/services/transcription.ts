@@ -1,9 +1,9 @@
 /**
  * TranscriptionService — the on-device ASR seam.
  *
- * Transcription itself is OUT OF SCOPE for v1 (a separate whisper.cpp spike ran the
- * benchmark). This interface is shaped to that spike's findings so `whisper.rn` slots in
- * later without touching callers. Key decisions the seam encodes:
+ * ON-DEVICE transcription itself is OUT OF SCOPE for v1 (a separate whisper.cpp spike ran
+ * the benchmark). This interface is shaped to that spike's findings so `whisper.rn` slots
+ * in later without touching callers. Key decisions the seam encodes:
  *
  *   • ONE-SHOT, post-session transcription — NOT streaming. Naive fixed-window chunking
  *     reproducibly hallucinates words at chunk boundaries; live transcription waits for a
@@ -18,8 +18,9 @@
  *   • After ASR, the transcript passes through on-device de-identification (OpenMed) before
  *     anything is drafted — identifiers never leave the device. Modelled as `deidentify`.
  *
- * v1 uses `MockTranscriptionService` (mocked timing, canned transcript) so the session
- * flow's recording/analysing states demo end-to-end with no native module.
+ * The app-wide handle is `GroqTranscriptionService` (whisper-large-v3 — a disclosed cloud
+ * hop, see its doc comment below) when Groq is configured, and `MockTranscriptionService`
+ * (mocked timing, canned transcript) otherwise; neither needs a native module.
  */
 
 import { env, hasGroq } from '../config/env';
