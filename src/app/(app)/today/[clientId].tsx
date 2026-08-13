@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ClientNotFound } from '../../../components/ClientNotFound';
@@ -126,8 +126,8 @@ export default function ClientDrawer() {
 /**
  * Editable patient-details card (C2). Sits beside the client's name, ABOVE the optional SALAMA
  * integration. The clinician can tap "Add details" to edit each field inline and jot a free-text
- * note. Edits persist per client through the vault seam ("Done" saves) — device-local, no PHI
- * leaves the device.
+ * note. Every edit persists per client through the vault seam — device-local, no PHI leaves the
+ * device — so closing the drawer by any route (Done, X, Close, "Open prep reminder") keeps it.
  */
 function PatientDetails({ client }: { client: Client }) {
   const theme = useTheme();
@@ -145,6 +145,22 @@ function PatientDetails({ client }: { client: Client }) {
   const [values, setValues] = useState<string[]>(() => saved.values ?? initial.map((d) => d.value));
   const [extra, setExtra] = useState(saved.extra ?? '');
 
+  // Persist on every edit, not just on "Done": the header X, the footer Close and "Open prep
+  // reminder" all unmount this card, and the free-text box promises the text stays on this device.
+  // The mount pass is skipped so the fictional defaults never overwrite what was saved earlier.
+  const firstRender = useRef(true);
+  // `savePatientDetails` is re-created on every snapshot change (i.e. by its own write), so it is
+  // held in a ref rather than declared as a dependency — depending on it would re-save in a loop.
+  const saveRef = useRef(savePatientDetails);
+  saveRef.current = savePatientDetails;
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    saveRef.current(client.id, { values, extra });
+  }, [values, extra, client.id]);
+
   const inputStyle = {
     flex: 1,
     textAlign: 'right' as const,
@@ -161,10 +177,7 @@ function PatientDetails({ client }: { client: Client }) {
       <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
         <Eyebrow>Patient details</Eyebrow>
         <Pressable
-          onPress={() => {
-            if (editing) savePatientDetails(client.id, { values, extra });
-            setEditing((e) => !e);
-          }}
+          onPress={() => setEditing((e) => !e)}
           accessibilityRole="button"
           accessibilityLabel={editing ? 'Done editing patient details' : 'Add details'}
           style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}

@@ -39,6 +39,20 @@ function computeCaseloadKpis(clients: Client[]): CaseloadKpi[] {
   ];
 }
 
+/**
+ * The day-board "Notes to sign" tile counts the notes actually awaiting a signature (F15). It was a
+ * hand-authored fixture constant, so signing a note left the tile claiming work that no longer
+ * existed — the same class of contradiction computeCaseloadKpis closed for the caseload tiles.
+ */
+function withDerivedGlance(day: DayDashboard | null, notes: Record<string, DraftNote[]>): DayDashboard | null {
+  if (!day) return null;
+  const unsigned = Object.values(notes).reduce((n, list) => n + list.filter((x) => x.status !== 'signed').length, 0);
+  return {
+    ...day,
+    glance: day.glance.map((g) => (/notes to sign/i.test(g.label) ? { ...g, value: String(unsigned) } : g)),
+  };
+}
+
 type DataContextValue = {
   hydrated: boolean;
   clients: Client[];
@@ -179,7 +193,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       hydrated,
       clients: snapshot.clients,
       clientsById,
-      dayDashboard: snapshot.dayDashboard,
+      dayDashboard: withDerivedGlance(snapshot.dayDashboard, snapshot.notes),
       caseloadKpis: computeCaseloadKpis(snapshot.clients),
       notes: snapshot.notes,
       patientDetails: snapshot.patientDetails,

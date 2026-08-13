@@ -78,7 +78,7 @@ export default function ReviewNote() {
   const rail = <ReviewRail draft={draft} signed={signed} onSign={sign} clinician={signedByName} signedAt={signedAt} />;
   const sessions =
     client && showSessions ? (
-      <SessionList clientId={client.id} clientName={client.name} notes={notes} activeIndex={noteIndex} signed={signed} />
+      <SessionList clientId={client.id} clientName={client.name} notes={notes} activeIndex={noteIndex} clinician={clinician} />
     ) : null;
 
   return (
@@ -791,21 +791,21 @@ function SignOff({ signed, onSign, clinician, signedAt }: { signed: boolean; onS
 /**
  * The session rail — the client's OWN retained notes (up to 3, newest first — C4), never a hardcoded
  * fixture list (N1). Each entry switches the review pane to that note, so an earlier session's full
- * note text stays reachable instead of being overwritten. The active note reflects the live sign
- * state; earlier retained notes show their own persisted status.
+ * note text stays reachable instead of being overwritten. Every row — active or not — reads its own
+ * persisted status and signer, so an attestation is never attributed to the wrong clinician.
  */
 function SessionList({
   clientId,
   clientName,
   notes,
   activeIndex,
-  signed,
+  clinician,
 }: {
   clientId: string;
   clientName: string;
   notes: DraftNote[];
   activeIndex: number;
-  signed: boolean;
+  clinician: string;
 }) {
   const theme = useTheme();
   const c = theme.colors;
@@ -817,13 +817,12 @@ function SessionList({
       <View style={{ height: 12 }} />
       {notes.map((n, i) => {
         const active = i === activeIndex;
-        const status: { label: string; tone: 'positive' | 'draft' | 'neutral' } = active
-          ? signed
-            ? { label: 'Signed · you', tone: 'positive' }
-            : { label: 'Draft · review', tone: 'draft' }
-          : n.status === 'signed'
-            ? { label: 'Signed · you', tone: 'positive' }
-            : { label: 'Earlier note', tone: 'neutral' };
+        const status: { label: string; tone: 'positive' | 'draft' | 'neutral' } =
+          n.status === 'signed'
+            ? { label: `Signed · ${!n.signedBy || n.signedBy === clinician ? 'you' : n.signedBy}`, tone: 'positive' }
+            : active
+              ? { label: 'Draft · review', tone: 'draft' }
+              : { label: 'Earlier note', tone: 'neutral' };
         return (
           <Pressable
             key={i}

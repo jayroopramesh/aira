@@ -490,11 +490,18 @@ function looksLikeClinicalText(text: string): boolean {
     'session', 'feel', 'anxi', 'depress', 'sleep', 'mood', 'therap', 'counsel', 'stress', 'worry',
     'worried', 'cope', 'coping', 'support', 'exam', 'panic', 'medication', 'safety', 'symptom',
     'emotion', 'relationship', 'family', 'school', 'overwhelm', 'breathing', 'plan', 'week',
+    // Clinician-voice (third-person) framing: a real note-taking transcript is often written ABOUT
+    // the client rather than in their own first-person words, so the vocabulary must cover both.
+    'client', 'patient', 'report', 'present', 'attend', 'screen', 'ideation', 'self-harm',
+    'cognitive', 'reframe', 'fortnight', 'academic', 'pressure', 'engag', 'affect', 'discuss',
+    'denie', 'denied', 'agreed', 'goal', 'homework', 'referral', 'follow-up', 'intake',
   ];
   const keywordHits = CLINICAL.filter((k) => lower.includes(k)).length;
   const firstPerson = (lower.match(/\b(i|i'm|im|my|me|myself|we)\b/g) ?? []).length;
-  // Clinical if it has a spread of clinical vocabulary OR a strong first-person self-report density.
-  return keywordHits >= 3 || firstPerson >= words.length * 0.04;
+  // Clinical if it has a spread of clinical vocabulary, or reads as first-person self-report that
+  // is at least ON a clinical topic — first-person density alone is ordinary conversational shape
+  // (a phone call about an invoice scores the same as a client describing their week).
+  return keywordHits >= 3 || (keywordHits >= 1 && firstPerson >= words.length * 0.04);
 }
 
 function Analysing({
@@ -569,7 +576,11 @@ function Analysing({
 
   const label =
     stage === 'deidentifying'
-      ? 'De-identifying…'
+      ? // F9: in demo mode the audio goes to the cloud and nothing is de-identified on the way —
+        // only the no-keys on-device path may claim that step.
+        hasGroq
+        ? 'Finalising…'
+        : 'De-identifying…'
       : stage === 'transcribing'
         ? 'Transcribing…'
         : stage === 'drafting'

@@ -8,7 +8,7 @@ import { BandedChart, DotStrip, ScaleChart } from '../../../components/charts';
 import { ArrowRight, PhoneIcon, ShieldIcon } from '../../../components/icons';
 import { AppText, Avatar, Button, Card, Chip, Eyebrow, Row, RiskDot, TrustPill } from '../../../components/ui';
 import { AMARA_SCALES } from '../../../data/scales';
-import { useClient } from '../../../data/DataProvider';
+import { useClient, useClientNotes } from '../../../data/DataProvider';
 import { Client } from '../../../data/types';
 import { useTheme } from '../../../theme/ThemeProvider';
 
@@ -20,6 +20,38 @@ export default function ClientPatterns() {
   if (!client) return <ClientNotFound />;
   const showRisk = risk === '1' || client.risk === 'acute';
   return showRisk && client.safety ? <RiskReview clientId={client.id} /> : <PatternsView clientId={client.id} />;
+}
+
+/**
+ * The doors out of a client's file: their session history, and — when notes are actually retained —
+ * the note itself. Without the note door, a captured note and its sign-off are only reachable in the
+ * moments right after a capture (F5 / C4), so the client file must offer a way back in.
+ */
+function ClientFileDoors({ clientId }: { clientId: string }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const router = useRouter();
+  const notes = useClientNotes(clientId);
+
+  const door = (label: string, onPress: () => void) => (
+    <Pressable onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}>
+      <Card elevation="sm" padded={false} radius="sm" style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
+        <Row gap={8}>
+          <AppText variant="bodyStrong">{label}</AppText>
+          <ArrowRight size={16} color={c.ink} />
+        </Row>
+      </Card>
+    </Pressable>
+  );
+
+  return (
+    <Row gap={theme.spacing.sm} style={{ flexWrap: 'wrap' }}>
+      {notes.length
+        ? door('Open session note', () => router.push(`/(app)/session/review?clientId=${encodeURIComponent(clientId)}`))
+        : null}
+      {door('Session history', () => router.push(`/(app)/patterns/history?clientId=${encodeURIComponent(clientId)}`))}
+    </Row>
+  );
 }
 
 /**
@@ -44,15 +76,8 @@ function NoReadingsYet({ client }: { client: Client }) {
           </View>
         </Row>
         {/* A freshly-captured client's signed note is only reachable through here (F5) — the sparse
-            state must still surface the session-history door, not just the full patterns view. */}
-        <Pressable onPress={() => router.push(`/(app)/patterns/history?clientId=${client.id}`)} style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}>
-          <Card elevation="sm" padded={false} radius="sm" style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
-            <Row gap={8}>
-              <AppText variant="bodyStrong">Session history</AppText>
-              <ArrowRight size={16} color={c.ink} />
-            </Row>
-          </Card>
-        </Pressable>
+            state must still surface the note and history doors, not just the full patterns view. */}
+        <ClientFileDoors clientId={client.id} />
       </Row>
       <View style={{ height: theme.spacing.lg }} />
       <Card tone="sunken" elevation="none" radius="lg" style={{ backgroundColor: c.brandBg, borderColor: c.brandBd }}>
@@ -123,14 +148,7 @@ function PatternsView({ clientId }: { clientId: string }) {
             </Row>
           </View>
         </Row>
-        <Pressable onPress={() => router.push(`/(app)/patterns/history?clientId=${client.id}`)} style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}>
-          <Card elevation="sm" padded={false} radius="sm" style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
-            <Row gap={8}>
-              <AppText variant="bodyStrong">Session history</AppText>
-              <ArrowRight size={16} color={c.ink} />
-            </Row>
-          </Card>
-        </Pressable>
+        <ClientFileDoors clientId={client.id} />
       </Row>
 
       {/* Plain-language headline FIRST — before any chart (stoic. pattern). */}
