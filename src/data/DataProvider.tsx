@@ -10,7 +10,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT } from './repository';
 import { CaseloadKpi, Client, DayDashboard, DraftNote } from './types';
-import { clientFromSession } from './sessionClient';
+import { appendSessionToClient, clientFromSession } from './sessionClient';
+
+const normalizeName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
 
 type DataContextValue = {
   hydrated: boolean;
@@ -74,11 +76,29 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await persist({ ...snapshot, notes: { ...snapshot.notes, [existingId]: note } });
         return existingId;
       }
+      const dateLabel = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+      const name = opts?.name?.trim() || 'New client';
+
+      // Repeat session for a client we already captured under this name → fold it in rather than
+      // minting a duplicate (F3), so trends accumulate and the session history stays reachable.
+      // Scoped to captured clients ('s-' ids) so it never collides with the sample cohort.
+      const existing = snapshot.clients.find((cl) => cl.id.startsWith('s-') && normalizeName(cl.name) === normalizeName(name));
+      if (existing) {
+        const sessionNumber = existing.sessionNumber + 1;
+        const updated = appendSessionToClient(existing, note, { sessionNumber, dateLabel });
+        const noteForClient: DraftNote = { ...note, sessionLabel: `Session ${sessionNumber} — ${dateLabel}` };
+        await persist({
+          ...snapshot,
+          clients: snapshot.clients.map((cl) => (cl.id === existing.id ? updated : cl)),
+          notes: { ...snapshot.notes, [existing.id]: noteForClient },
+        });
+        return existing.id;
+      }
+
       // Standalone session — mint a lightweight client so blank boot visibly populates.
       const id = `s-${Date.now().toString(36)}`;
-      const dateLabel = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
       const sessionNumber = 1;
-      const client = clientFromSession(id, note, { name: opts?.name?.trim() || 'New client', sessionNumber, dateLabel });
+      const client = clientFromSession(id, note, { name, sessionNumber, dateLabel });
       const noteForClient: DraftNote = { ...note, sessionLabel: `Session ${sessionNumber} — ${dateLabel}` };
       await persist({
         ...snapshot,
