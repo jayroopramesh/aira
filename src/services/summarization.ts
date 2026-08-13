@@ -151,8 +151,9 @@ export class MockSummarizationService implements SummarizationService {
  * else it says plainly that safety was not explicitly addressed (never a fabricated "Denied").
  *
  * Two honesty rules the stub must respect, since a keyword hit is not a clinical finding:
- *  • A cue that appears alongside a DENIAL ("denied suicidal ideation", "no self-harm") is not a
- *    disclosure — flagging it would fabricate a finding the transcript explicitly contradicts.
+ *  • A cue that is PURELY denied ("denied suicidal ideation", "no self-harm", with nothing marking
+ *    the client as experiencing it) is not a disclosure — flagging it would fabricate a finding the
+ *    transcript explicitly contradicts. A denial alongside a disclosure still flags: see `disclosed`.
  *  • Even when it does flag, the row says a possible REFERENCE was seen and asks the clinician to
  *    confirm — it never asserts "Disclosed in session", which the stub cannot establish.
  */
@@ -177,13 +178,39 @@ function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafet
   );
   const selfHarm = has('self-harm', 'self harm', 'cut myself', 'cutting myself', 'hurt myself', 'harm myself');
 
-  // Whether the transcript NEGATES a cue ("denied suicidal ideation", "no self-harm"). Scoped to the
-  // cue it precedes, so denying a *plan* ("passive thoughts, denies a plan") never suppresses the
-  // ideation itself — that is still acute.
+  // Whether the transcript NEGATES a cue ("denied suicidal ideation", "no self-harm").
   const deniedNear = (cues: string) =>
     new RegExp(`\\b(?:denied|denies)\\b[^.?!]{0,40}?(?:${cues})|\\b(?:no|not|without(?: any)?)\\s+(?:[\\w'-]+\\s+){0,2}(?:${cues})`).test(s);
-  const ideationDenied = deniedNear('suicid|ideation|thoughts of|wanting to die|kill (?:her|him|my|them)sel(?:f|ves)');
-  const selfHarmDenied = deniedNear('self[- ]?harm|(?:cut|harm|hurt)(?:ting|ming|ing)? (?:her|him|my|them)sel(?:f|ves)');
+  // A denial phrase is not enough to clear a cue: clinicians routinely deny the PLAN while recording
+  // the ideation ("denies plan or intent; reports fleeting suicidal thoughts"), and a denial of
+  // plan/intent/means must NEVER downgrade disclosed ideation. So a denial only clears a cue when
+  // nothing in the transcript marks the client as actually experiencing it — otherwise it stays
+  // flagged. Ambiguity is resolved toward over-rating, which is the safe direction here.
+  const disclosed = has(
+    'described',
+    'describes',
+    'reports',
+    'reported',
+    'experiencing',
+    'experienced',
+    'endorsed',
+    'admitted',
+    'expressed',
+    'disclosed',
+    'voiced',
+    'passive',
+    'fleeting',
+    'recurrent',
+    'intermittent',
+    'most evenings',
+    'most nights',
+    'this week',
+    'ongoing',
+  );
+  const ideationDenied =
+    !disclosed && deniedNear('suicid|ideation|thoughts of|wanting to die|kill (?:her|him|my|them)sel(?:f|ves)');
+  const selfHarmDenied =
+    !disclosed && deniedNear('self[- ]?harm|(?:cut|harm|hurt)(?:ting|ming|ing)? (?:her|him|my|them)sel(?:f|ves)');
   const REVIEW = 'Possible reference in transcript — clinician to review and confirm';
   const DENIED = 'Denied on an automated read of the transcript — clinician to confirm';
 
