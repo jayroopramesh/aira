@@ -45,10 +45,16 @@ export default function WelcomeRecovery() {
   const [savedFile, setSavedFile] = useState(false);
 
   const copy = () => {
+    // Only confirm "Copied" when the write actually succeeds (F12). A code shown exactly once must
+    // never report success on a rejected clipboard write, or the user navigates on having lost it.
     if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(plainCode(words)).catch(() => {});
+      navigator.clipboard
+        .writeText(plainCode(words))
+        .then(() => setCopied(true))
+        .catch(() => setCopied(false));
+    } else {
+      setCopied(true);
     }
-    setCopied(true);
   };
 
   const save = () => {
