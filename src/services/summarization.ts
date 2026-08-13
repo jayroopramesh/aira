@@ -43,7 +43,9 @@ The note is NOT authoritative — the clinician reviews, edits, and signs it. Be
 never invent facts, diagnoses, scores, or safety findings that are not supported by it. Use plain, sober,
 non-alarming clinical language. Do not echo raw personal identifiers (names, ID numbers, phone numbers,
 addresses) in the body — refer to "the client". Always include a routine Risk & Safety check even when the
-session is unremarkable (state plainly if nothing of concern was raised).
+session is unremarkable (state plainly if nothing of concern was raised). The riskSafety.summary sentence
+MUST be consistent with riskSafety.rows — never say "no concerns were raised" if a row records ideation,
+self-harm, or that risk could not be assessed; if risk was not assessable, say so in the summary too.
 
 Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY this shape:
 {
@@ -197,11 +199,15 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
     bullets: planBullets.length ? planBullets : [NOT_CAPTURED],
   });
 
-  const reviewCodes: ReviewCode[] = (d.reviewCodes ?? []).map((rc) => ({
-    code: rc.code,
-    label: rc.label,
-    relevance: rc.relevance === 'high' || rc.relevance === 'low' ? rc.relevance : 'med',
-  }));
+  const reviewCodes: ReviewCode[] = (d.reviewCodes ?? [])
+    // Drop codes the model returned without a code OR a label — a blank chip with a bare "low"
+    // confidence is not a real suggestion (F16).
+    .filter((rc) => rc.code?.trim() && rc.label?.trim())
+    .map((rc) => ({
+      code: rc.code.trim(),
+      label: rc.label.trim(),
+      relevance: rc.relevance === 'high' || rc.relevance === 'low' ? rc.relevance : 'med',
+    }));
 
   const durMin = input.durationMs ? Math.max(1, Math.round(input.durationMs / 60000)) : null;
   const sessionLabel = input.sessionNumber ? `Session ${input.sessionNumber}` : 'New session';
