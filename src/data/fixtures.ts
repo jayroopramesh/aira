@@ -1,10 +1,36 @@
-import { Client, DayDashboard, DraftNote } from './types';
+import { Client, DayDashboard, DraftNote, Reading } from './types';
 
 /* =========================================================================
  * Amara K. — the primary longitudinal dataset (design-direction cohort).
- * PHQ-9 18→15→11→9 · GAD-7 14→8 · sleep 4.9h→5.8h · passive ideation screened
- * 9 Feb, none since. All fictional.
+ *
+ * SINGLE SOURCE OF TRUTH for Amara's PHQ-9 / GAD-7 (F13). Every surface that shows her scores — the
+ * caseload sparkline, the patterns chart (scales.ts imports these), the session-history timeline, and
+ * the draft's measures table — derives from these two arrays, so they can never disagree again. Four
+ * SCORED visits: Intake 12 Jan → S3 8 Mar → S4 5 Apr → S5 12 Aug (today). 9 Feb was a passive-ideation
+ * safety screen, NOT a scored visit, so it is deliberately not a data point on any scale.
+ * PHQ-9 18→15→11→9 · GAD-7 14→12→10→8 · sleep 4.9h→5.8h. All fictional.
  * ========================================================================= */
+
+export const AMARA_PHQ9: Reading[] = [
+  { date: '2026-01-12', label: '12 Jan', value: 18 },
+  { date: '2026-03-08', label: '8 Mar', value: 15 },
+  { date: '2026-04-05', label: '5 Apr', value: 11 },
+  { date: '2026-08-12', label: '12 Aug', value: 9 },
+];
+
+export const AMARA_GAD7: Reading[] = [
+  { date: '2026-01-12', label: '12 Jan', value: 14 },
+  { date: '2026-03-08', label: '8 Mar', value: 12 },
+  { date: '2026-04-05', label: '5 Apr', value: 10 },
+  { date: '2026-08-12', label: '12 Aug', value: 8 },
+];
+
+/** Human "PHQ-9 15   GAD-7 12" score line for a timeline entry on the given visit date. */
+function scoreLine(dateLabel: string): string {
+  const phq = AMARA_PHQ9.find((r) => r.label === dateLabel)?.value;
+  const gad = AMARA_GAD7.find((r) => r.label === dateLabel)?.value;
+  return [phq != null ? `PHQ-9 ${phq}` : '', gad != null ? `GAD-7 ${gad}` : ''].filter(Boolean).join('   ');
+}
 
 const amara: Client = {
   id: 'amara',
@@ -19,34 +45,25 @@ const amara: Client = {
   sessionNumber: 5,
   lastSessionLabel: 'today · 10:30',
   followUp: 'On track',
-  latestScore: 9,
-  sparkline: [18, 15, 11, 9],
+  latestScore: AMARA_PHQ9[AMARA_PHQ9.length - 1].value,
+  sparkline: AMARA_PHQ9.map((r) => r.value),
   focusTags: ['Academic anxiety', 'Sleep'],
   summaryLine: 'Session 5 · re-engagement week',
   measures: [
     {
       key: 'phq9',
       name: 'PHQ-9',
-      readings: [
-        { date: '2026-01-12', label: '12 Jan', value: 18 },
-        { date: '2026-02-09', label: '9 Feb', value: 15 },
-        { date: '2026-03-08', label: '8 Mar', value: 11 },
-        { date: '2026-04-05', label: '5 Apr', value: 9 },
-      ],
-      latest: 9,
-      deltaSinceStart: -9,
+      readings: AMARA_PHQ9,
+      latest: AMARA_PHQ9[AMARA_PHQ9.length - 1].value,
+      deltaSinceStart: AMARA_PHQ9[AMARA_PHQ9.length - 1].value - AMARA_PHQ9[0].value,
       band: 'mild',
     },
     {
       key: 'gad7',
       name: 'GAD-7',
-      readings: [
-        { date: '2026-01-12', label: '12 Jan', value: 14 },
-        { date: '2026-03-08', label: '8 Mar', value: 10 },
-        { date: '2026-04-05', label: '5 Apr', value: 8 },
-      ],
-      latest: 8,
-      deltaSinceStart: -6,
+      readings: AMARA_GAD7,
+      latest: AMARA_GAD7[AMARA_GAD7.length - 1].value,
+      deltaSinceStart: AMARA_GAD7[AMARA_GAD7.length - 1].value - AMARA_GAD7[0].value,
       band: 'mild',
     },
     {
@@ -69,7 +86,7 @@ const amara: Client = {
       date: '12 Aug · today',
       title: 'Session 5 — re-engagement week',
       body: 'Steadier fortnight; sleep improving. Exam anxiety remains the focus. Draft under review.',
-      scores: 'PHQ-9 9   GAD-7 8   Sleep 5.8h',
+      scores: `${scoreLine('12 Aug')}   Sleep 5.8h`,
     },
     {
       id: 't-j1',
@@ -83,7 +100,7 @@ const amara: Client = {
       date: '5 Apr',
       title: 'Session 4 — sleep hygiene focus',
       body: 'Better mornings; still ruminating before exams. Trialled worry-window.',
-      scores: 'PHQ-9 11   GAD-7 10',
+      scores: scoreLine('5 Apr'),
     },
     {
       id: 't-s3',
@@ -91,7 +108,7 @@ const amara: Client = {
       date: '8 Mar',
       title: 'Session 3 — first-gen pressure',
       body: 'Agreed to log sleep and one values-based action.',
-      scores: 'PHQ-9 11   GAD-7 10',
+      scores: scoreLine('8 Mar'),
     },
     {
       id: 't-safety',
@@ -106,7 +123,7 @@ const amara: Client = {
       date: '12 Jan',
       title: 'Intake — moderate-severe presentation',
       body: 'Academic anxiety, disrupted sleep, low motivation since term start.',
-      scores: 'PHQ-9 18   GAD-7 14',
+      scores: scoreLine('12 Jan'),
     },
   ],
   lastPlan: [
@@ -466,8 +483,9 @@ export const AMARA_DRAFT: DraftNote = {
     },
   ],
   measures: [
-    { measure: 'PHQ-9', today: '9', prev: '11', band: 'mild' },
-    { measure: 'GAD-7', today: '8', prev: '10', band: 'mild' },
+    // today/prev derive from the last two canonical readings (F13) — they can't drift from the chart.
+    { measure: 'PHQ-9', today: String(AMARA_PHQ9[AMARA_PHQ9.length - 1].value), prev: String(AMARA_PHQ9[AMARA_PHQ9.length - 2].value), band: 'mild' },
+    { measure: 'GAD-7', today: String(AMARA_GAD7[AMARA_GAD7.length - 1].value), prev: String(AMARA_GAD7[AMARA_GAD7.length - 2].value), band: 'mild' },
     { measure: 'Sleep (avg/night)', today: '5.8h', prev: '4.9h', band: 'improving' },
   ],
   reviewCodes: [

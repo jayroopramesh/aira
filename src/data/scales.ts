@@ -1,4 +1,5 @@
 import { StringColorKey } from '../theme/tokens';
+import { AMARA_GAD7, AMARA_PHQ9 } from './fixtures';
 
 /**
  * Assessment-scale definitions for the client patterns chart (round-4 item 8). Multiple scales
@@ -57,13 +58,10 @@ export const AMARA_SCALES: ScaleDef[] = [
     max: 27,
     ticks: [27, 14, 0],
     bands: PHQ_BANDS,
-    pts: [
-      { label: '12 Jan', value: 18 },
-      { label: '9 Feb', value: 15 },
-      { label: '8 Mar', value: 11 },
-      { label: '5 Apr', value: 9 },
-    ],
-    cmp: [16, 15, 14, 13],
+    // Single source: Amara's canonical PHQ-9 (fixtures.ts) — chart, sparkline, timeline and the
+    // draft measures table all read from the same array (F13).
+    pts: AMARA_PHQ9.map((r) => ({ label: r.label, value: r.value })),
+    cmp: [16, 15, 13, 11],
     read: '18 → 9 across 4 visits · now in the mild band, down from moderate-severe at intake. Improving faster than the caseload average.',
   },
   {
@@ -71,13 +69,8 @@ export const AMARA_SCALES: ScaleDef[] = [
     max: 21,
     ticks: [21, 10, 0],
     bands: GAD_BANDS,
-    pts: [
-      { label: '12 Jan', value: 14 },
-      { label: '9 Feb', value: 12 },
-      { label: '8 Mar', value: 10 },
-      { label: '5 Apr', value: 8 },
-    ],
-    cmp: [11, 11, 10, 10],
+    pts: AMARA_GAD7.map((r) => ({ label: r.label, value: r.value })),
+    cmp: [12, 12, 11, 10],
     read: '14 → 8 across 4 visits · into the mild band. Anxiety trails the depression trend by a few weeks.',
   },
   {
@@ -97,11 +90,12 @@ export const AMARA_SCALES: ScaleDef[] = [
     max: 42,
     ticks: [42, 21, 0],
     bands: DASS_BANDS,
+    // Same four scored visits as PHQ-9/GAD-7 (no 9 Feb point — that was a safety screen).
     pts: [
       { label: '12 Jan', value: 26 },
-      { label: '9 Feb', value: 18 },
-      { label: '8 Mar', value: 12 },
-      { label: '5 Apr', value: 10 },
+      { label: '8 Mar', value: 18 },
+      { label: '5 Apr', value: 12 },
+      { label: '12 Aug', value: 10 },
     ],
     cmp: [17, 16, 15, 14],
     read: '26 → 10 (depression subscale) · from severe toward the mild range.',
