@@ -31,6 +31,7 @@ import { UnlockResult, vaultStorage, VaultStorage } from './storage';
  */
 const RECOVERY_HASH_KEY = 'auth.recovery-hash';
 const CLINICIAN_NAME_KEY = 'auth.clinician-name';
+const KNOWN_EMAIL_KEY = 'auth.known-email';
 
 /** Canonicalise a 12-word code so spacing/case never cause a false mismatch. */
 function normalizeCode(code: string): string {
@@ -138,9 +139,13 @@ export class MockAuthService implements AuthService {
   private clinicianName: string | null = null;
 
   constructor(private readonly vault: VaultStorage) {
-    // Best-effort hydrate the clinician name so a returning session attributes the sign-off correctly.
+    // Best-effort hydrate the clinician name + known email so a returning session attributes the
+    // sign-off correctly (F8) and login prefills the RIGHT email, never a demo default (F17).
     deviceStore.get(CLINICIAN_NAME_KEY).then((v) => {
       if (v && !this.clinicianName) this.clinicianName = v;
+    });
+    deviceStore.get(KNOWN_EMAIL_KEY).then((v) => {
+      if (v && !this.knownEmail) this.knownEmail = v;
     });
   }
 
@@ -155,9 +160,11 @@ export class MockAuthService implements AuthService {
     this.knownEmail = details.email;
     this.clinicianName = details.fullName;
     this.recoveryCode = [...RECOVERY_WORDS];
-    // Persist the code's hash + the clinician name so recovery works and sign-off is attributed after a reload.
+    // Persist the code's hash + the clinician name + the email so recovery works, the sign-off is
+    // attributed, and login prefills the right email after a reload.
     await persistRecoveryHash(this.recoveryCode);
     await deviceStore.set(CLINICIAN_NAME_KEY, details.fullName);
+    await deviceStore.set(KNOWN_EMAIL_KEY, details.email);
     this.status = 'awaiting-recovery-save';
     return { recoveryCode: this.recoveryCode };
   }
@@ -184,6 +191,7 @@ export class MockAuthService implements AuthService {
     const accepted = password === DEMO_PASSWORD || (this.createdPassword !== null && password === this.createdPassword);
     if (!accepted) return { ok: false, reason: 'wrong-key' };
     this.knownEmail = username;
+    await deviceStore.set(KNOWN_EMAIL_KEY, username);
     const res = await this.vault.unlock(password);
     if (res.ok) this.status = 'active';
     return res;
@@ -229,8 +237,13 @@ export class SupabaseAuthService implements AuthService {
   private clinicianName: string | null = null;
 
   constructor(private readonly vault: VaultStorage) {
+    // Hydrate the clinician name + known email so a reload attributes the sign-off (F8) and prefills
+    // the right login email, never a demo default (F17).
     deviceStore.get(CLINICIAN_NAME_KEY).then((v) => {
       if (v && !this.clinicianName) this.clinicianName = v;
+    });
+    deviceStore.get(KNOWN_EMAIL_KEY).then((v) => {
+      if (v && !this.knownEmail) this.knownEmail = v;
     });
   }
 
@@ -273,9 +286,11 @@ export class SupabaseAuthService implements AuthService {
         throw new Error(error.message);
       }
     }
-    // Persist the code's hash + the clinician name so recovery works and sign-off is attributed after a reload.
+    // Persist the code's hash + the clinician name + the email so recovery works, the sign-off is
+    // attributed, and login prefills the right email after a reload.
     await persistRecoveryHash(this.recoveryCode);
     await deviceStore.set(CLINICIAN_NAME_KEY, details.fullName);
+    await deviceStore.set(KNOWN_EMAIL_KEY, details.email);
     // The recovery code is the app-side vault-key moment — unlock the local vault now.
     await this.vault.unlock(details.password);
     this.status = 'awaiting-recovery-save';
@@ -285,6 +300,7 @@ export class SupabaseAuthService implements AuthService {
   async signIn(username: string, password: string): Promise<UnlockResult> {
     const supabase = getSupabase();
     this.knownEmail = username;
+    await deviceStore.set(KNOWN_EMAIL_KEY, username);
     if (supabase) {
       const { error } = await supabase.auth.signInWithPassword({ email: username.trim(), password });
       if (error) return { ok: false, reason: 'wrong-key' };

@@ -16,18 +16,11 @@ import {
 } from '../../components/auth';
 import { MascotMood } from '../../components/mascotMoods';
 import { KeyIcon, LockIcon, ShieldIcon } from '../../components/icons';
-import { hasSupabase } from '../../config/env';
 import { authService } from '../../services/auth';
 import { AppText, Row } from '../../components/ui';
 import { recoveryStrings as R } from '../../strings/recovery';
 
 type Phase = 'login' | 'wrong' | 'decrypting';
-
-// With real accounts (Supabase), sign-in uses an email; defaults follow the create-account form so
-// the guided create → recovery → login walkthrough succeeds in one pass. With no keys, the mock
-// demo defaults apply.
-const DEFAULT_USERNAME = hasSupabase ? 'a.okafor@clinic.ae' : 'dr.okafor';
-const DEFAULT_PASSWORD = hasSupabase ? 'seafoam-harbor-42' : 'clinicvault';
 
 /**
  * Unlock — username + password (round-2 change #1, replacing the passcode keypad). A calm
@@ -37,12 +30,11 @@ const DEFAULT_PASSWORD = hasSupabase ? 'seafoam-harbor-42' : 'clinicvault';
 export default function UnlockScreen() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('login');
-  const knownEmail = authService.getKnownEmail();
-  const [username, setUsername] = useState(() => knownEmail ?? DEFAULT_USERNAME);
-  // Only prefill the demo password on a truly fresh device (no account yet). Once an account exists —
-  // just created, or a returning/signed-out user — leave the password blank so nobody is fighting a
-  // prefilled credential that isn't theirs (F17).
-  const [password, setPassword] = useState(() => (knownEmail ? '' : DEFAULT_PASSWORD));
+  // Prefill ONLY the account's own (persisted) email, never a demo identity, and never a password —
+  // a returning user must not be handed someone else's credentials (F17). knownEmail is persisted at
+  // account creation / sign-in and hydrated on boot, so it's the real user's email after a reload.
+  const [username, setUsername] = useState(() => authService.getKnownEmail() ?? '');
+  const [password, setPassword] = useState('');
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState('');
   const [recoveryError, setRecoveryError] = useState(false);
