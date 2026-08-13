@@ -38,7 +38,10 @@ export function EscalateProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       open: (opts?: OpenOpts) => {
-        setClientId(opts?.clientId);
+        // Normalise a missing/blank id to undefined, so an empty string can never be treated as a
+        // real client downstream (or land in a ...?clientId= URL).
+        const id = opts?.clientId?.trim();
+        setClientId(id ? id : undefined);
         setOpen(true);
       },
       close: () => setOpen(false),
@@ -59,6 +62,9 @@ function EscalateSheet({ visible, clientId, onClose }: { visible: boolean; clien
   const c = theme.colors;
   const insets = useSafeAreaInsets();
   const router = useRouter();
+
+  // Narrow to a definite string once, so the safety-plan branch below can never route with undefined.
+  const activeClientId: string | undefined = clientId && clientId.trim() ? clientId : undefined;
 
   const options: { key: string; title: string; sub: string; disabled?: boolean; onPress?: () => void }[] = [
     {
@@ -81,14 +87,14 @@ function EscalateSheet({ visible, clientId, onClose }: { visible: boolean; clien
         onClose();
       },
     },
-    clientId
+    activeClientId
       ? {
           key: 'safety',
           title: 'Open the safety plan',
           sub: 'Review the safety information on file for this client',
           onPress: () => {
             onClose();
-            router.push(`/(app)/patterns/safety-plan?clientId=${clientId}`);
+            router.push(`/(app)/patterns/safety-plan?clientId=${encodeURIComponent(activeClientId)}`);
           },
         }
       : {
