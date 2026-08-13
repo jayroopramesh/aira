@@ -55,6 +55,14 @@ Rendered captures of every state (light, dark, and phone width) live in
 
 ---
 
+## Architecture
+
+The MVP's device/cloud/production split — what runs on the counselor's device, what the demo
+touches, and the built-but-parked production path — is diagrammed in
+[`docs/architecture.md`](./docs/architecture.md).
+
+---
+
 ## How to run
 
 Requires **Node ≥ 22.13** (Expo SDK 57). Install once:
