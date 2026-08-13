@@ -18,6 +18,7 @@ const raw = {
   groqKey: process.env.EXPO_PUBLIC_GROQ_API_KEY?.trim() ?? '',
   groqBaseUrl: (process.env.EXPO_PUBLIC_GROQ_BASE_URL?.trim() || 'https://api.groq.com/openai/v1').replace(/\/$/, ''),
   crisisLine: process.env.EXPO_PUBLIC_CRISIS_LINE?.trim() ?? '',
+  onCallEmail: process.env.EXPO_PUBLIC_ONCALL_EMAIL?.trim() ?? '',
 };
 
 /** A placeholder (from .env.example) is treated as "not configured". */
@@ -60,6 +61,17 @@ export const crisisLine: { configured: boolean; display: string; tel: string } =
     return { configured: true, display: raw.crisisLine, tel: `tel:${digits}` };
   }
   return { configured: false, display: '999 · local emergency services', tel: 'tel:999' };
+})();
+
+/**
+ * The on-call clinician's email the Escalate warm-handoff drafts to (F6). A deployment sets it via
+ * EXPO_PUBLIC_ONCALL_EMAIL. Same "no dead promise" rule as the crisis line: when it isn't configured
+ * we do NOT claim a handoff address exists — the UI says so and drafts to a clearly-placeholder
+ * address the clinician must edit, so nothing silently goes nowhere.
+ */
+export const onCallEmail: { configured: boolean; address: string } = (() => {
+  if (isRealValue(raw.onCallEmail)) return { configured: true, address: raw.onCallEmail };
+  return { configured: false, address: 'on-call@clinic.example' };
 })();
 
 /** Which cloud services are live, for the demo banner / settings copy. */

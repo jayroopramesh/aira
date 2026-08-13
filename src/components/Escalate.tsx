@@ -2,12 +2,14 @@ import { useRouter } from 'expo-router';
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { crisisLine } from '../config/env';
+import { crisisLine, onCallEmail } from '../config/env';
 import { useTheme } from '../theme/ThemeProvider';
 import { CloseIcon, PhoneIcon, ShieldIcon } from './icons';
 import { AppText, Card, Divider, Eyebrow, Row } from './ui';
 
-type OpenOpts = { clientId?: string };
+// clientToken is the LOCALLY re-identified token (Client.tokenId), never the raw clientId — a readable
+// client identifier must never leave the device, fixtures included (escalate-clientid-in-mailto).
+type OpenOpts = { clientId?: string; clientToken?: string };
 type EscalateContextValue = { open: (opts?: OpenOpts) => void; close: () => void; isOpen: boolean };
 const EscalateContext = createContext<EscalateContextValue | null>(null);
 
@@ -18,11 +20,15 @@ export function useEscalate() {
 }
 
 /** Warm handoff to the on-call clinician — a mailto the clinician sends; the client is never messaged. */
-function onCallMailto(clientId?: string): string {
-  const ref = clientId ? ` (re: locally-identified client ${clientId})` : '';
+function onCallMailto(clientToken?: string): string {
+  // Reference the LOCAL token only — never a readable client id/name.
+  const ref = clientToken ? ` (re: locally re-identified client ${clientToken})` : '';
   const subject = 'Warm handoff — on-call review requested';
-  const body = `Hi,\n\nRequesting a warm handoff${ref} to the on-call clinician for review. Please advise on availability.\n\n(No message has been sent to the client.)`;
-  return `mailto:on-call@clinic.example?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const notConfigured = onCallEmail.configured
+    ? ''
+    : '\n\n[No on-call address is configured for this build — set the recipient before sending.]';
+  const body = `Hi,\n\nRequesting a warm handoff${ref} to the on-call clinician for review. Please advise on availability.\n\n(No message has been sent to the client.)${notConfigured}`;
+  return `mailto:${onCallEmail.address}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 /**
@@ -35,13 +41,16 @@ function onCallMailto(clientId?: string): string {
 export function EscalateProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setOpen] = useState(false);
   const [clientId, setClientId] = useState<string | undefined>(undefined);
+  const [clientToken, setClientToken] = useState<string | undefined>(undefined);
   const value = useMemo(
     () => ({
       open: (opts?: OpenOpts) => {
         // Normalise a missing/blank id to undefined, so an empty string can never be treated as a
         // real client downstream (or land in a ...?clientId= URL).
         const id = opts?.clientId?.trim();
+        const token = opts?.clientToken?.trim();
         setClientId(id ? id : undefined);
+        setClientToken(token ? token : undefined);
         setOpen(true);
       },
       close: () => setOpen(false),
@@ -52,12 +61,12 @@ export function EscalateProvider({ children }: { children: React.ReactNode }) {
   return (
     <EscalateContext.Provider value={value}>
       {children}
-      <EscalateSheet visible={isOpen} clientId={clientId} onClose={() => setOpen(false)} />
+      <EscalateSheet visible={isOpen} clientId={clientId} clientToken={clientToken} onClose={() => setOpen(false)} />
     </EscalateContext.Provider>
   );
 }
 
-function EscalateSheet({ visible, clientId, onClose }: { visible: boolean; clientId?: string; onClose: () => void }) {
+function EscalateSheet({ visible, clientId, clientToken, onClose }: { visible: boolean; clientId?: string; clientToken?: string; onClose: () => void }) {
   const theme = useTheme();
   const c = theme.colors;
   const insets = useSafeAreaInsets();
@@ -81,9 +90,11 @@ function EscalateSheet({ visible, clientId, onClose }: { visible: boolean; clien
     {
       key: 'handoff',
       title: 'Warm handoff to on-call',
-      sub: 'Opens an email to the on-call clinician — the client is never auto-messaged',
+      sub: onCallEmail.configured
+        ? `Drafts an email to ${onCallEmail.address} — the client is never auto-messaged`
+        : 'Drafts a handoff email — no on-call address is set for this build, so add the recipient before sending',
       onPress: () => {
-        Linking.openURL(onCallMailto(clientId)).catch(() => {});
+        Linking.openURL(onCallMailto(clientToken)).catch(() => {});
         onClose();
       },
     },
