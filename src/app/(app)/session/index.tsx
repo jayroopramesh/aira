@@ -10,7 +10,7 @@ import { useClient, useData } from '../../../data/DataProvider';
 import { DraftNote } from '../../../data/types';
 import { ActiveRecording, isRecordingSupported, isUploadSupported, pickAudioFile, startRecording } from '../../../services/audioCapture';
 import { hasGroq } from '../../../config/env';
-import { MockSummarizationService, summarizationService } from '../../../services/summarization';
+import { summarizationService } from '../../../services/summarization';
 import { CaptureRef, MockTranscriptionService, transcriptionService } from '../../../services/transcription';
 import { useTheme } from '../../../theme/ThemeProvider';
 
@@ -261,11 +261,12 @@ function Recording({
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    if (!live) return;
     timer.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
-  }, []);
+  }, [live]);
 
   const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
   const ss = String(seconds % 60).padStart(2, '0');
@@ -495,6 +496,7 @@ function Analysing({
   }, [capture]);
 
   const draftAndContinue = async () => {
+    setError(null);
     setStage('drafting');
     const input = {
       transcript: transcript.trim() || 'Client reported a steadier week. Continued the agreed practice. Denied ideation on screening.',
@@ -507,9 +509,8 @@ function Analysing({
       onDrafted(note);
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
-      // Degrade to the on-device mock so review always opens.
-      const note = await new MockSummarizationService().summarize(input);
-      onDrafted(note);
+      setError('Drafting failed — nothing was drafted. Check your connection, review the transcript below, and try again.');
+      setStage('ready');
     }
   };
 

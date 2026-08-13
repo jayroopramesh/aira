@@ -62,12 +62,11 @@ function generateRecoveryCode(): string[] {
   // No crypto RNG needed for a demo recovery moment; a shuffled 12 of the pool reads as a
   // real seed phrase. (The real vault derives this from the Argon2id envelope instead.)
   const pool = [...RECOVERY_POOL];
-  const out: string[] = [];
-  for (let i = 0; i < 12; i++) {
-    const idx = Math.floor((i * 7 + pool.length / 2 + i * i) % pool.length);
-    out.push(pool.splice(idx, 1)[0] ?? pool.pop() ?? 'anchor');
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  return out;
+  return pool.slice(0, 12);
 }
 
 export interface AuthService {

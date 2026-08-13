@@ -7,7 +7,8 @@
  * rail). This is a CLOUD hop over the transcript text — disclosed by the demo-mode banner. With no
  * key configured it degrades to a deterministic on-device mock so the flow still demos.
  *
- * The transcript is the only thing sent — never audio, never stored records. The prompt instructs
+ * The transcript (plus a bare session number) is the only thing sent — never the client's name,
+ * never audio, never stored records. The prompt instructs
  * the model to avoid echoing raw identifiers, since demo transcription skips the on-device de-id hop.
  */
 
@@ -63,7 +64,6 @@ export class GroqSummarizationService implements SummarizationService {
 
   async summarize(input: SummaryInput, opts?: { signal?: AbortSignal }): Promise<DraftNote> {
     const userPrompt = [
-      input.clientName ? `Client (for your reference only, do not echo): ${input.clientName}.` : '',
       input.sessionNumber ? `Session number: ${input.sessionNumber}.` : '',
       'Transcript:',
       '"""',
