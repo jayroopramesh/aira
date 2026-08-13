@@ -329,7 +329,7 @@ function RiskReview({ clientId }: { clientId: string }) {
 
       <View style={{ height: theme.spacing.lg }} />
       <Row gap={12} wrap>
-        <Button title="Open escalation options" variant="danger" leftIcon={<PhoneIcon size={18} color={c.risk} />} onPress={() => escalate.open({ clientId: client.id })} />
+        <Button title="Open escalation options" variant="danger" leftIcon={<PhoneIcon size={18} color={c.risk} />} onPress={() => escalate.open({ clientId: client.id, clientToken: client.tokenId })} />
         <Button title="Review safety plan" variant="secondary" onPress={() => router.push(`/(app)/patterns/safety-plan?clientId=${client.id}`)} />
         <Button title="See history" variant="secondary" onPress={() => router.push(`/(app)/patterns/history?clientId=${client.id}`)} />
       </Row>

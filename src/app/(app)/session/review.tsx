@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowRight, CheckIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
@@ -43,6 +43,13 @@ export default function ReviewNote() {
   // this is the legal attestation line, so neither may be hardcoded.
   const [signedAt, setSignedAt] = useState<string | null>(null);
   const clinician = authService.getClinicianName() ?? 'You';
+  // The C4 rail switches notes via router.replace(...&note=i) without remounting, so the sign
+  // state must reset per reviewed note — a signed note's attestation must never carry over.
+  useEffect(() => {
+    setSigned(false);
+    setSignedAt(null);
+    setTab('Note');
+  }, [clientId, noteIndex]);
   const sign = () => {
     setSignedAt(formatSignedAt(new Date()));
     setSigned(true);

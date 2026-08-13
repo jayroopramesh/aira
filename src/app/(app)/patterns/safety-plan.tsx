@@ -122,7 +122,7 @@ export default function SafetyPlan() {
           title="Open escalation options"
           variant="danger"
           leftIcon={<PhoneIcon size={18} color={c.risk} />}
-          onPress={() => escalate.open({ clientId: client.id })}
+          onPress={() => escalate.open({ clientId: client.id, clientToken: client.tokenId })}
         />
         <Button
           title="Call the crisis line"

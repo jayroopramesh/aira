@@ -43,7 +43,7 @@ export default function ClientDrawer() {
                   {client.name}
                 </AppText>
                 <AppText variant="small" color="ink3" style={{ marginTop: 2 }}>
-                  ID {client.tokenId} · {client.age} · Session {client.sessionNumber} · client since {client.clientSince}
+                  ID {client.tokenId} · {client.age ?? '—'} · Session {client.sessionNumber} · client since {client.clientSince}
                 </AppText>
               </View>
             </Row>

@@ -32,21 +32,26 @@ import { UnlockResult, vaultStorage, VaultStorage } from './storage';
 const RECOVERY_HASH_KEY = 'auth.recovery-hash';
 const CLINICIAN_NAME_KEY = 'auth.clinician-name';
 const KNOWN_EMAIL_KEY = 'auth.known-email';
+const PASSWORD_HASH_KEY = 'auth.password-hash';
 
 /** Canonicalise a 12-word code so spacing/case never cause a false mismatch. */
 function normalizeCode(code: string): string {
   return code.trim().toLowerCase().split(/\s+/).filter(Boolean).join(' ');
 }
 
-/** FNV-1a 32-bit → hex. Not cryptographic (v1 stores no crypto), but avoids keeping the words in cleartext. */
-function hashRecoveryCode(code: string): string {
-  const normalized = normalizeCode(code);
+/** FNV-1a 32-bit → hex. Not cryptographic (v1 stores no crypto), but avoids keeping secrets in cleartext. */
+function fnv1a(raw: string): string {
   let h = 0x811c9dc5;
-  for (let i = 0; i < normalized.length; i++) {
-    h ^= normalized.charCodeAt(i);
+  for (let i = 0; i < raw.length; i++) {
+    h ^= raw.charCodeAt(i);
     h = Math.imul(h, 0x01000193);
   }
   return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+/** The recovery code is normalized before hashing; a password is NOT (it is case- and space-sensitive). */
+function hashRecoveryCode(code: string): string {
+  return fnv1a(normalizeCode(code));
 }
 
 async function persistRecoveryHash(words: string[]): Promise<void> {
@@ -178,6 +183,7 @@ export class MockAuthService implements AuthService {
     // Persist the code's hash + the clinician name + the email so recovery works, the sign-off is
     // attributed, and login prefills the right email after a reload.
     await persistRecoveryHash(this.recoveryCode);
+    await deviceStore.set(PASSWORD_HASH_KEY, fnv1a(details.password));
     await deviceStore.set(CLINICIAN_NAME_KEY, details.fullName);
     await deviceStore.set(KNOWN_EMAIL_KEY, details.email);
     this.status = 'awaiting-recovery-save';
@@ -201,9 +207,14 @@ export class MockAuthService implements AuthService {
   }
 
   async signIn(username: string, password: string): Promise<UnlockResult> {
-    // Demo rule: the password chosen at account creation or DEMO_PASSWORD opens;
+    // Demo rule: the password chosen at account creation (in-memory or its persisted hash, so a
+    // returning counselor's real password still works after a reload) or DEMO_PASSWORD opens;
     // anything else reproduces the calm wrong-password state.
-    const accepted = password === DEMO_PASSWORD || (this.createdPassword !== null && password === this.createdPassword);
+    let accepted = password === DEMO_PASSWORD || (this.createdPassword !== null && password === this.createdPassword);
+    if (!accepted) {
+      const storedHash = await deviceStore.get(PASSWORD_HASH_KEY);
+      accepted = !!storedHash && storedHash === fnv1a(password);
+    }
     if (!accepted) return { ok: false, reason: 'wrong-key' };
     this.knownEmail = username;
     await deviceStore.set(KNOWN_EMAIL_KEY, username);
