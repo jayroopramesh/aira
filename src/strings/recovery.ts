@@ -29,7 +29,7 @@ export const recoveryStrings = {
   // Wrong-password (calm, nothing locked out)
   wrongEyebrow: 'That didn’t match',
   wrongTitle: 'Let’s try once more',
-  wrongSubtitle: 'No account is locked and nothing was sent anywhere — this vault only exists on your device.',
+  wrongSubtitle: 'No account is locked — take your time. Your notes vault exists only on this device.',
   wrongHint: 'Password didn’t match this vault. Attempt 2 — take your time.',
 
   // Recovery-code fallback (revealed inline on the wrong-password screen)
@@ -59,7 +59,7 @@ export const recoveryStrings = {
   onboard2Eyebrow: 'How it works',
   onboard2Title: 'Three steps, every session',
   onboard2Beats: [
-    { title: 'Capture on your device', body: 'Record the session — audio is transcribed on-device and never uploaded.' },
+    { title: 'Capture on your device', body: 'Record the session on your device; Aira transcribes it and drafts your note for you to review.' },
     { title: 'Sign your note', body: 'Aira drafts a SOAP note. You review, edit, and sign — nothing is final until you say so.' },
     { title: 'See patterns', body: 'Scores and themes build over time, so change is visible across visits.' },
   ],
