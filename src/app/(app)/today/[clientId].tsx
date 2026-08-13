@@ -125,7 +125,7 @@ export default function ClientDrawer() {
 function PatientDetails({ client }: { client: Client }) {
   const theme = useTheme();
   const details: { label: string; value: string }[] = [
-    { label: 'Age / DOB', value: `${client.age} · 14 Mar ${2026 - client.age}` },
+    { label: 'Age / DOB', value: client.age != null ? `${client.age} · 14 Mar ${2026 - client.age}` : '—' },
     { label: 'Contact', value: '+971 50 · redacted · via clinic portal' },
     { label: 'Programme / year', value: client.id === 'amara' ? 'BSc Statistics · Year 2 (first-gen)' : 'University counselling programme' },
     { label: 'Emergency contact', value: 'On file · consented to contact' },

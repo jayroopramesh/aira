@@ -148,7 +148,7 @@ function PreCapture({
                   {client.name}
                 </AppText>
                 <AppText variant="small" color="ink3">
-                  Session {client.sessionNumber} · latest PHQ-9 {client.latestScore}
+                  Session {client.sessionNumber} · latest PHQ-9 {client.latestScore ?? '—'}
                 </AppText>
               </View>
             </Row>

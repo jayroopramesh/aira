@@ -8,6 +8,7 @@ import { AppText, Avatar, Badge, Card, Chip, Eyebrow, Row, RiskDot } from '../..
 import { ZeroState } from '../../../components/ZeroState';
 import { useCaseloadKpis, useClients, useData } from '../../../data/DataProvider';
 import { Client } from '../../../data/types';
+import { authService } from '../../../services/auth';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 export default function Caseload() {
@@ -169,7 +170,7 @@ function ClientRowWide({ client, first, onPress }: { client: Client; first: bool
           <Sparkline values={client.sparkline} />
         </View>
         <AppText variant="bodyStrong" style={{ flex: 0.8, fontFamily: theme.type.numeric.fontFamily }}>
-          {client.latestScore}
+          {client.latestScore ?? '—'}
         </AppText>
         <AppText variant="body" tint={client.followUpDue ? c.caution : c.ink2} style={{ flex: 1.3 }}>
           {client.followUp}
@@ -198,7 +199,8 @@ const PREGREYED: Record<string, OutreachKind> = { amara: 'thanks', marcus: 'foll
 function buildMailto(client: Client, kind: OutreachKind): string {
   const first = client.name.split(' ')[0];
   const to = `${first.toLowerCase()}@clients.example`;
-  const sig = '\n\nWarm regards,\nDr. A. Okafor';
+  // Sign the outreach with the actual signed-in clinician, not a hardcoded name (F8).
+  const sig = `\n\nWarm regards,\n${authService.getClinicianName() ?? 'Your counselor'}`;
   const templates: Record<OutreachKind, { subject: string; body: string }> = {
     followup: {
       subject: `Following up after our session`,
@@ -278,7 +280,7 @@ function ClientRowNarrow({ client, first, onPress }: { client: Client; first: bo
               <Badge label={cap(client.status)} tone={STATUS_TONE[client.status]} />
             </Row>
             <AppText variant="small" color="ink3" style={{ marginTop: 2 }}>
-              {client.lastSessionLabel} · latest {client.latestScore}
+              {client.lastSessionLabel} · latest {client.latestScore ?? '—'}
             </AppText>
             <Row gap={12} style={{ marginTop: 8, alignItems: 'center' }}>
               <Sparkline values={client.sparkline} width={70} />

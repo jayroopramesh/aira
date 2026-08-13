@@ -21,8 +21,6 @@ import { authService } from '../../services/auth';
 import { AppText, Row } from '../../components/ui';
 import { recoveryStrings as R } from '../../strings/recovery';
 
-const CLINICIAN = 'Dr. Okafor';
-
 type Phase = 'login' | 'wrong' | 'decrypting';
 
 // With real accounts (Supabase), sign-in uses an email; defaults follow the create-account form so
@@ -70,7 +68,7 @@ export default function UnlockScreen() {
     <AuthScaffold>
       <MascotMood mood={wrong ? 'empathetic' : 'encouraging'} size={124} float />
       <View style={{ height: 16 }} />
-      <AuthHello>{wrong ? R.wrongEyebrow : R.loginEyebrow(CLINICIAN)}</AuthHello>
+      <AuthHello>{wrong ? R.wrongEyebrow : R.loginEyebrow(authService.getClinicianName() ?? 'Doctor')}</AuthHello>
       <AuthTitle>{wrong ? R.wrongTitle : R.loginTitle}</AuthTitle>
       <AuthLede>{wrong ? R.wrongSubtitle : R.loginSubtitle}</AuthLede>
 
