@@ -222,6 +222,7 @@ function Outreach({ client }: { client: Client }) {
             onPress={(e) => {
               // Don't let the row's open-client handler fire.
               (e as unknown as { stopPropagation?: () => void }).stopPropagation?.();
+              if (isUsed) return;
               fire(kind);
             }}
             hitSlop={6}
