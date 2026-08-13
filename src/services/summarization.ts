@@ -116,25 +116,25 @@ export class GroqSummarizationService implements SummarizationService {
   }
 }
 
-/** Deterministic on-device fallback so the flow demos with no Groq key. */
+/**
+ * Deterministic on-device fallback so the flow demos with no Groq key. The mock is a stub — it does
+ * not run a clinical model — so it must NEVER fabricate a "Denied / clear" risk finding it did not
+ * assess (F4-mock-clear). It derives its risk row + structured level from a lightweight scan of the
+ * transcript: disclosed ideation → acute, self-harm → elevated, otherwise clear only when nothing was
+ * raised. This way a real dictated transcript that discloses ideation is never rated "clear" in
+ * no-keys mode (and the live Groq path is unaffected).
+ */
 export class MockSummarizationService implements SummarizationService {
   async summarize(input: SummaryInput): Promise<DraftNote> {
     const t = input.transcript.replace(/\s+/g, ' ').trim();
     const sentences = t ? t.split(/(?<=[.!?])\s+/).slice(0, 8) : [];
     const first = sentences.slice(0, 3).join(' ') || 'The client reported on the week since the last session.';
     const rest = sentences.slice(3, 6).join(' ') || 'Engaged and reflective throughout; no acute distress observed.';
+    const riskSafety = scanTranscriptRisk(t);
     const draft: LlmDraft = {
       subjective: { body: [first], quote: '' },
       objective: { body: [rest] },
-      riskSafety: {
-        summary: 'Risk screened this session · routine.',
-        rows: [
-          { label: 'Suicidal ideation', value: 'Denied on screening today' },
-          { label: 'Self-harm', value: 'None reported' },
-          { label: 'Safety plan', value: 'Existing plan reaffirmed' },
-        ],
-        level: 'clear',
-      },
+      riskSafety,
       assessment: { body: ['Draft impression pending clinician review. Progress consistent with the working plan.'] },
       plan: {
         bullets: ['Continue the agreed between-session practice', 'Review progress at the next session', 'Revisit any items the client raised today'],
@@ -143,6 +143,65 @@ export class MockSummarizationService implements SummarizationService {
     };
     return buildDraft(draft, input);
   }
+}
+
+/**
+ * A conservative keyword scan the no-keys mock uses so it never asserts a safety finding the
+ * transcript did not contain. Errs toward flagging: any ideation cue → acute; else self-harm → elevated;
+ * else it says plainly that safety was not explicitly addressed (never a fabricated "Denied").
+ */
+function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafety']> {
+  const s = transcript.toLowerCase();
+  const has = (...kws: string[]) => kws.some((k) => s.includes(k));
+  const ideation = has(
+    'suicid',
+    'kill myself',
+    'end my life',
+    'end it all',
+    'better off dead',
+    'better off not here',
+    'better off gone',
+    "don't want to be here",
+    'do not want to be here',
+    "don't want to be alive",
+    'not want to be alive',
+    'not worth living',
+    "wasn't here anymore",
+    'wasnt here anymore',
+  );
+  const selfHarm = has('self-harm', 'self harm', 'cut myself', 'cutting myself', 'hurt myself', 'harm myself');
+
+  if (ideation) {
+    return {
+      summary: 'Possible suicidal ideation detected in the session — review and confirm with the client.',
+      rows: [
+        { label: 'Suicidal ideation', value: 'Disclosed in session — clinician to assess plan / intent / means' },
+        { label: 'Self-harm', value: selfHarm ? 'Referenced in session — assess' : 'Not explicitly addressed' },
+        { label: 'Safety plan', value: 'Review or establish a safety plan this session' },
+      ],
+      level: 'acute',
+    };
+  }
+  if (selfHarm) {
+    return {
+      summary: 'Possible self-harm referenced in the session — review with the client.',
+      rows: [
+        { label: 'Suicidal ideation', value: 'Not explicitly addressed' },
+        { label: 'Self-harm', value: 'Referenced in session — clinician to assess' },
+        { label: 'Safety plan', value: 'Review coping steps this session' },
+      ],
+      level: 'elevated',
+    };
+  }
+  return {
+    summary: 'No suicidal ideation or self-harm was raised in this session on an automated review.',
+    rows: [
+      { label: 'Suicidal ideation', value: 'Not raised this session' },
+      { label: 'Self-harm', value: 'Not raised this session' },
+      { label: 'Safety plan', value: 'Not discussed this session' },
+    ],
+    level: 'clear',
+  };
 }
 
 /* ------------------------------------------------------------------ mapping --- */
