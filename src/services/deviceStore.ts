@@ -57,7 +57,7 @@ function nativeBackend(): KvBackend {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const FS = require('expo-file-system/legacy') as typeof import('expo-file-system/legacy');
   const dir = FS.documentDirectory ?? '';
-  const path = (key: string) => `${dir}${NS}${key}.json`;
+  const path = (key: string) => `${dir}${NS}${encodeURIComponent(key)}.json`;
 
   return {
     async get(key) {
