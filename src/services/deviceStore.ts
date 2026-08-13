@@ -49,12 +49,14 @@ const webBackend: KvBackend = {
 
 /**
  * Lazily require expo-file-system so the web bundle never pulls the native module. One small JSON
- * file per key under the document directory.
+ * file per key under the document directory. SDK 57 moved this API behind the /legacy entry — the
+ * main entry's *Async functions are throwing deprecation shims and no longer export
+ * documentDirectory.
  */
 function nativeBackend(): KvBackend {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const FS = require('expo-file-system') as typeof import('expo-file-system');
-  const dir = (FS as unknown as { documentDirectory?: string }).documentDirectory ?? '';
+  const FS = require('expo-file-system/legacy') as typeof import('expo-file-system/legacy');
+  const dir = FS.documentDirectory ?? '';
   const path = (key: string) => `${dir}${NS}${key}.json`;
 
   return {

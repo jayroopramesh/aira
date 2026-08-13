@@ -20,6 +20,7 @@ export default function Settings() {
   const router = useRouter();
   const { clients, sampleLoaded, loadSample, clearAll } = useData();
   const [busy, setBusy] = useState(false);
+  const [confirmingClear, setConfirmingClear] = useState(false);
 
   const hasData = clients.length > 0 || sampleLoaded;
 
@@ -33,6 +34,7 @@ export default function Settings() {
     setBusy(true);
     await clearAll();
     setBusy(false);
+    setConfirmingClear(false);
   };
   const signOut = async () => {
     await authService.signOut();
@@ -59,15 +61,33 @@ export default function Settings() {
           </View>
         </Row>
         <View style={{ height: 14 }} />
-        <Row gap={10} wrap>
-          <Button
-            title={sampleLoaded ? 'Reload sample data' : 'Load sample data'}
-            variant="primary"
-            loading={busy}
-            onPress={doLoad}
-          />
-          {hasData ? <Button title="Clear all data" variant="secondary" loading={busy} onPress={doClear} /> : null}
-        </Row>
+        {confirmingClear ? (
+          <View style={{ backgroundColor: c.riskBg, borderRadius: 10, padding: 14 }}>
+            <AppText variant="bodyStrong" style={{ fontSize: 14 }}>
+              Clear all data?
+            </AppText>
+            <AppText variant="small" color="ink2" style={{ marginTop: 4, lineHeight: 17 }}>
+              This deletes every note, transcript and prescription on this device — this cannot be undone.
+            </AppText>
+            <View style={{ height: 12 }} />
+            <Row gap={10} wrap>
+              <Button title="Yes, clear all data" variant="danger" loading={busy} onPress={doClear} />
+              <Button title="Cancel" variant="secondary" disabled={busy} onPress={() => setConfirmingClear(false)} />
+            </Row>
+          </View>
+        ) : (
+          <Row gap={10} wrap>
+            <Button
+              title={sampleLoaded ? 'Reload sample data' : 'Load sample data'}
+              variant="primary"
+              loading={busy}
+              onPress={doLoad}
+            />
+            {hasData ? (
+              <Button title="Clear all data" variant="secondary" disabled={busy} onPress={() => setConfirmingClear(true)} />
+            ) : null}
+          </Row>
+        )}
         <AppText variant="small" color="ink3" style={{ marginTop: 12, fontSize: 11.5 }}>
           {hasData ? `${clients.length} client${clients.length === 1 ? '' : 's'} on this device.` : 'No clients on this device yet.'}
         </AppText>
