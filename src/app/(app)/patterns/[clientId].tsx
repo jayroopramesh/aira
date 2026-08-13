@@ -103,7 +103,7 @@ function PatternsView({ clientId }: { clientId: string }) {
 
   const headline =
     clientId === 'amara'
-      ? 'Amara’s depression has more than halved since January — PHQ-9 fell from 18 to 9 across four visits — with the steepest drop after sleep became the focus. Anxiety is following the same path.'
+      ? 'Amara’s depression has halved since January — PHQ-9 fell from 18 to 9 across nine readings — with the steepest drop after sleep became the focus. Anxiety is following the same path.'
       : `${client.name.split(' ')[0]}’s PHQ-9 latest reading is ${phq.latest}${phq.deltaSinceStart ? `, ${phq.deltaSinceStart < 0 ? 'down' : 'up'} ${Math.abs(phq.deltaSinceStart)} since intake` : ''}.`;
 
   return (

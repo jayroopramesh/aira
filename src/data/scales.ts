@@ -61,8 +61,8 @@ export const AMARA_SCALES: ScaleDef[] = [
     // Single source: Amara's canonical PHQ-9 (fixtures.ts) — chart, sparkline, timeline and the
     // draft measures table all read from the same array (F13).
     pts: AMARA_PHQ9.map((r) => ({ label: r.label, value: r.value })),
-    cmp: [16, 15, 13, 11],
-    read: '18 → 9 across 4 visits · now in the mild band, down from moderate-severe at intake. Improving faster than the caseload average.',
+    cmp: [16, 16, 15, 15, 14, 13, 12, 11, 10],
+    read: '18 → 9 across 9 readings · now in the mild band, down from moderate-severe at intake. Improving faster than the caseload average.',
   },
   {
     key: 'GAD-7',
@@ -70,8 +70,8 @@ export const AMARA_SCALES: ScaleDef[] = [
     ticks: [21, 10, 0],
     bands: GAD_BANDS,
     pts: AMARA_GAD7.map((r) => ({ label: r.label, value: r.value })),
-    cmp: [12, 12, 11, 10],
-    read: '14 → 8 across 4 visits · into the mild band. Anxiety trails the depression trend by a few weeks.',
+    cmp: [12, 12, 12, 11, 11, 11, 10, 10, 9],
+    read: '14 → 8 across 9 readings · into the mild band. Anxiety trails the depression trend by a few weeks.',
   },
   {
     key: 'MHI-5',
@@ -90,14 +90,19 @@ export const AMARA_SCALES: ScaleDef[] = [
     max: 42,
     ticks: [42, 21, 0],
     bands: DASS_BANDS,
-    // Same four scored visits as PHQ-9/GAD-7 (no 9 Feb point — that was a safety screen).
+    // Same nine readings as PHQ-9 / GAD-7 (captain C5) so the multi-point plot is exercised here too.
     pts: [
       { label: '12 Jan', value: 26 },
-      { label: '8 Mar', value: 18 },
-      { label: '5 Apr', value: 12 },
+      { label: '26 Jan', value: 25 },
+      { label: '9 Feb', value: 23 },
+      { label: '23 Feb', value: 21 },
+      { label: '8 Mar', value: 19 },
+      { label: '22 Mar', value: 16 },
+      { label: '5 Apr', value: 13 },
+      { label: '3 May', value: 11 },
       { label: '12 Aug', value: 10 },
     ],
-    cmp: [17, 16, 15, 14],
-    read: '26 → 10 (depression subscale) · from severe toward the mild range.',
+    cmp: [17, 17, 16, 16, 15, 15, 14, 14, 13],
+    read: '26 → 10 across 9 readings (depression subscale) · from severe toward the mild range.',
   },
 ];

@@ -5,23 +5,35 @@ import { Client, DayDashboard, DraftNote, Reading } from './types';
  *
  * SINGLE SOURCE OF TRUTH for Amara's PHQ-9 / GAD-7 (F13). Every surface that shows her scores — the
  * caseload sparkline, the patterns chart (scales.ts imports these), the session-history timeline, and
- * the draft's measures table — derives from these two arrays, so they can never disagree again. Four
- * SCORED visits: Intake 12 Jan → S3 8 Mar → S4 5 Apr → S5 12 Aug (today). 9 Feb was a passive-ideation
- * safety screen, NOT a scored visit, so it is deliberately not a data point on any scale.
- * PHQ-9 18→15→11→9 · GAD-7 14→12→10→8 · sleep 4.9h→5.8h. All fictional.
+ * the draft's measures table — derives from these two arrays, so they can never disagree again.
+ * A longer longitudinal series (captain C5): 9 fortnightly readings 12 Jan → 12 Aug, so the multi-point
+ * charts are properly exercised. Every reading has a matching timeline entry (milestone session or
+ * interim screening) below, so the chart and history stay in lock-step.
+ * PHQ-9 18→9 · GAD-7 14→8 · sleep 4.9h→5.8h. All fictional. (MHI-5 stays deliberately sparse to keep
+ * demonstrating the ≤2-reading dot-strip rule.)
  * ========================================================================= */
 
 export const AMARA_PHQ9: Reading[] = [
   { date: '2026-01-12', label: '12 Jan', value: 18 },
-  { date: '2026-03-08', label: '8 Mar', value: 15 },
+  { date: '2026-01-26', label: '26 Jan', value: 17 },
+  { date: '2026-02-09', label: '9 Feb', value: 16 },
+  { date: '2026-02-23', label: '23 Feb', value: 15 },
+  { date: '2026-03-08', label: '8 Mar', value: 14 },
+  { date: '2026-03-22', label: '22 Mar', value: 13 },
   { date: '2026-04-05', label: '5 Apr', value: 11 },
+  { date: '2026-05-03', label: '3 May', value: 10 },
   { date: '2026-08-12', label: '12 Aug', value: 9 },
 ];
 
 export const AMARA_GAD7: Reading[] = [
   { date: '2026-01-12', label: '12 Jan', value: 14 },
+  { date: '2026-01-26', label: '26 Jan', value: 14 },
+  { date: '2026-02-09', label: '9 Feb', value: 13 },
+  { date: '2026-02-23', label: '23 Feb', value: 12 },
   { date: '2026-03-08', label: '8 Mar', value: 12 },
+  { date: '2026-03-22', label: '22 Mar', value: 11 },
   { date: '2026-04-05', label: '5 Apr', value: 10 },
+  { date: '2026-05-03', label: '3 May', value: 9 },
   { date: '2026-08-12', label: '12 Aug', value: 8 },
 ];
 
@@ -84,7 +96,7 @@ const amara: Client = {
       id: 't-s5',
       kind: 'session',
       date: '12 Aug · today',
-      title: 'Session 5 — re-engagement week',
+      title: 'Session — re-engagement week',
       body: 'Steadier fortnight; sleep improving. Exam anxiety remains the focus. Draft under review.',
       scores: `${scoreLine('12 Aug')}   Sleep 5.8h`,
     },
@@ -95,20 +107,44 @@ const amara: Client = {
       body: '"Slept through the night for the first time in weeks. Still nervous about stats."',
     },
     {
+      id: 't-scr-may',
+      kind: 'session',
+      date: '3 May',
+      title: 'Fortnightly screening',
+      body: 'Interim re-administration of PHQ-9 / GAD-7; steady downward trend continues.',
+      scores: scoreLine('3 May'),
+    },
+    {
       id: 't-s4',
       kind: 'session',
       date: '5 Apr',
-      title: 'Session 4 — sleep hygiene focus',
+      title: 'Session — sleep hygiene focus',
       body: 'Better mornings; still ruminating before exams. Trialled worry-window.',
       scores: scoreLine('5 Apr'),
+    },
+    {
+      id: 't-scr-mar22',
+      kind: 'session',
+      date: '22 Mar',
+      title: 'Fortnightly screening',
+      body: 'Interim re-administration of PHQ-9 / GAD-7.',
+      scores: scoreLine('22 Mar'),
     },
     {
       id: 't-s3',
       kind: 'session',
       date: '8 Mar',
-      title: 'Session 3 — first-gen pressure',
+      title: 'Session — first-gen pressure',
       body: 'Agreed to log sleep and one values-based action.',
       scores: scoreLine('8 Mar'),
+    },
+    {
+      id: 't-scr-feb23',
+      kind: 'session',
+      date: '23 Feb',
+      title: 'Fortnightly screening',
+      body: 'Interim re-administration of PHQ-9 / GAD-7.',
+      scores: scoreLine('23 Feb'),
     },
     {
       id: 't-safety',
@@ -116,6 +152,15 @@ const amara: Client = {
       date: '9 Feb',
       title: 'Passive ideation screened — no plan or intent',
       body: 'Safety check completed; supports in place. Re-screen each session (now routine).',
+      scores: scoreLine('9 Feb'),
+    },
+    {
+      id: 't-scr-jan26',
+      kind: 'session',
+      date: '26 Jan',
+      title: 'Fortnightly screening',
+      body: 'Interim re-administration of PHQ-9 / GAD-7.',
+      scores: scoreLine('26 Jan'),
     },
     {
       id: 't-intake',
