@@ -49,19 +49,16 @@ export default function WelcomeRecovery() {
 
   const copy = () => {
     if (!hasCode) return;
-    // Only confirm "Copied" when the write actually succeeds (F12). A code shown exactly once must
-    // never report success on a rejected clipboard write, or the user navigates on having lost it.
-    // Web without a clipboard API (insecure context, older webview) stays silent — no write happened.
-    // Native has no real write in the mock, so the confirmation there is the documented convention.
-    if (Platform.OS === 'web') {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        navigator.clipboard
-          .writeText(plainCode(words))
-          .then(() => setCopied(true))
-          .catch(() => setCopied(false));
-      }
-    } else {
-      setCopied(true);
+    // The honesty rule has NO platform exceptions (F12): only ever confirm "Copied" after a real
+    // successful clipboard write. A native mock with no real write, or a web build without a clipboard
+    // API (insecure context / older webview), must NOT claim success for a code shown exactly once —
+    // the user would navigate on having lost it. Use "Save as file" instead when no write is possible.
+    const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    if (clip) {
+      clip
+        .writeText(plainCode(words))
+        .then(() => setCopied(true))
+        .catch(() => setCopied(false));
     }
   };
 
