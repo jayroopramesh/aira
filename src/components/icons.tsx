@@ -22,6 +22,34 @@ export function ShieldIcon({ size = 20, color = 'currentColor', strokeWidth = 2 
   );
 }
 
+export function SettingsIcon({ size = 20, color = 'currentColor', strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg {...base(size, strokeWidth)} stroke={color}>
+      <Path d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
+      <Path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+    </Svg>
+  );
+}
+
+export function CloudIcon({ size = 20, color = 'currentColor', strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg {...base(size, strokeWidth)} stroke={color}>
+      <Path d="M17.5 19a4.5 4.5 0 100-9h-1.26A6 6 0 104 15.25" />
+      <Path d="M17.5 19H9" />
+    </Svg>
+  );
+}
+
+export function DatabaseIcon({ size = 20, color = 'currentColor', strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg {...base(size, strokeWidth)} stroke={color}>
+      <Path d="M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3z" />
+      <Path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6" />
+      <Path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+    </Svg>
+  );
+}
+
 export function LockIcon({ size = 20, color = 'currentColor', strokeWidth = 2.2 }: IconProps) {
   return (
     <Svg {...base(size, strokeWidth)} stroke={color}>

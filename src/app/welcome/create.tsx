@@ -15,6 +15,7 @@ import {
   MINT,
 } from '../../components/auth';
 import { InfoIcon } from '../../components/icons';
+import { hasSupabase } from '../../config/env';
 import { authService } from '../../services/auth';
 import { AppText, Row } from '../../components/ui';
 import { recoveryStrings as R } from '../../strings/recovery';
@@ -35,10 +36,20 @@ export default function WelcomeCreate() {
   const [confirm, setConfirm] = useState('seafoam-harbor-42');
   const [whyOpen, setWhyOpen] = useState(false);
   const [consent, setConsent] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const onSubmit = async () => {
-    await authService.createAccount({ emiratesId, phone, fullName, email, password });
-    router.push('/welcome/recovery');
+    setSubmitting(true);
+    setError(null);
+    try {
+      await authService.createAccount({ emiratesId, phone, fullName, email, password });
+      router.push('/welcome/recovery');
+    } catch (e) {
+      setError((e as Error).message || 'Could not create the account. Please check the details and try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -136,15 +147,23 @@ export default function WelcomeCreate() {
           </Row>
         </Pressable>
 
+        {error ? (
+          <AppText variant="small" tint="#F0C9BE" style={{ lineHeight: 17 }}>
+            {error}
+          </AppText>
+        ) : null}
+
         <View style={{ height: 2 }} />
-        <AuthSubmit title={R.createCta} onPress={onSubmit} disabled={!consent} />
+        <AuthSubmit title={submitting ? 'Creating account…' : R.createCta} onPress={onSubmit} disabled={!consent || submitting} />
       </View>
 
       <View style={{ height: 16 }} />
       <AuthLink label={R.createSignInLink} onPress={() => router.replace('/unlock')} tint="rgba(191,234,225,0.82)" />
       <View style={{ height: 4 }} />
       <AppText variant="small" tint={INK2} center style={{ fontSize: 11, opacity: 0.7 }}>
-        Details are pre-filled for this demo · nothing is sent anywhere.
+        {hasSupabase
+          ? 'Details are pre-filled for this demo · your account is created in Supabase; clinical data stays on this device.'
+          : 'Details are pre-filled for this demo · demo services aren’t configured, so nothing is sent anywhere.'}
       </AppText>
     </AuthScaffold>
   );

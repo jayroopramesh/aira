@@ -18,6 +18,27 @@ constraints — don't duplicate it here.
   turquoise in round 4 — see `README.md` "Theme / token architecture"); the prototype spec is
   `aira-ui-screens-s4/screens.html`. Treat those as source-of-truth for any UI change.
 
+## Demo-mode live services (behind the seams)
+The seams are wired to real cloud services for the demo, degrading to mocks when keys are absent:
+- **Config**: `src/config/env.ts` reads `EXPO_PUBLIC_*` from `.env.local` (gitignored; `.env.example`
+  is the committed template). `hasSupabase` / `hasGroq` pick live vs mock per service — the app never
+  crashes without keys. Secrets source: `firstmate/data/aira-secrets/{supabase,groq}.env`.
+- **Accounts — Supabase** (`src/services/supabase.ts`, `SupabaseAuthService` in `auth.ts`): real
+  signup/login (email confirmation OFF; identity fields → user metadata). The one-time recovery-code
+  moment stays app-side (local vault key path).
+- **Transcription — Groq whisper-large-v3** (`GroqTranscriptionService` in `transcription.ts`) and
+  **summarization — Groq llama-3.3-70b** (`src/services/summarization.ts` → a `DraftNote`). Web audio
+  via `src/services/audioCapture.ts` (MediaRecorder + file-picker fallback; native falls back to the
+  mock). The `mock://` sample-audio path always uses the mock transcriber.
+- **Blank boot + device-local data**: a fresh install starts EMPTY. Caseload state is a reactive
+  context (`src/data/DataProvider.tsx`, hooks `useClients`/`useClient`/`useDayDashboard`/etc.) persisted
+  through `ClientRepository` → `VaultStorage` (`LocalVaultStorage` → `deviceStore`: localStorage on web,
+  a JSON file on native). The Amara fixtures are the on-demand sample (Settings → "Load sample data").
+  Screens read via the hooks (never `data/fixtures` directly) and render zero-states when empty. The
+  read hooks tolerate being called outside the provider (shared `TopBar` on pre-auth chrome).
+- **Demo banner**: `src/components/DemoBanner.tsx` (in `(app)/_layout`) states plainly that
+  transcription/summarization use the cloud, so the on-device trust copy doesn't overclaim.
+
 ## Server infra (`infra/`)
 OpenTofu module for the v1 server on Azure (UAE North) — dummy-application phase, nothing applied
 yet. Runbook, decisions applied, cost table, and open items are all in `infra/README.md`; don't

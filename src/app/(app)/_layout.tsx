@@ -2,9 +2,11 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DemoBanner } from '../../components/DemoBanner';
 import { PatternsTabIcon, ReadyTabIcon, SessionTabIcon } from '../../components/tabIcons';
 import { TopBar } from '../../components/TopBar';
 import { AppText } from '../../components/ui';
+import { DataProvider } from '../../data/DataProvider';
 import { useTheme } from '../../theme/ThemeProvider';
 
 const TAB_META: Record<string, { label: string; Icon: React.ComponentType<{ size?: number; color?: string }> }> = {
@@ -75,16 +77,21 @@ function WorkflowTabBar({ state, navigation }: TabBarProps) {
 export default function AppLayout() {
   const theme = useTheme();
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
-      <TopBar />
-      <Tabs
-        tabBar={(props) => <WorkflowTabBar {...(props as unknown as TabBarProps)} />}
-        screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: theme.colors.surface } }}
-      >
-        <Tabs.Screen name="today" />
-        <Tabs.Screen name="session" />
-        <Tabs.Screen name="patterns" />
-      </Tabs>
-    </View>
+    <DataProvider>
+      <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
+        <TopBar />
+        <DemoBanner />
+        <Tabs
+          tabBar={(props) => <WorkflowTabBar {...(props as unknown as TabBarProps)} />}
+          screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: theme.colors.surface } }}
+        >
+          <Tabs.Screen name="today" />
+          <Tabs.Screen name="session" />
+          <Tabs.Screen name="patterns" />
+          {/* Reachable from the top-bar gear; hidden from the workflow tab bar (not in TAB_META). */}
+          <Tabs.Screen name="settings" options={{ href: null }} />
+        </Tabs>
+      </View>
+    </DataProvider>
   );
 }

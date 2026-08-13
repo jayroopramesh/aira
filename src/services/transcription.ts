@@ -22,7 +22,9 @@
  * flow's recording/analysing states demo end-to-end with no native module.
  */
 
-export type WhisperModelId = 'small.en' | 'base.en' | 'large-v3-turbo-q5_0';
+import { env, hasGroq } from '../config/env';
+
+export type WhisperModelId = 'small.en' | 'base.en' | 'large-v3-turbo-q5_0' | 'whisper-large-v3';
 
 export type ModelStatus =
   | { state: 'absent' }
@@ -121,4 +123,102 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-export const transcriptionService: TranscriptionService = new MockTranscriptionService(1);
+/**
+ * GroqTranscriptionService — DEMO-mode transcription against Groq's OpenAI-compatible audio
+ * endpoint (whisper-large-v3). This is a CLOUD hop: the recorded (or uploaded) audio is sent to
+ * Groq to be transcribed. That's an honest departure from the on-device story, disclosed by the
+ * app's demo-mode banner. No model is downloaded — the model runs server-side — so `ensureModel`
+ * is a no-op and `requiresDevBuild` is false (it works on web).
+ *
+ * There is NO on-device de-identification hop in demo mode (that needs the native OpenMed model),
+ * so `deidentified` is false; the summarizer's clinical prompt is instructed to avoid echoing
+ * raw identifiers, and the banner keeps the trust copy honest.
+ */
+export class GroqTranscriptionService implements TranscriptionService {
+  readonly defaultModel: WhisperModelId = 'whisper-large-v3';
+  readonly requiresDevBuild = false;
+
+  constructor(
+    private readonly apiKey: string,
+    private readonly baseUrl: string,
+    private readonly model = 'whisper-large-v3',
+  ) {}
+
+  async getModelStatus(): Promise<ModelStatus> {
+    // Server-side model — always "ready" from the client's perspective.
+    return { state: 'ready', sizeBytes: 0 };
+  }
+
+  async ensureModel(_model: WhisperModelId, onProgress?: (p: number) => void): Promise<void> {
+    onProgress?.(1);
+  }
+
+  async transcribe(
+    audio: CaptureRef,
+    opts?: { model?: WhisperModelId; onStage?: (stage: 'preparing' | 'transcribing' | 'deidentifying') => void; signal?: AbortSignal },
+  ): Promise<Transcript> {
+    opts?.onStage?.('preparing');
+
+    // Pull the captured audio into a Blob. On web this is a blob:/File URI from MediaRecorder or
+    // the file picker; fetch() resolves both.
+    const resp = await fetch(audio.uri, { signal: opts?.signal });
+    const blob = await resp.blob();
+    const filename = guessFilename(blob.type);
+
+    const form = new FormData();
+    // React Native's FormData accepts a Blob on web; the cast keeps TS happy across platforms.
+    form.append('file', blob as unknown as Blob, filename);
+    form.append('model', opts?.model ?? this.model);
+    form.append('response_format', 'verbose_json');
+    form.append('temperature', '0');
+
+    opts?.onStage?.('transcribing');
+    const res = await fetch(`${this.baseUrl}/audio/transcriptions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.apiKey}` },
+      body: form,
+      signal: opts?.signal,
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`Groq transcription failed (${res.status}). ${detail.slice(0, 300)}`);
+    }
+    const json = (await res.json()) as {
+      text?: string;
+      duration?: number;
+      segments?: { start: number; end: number; text: string }[];
+    };
+
+    const text = (json.text ?? '').trim();
+    const segments: TranscriptSegment[] = (json.segments ?? []).map((s) => ({
+      startMs: Math.round((s.start ?? 0) * 1000),
+      endMs: Math.round((s.end ?? 0) * 1000),
+      text: s.text.trim(),
+    }));
+
+    return {
+      text,
+      segments: segments.length ? segments : [{ startMs: 0, endMs: audio.durationMs, text }],
+      durationMs: json.duration != null ? Math.round(json.duration * 1000) : audio.durationMs,
+      model: (opts?.model ?? this.model) as WhisperModelId,
+      deidentified: false, // cloud demo — on-device OpenMed de-id is not run here
+    };
+  }
+}
+
+function guessFilename(mime: string): string {
+  if (mime.includes('webm')) return 'session.webm';
+  if (mime.includes('mp4') || mime.includes('m4a')) return 'session.m4a';
+  if (mime.includes('mpeg') || mime.includes('mp3')) return 'session.mp3';
+  if (mime.includes('wav')) return 'session.wav';
+  if (mime.includes('ogg')) return 'session.ogg';
+  return 'session.webm';
+}
+
+/**
+ * The app-wide transcription handle. Groq-backed when configured (real whisper-large-v3),
+ * otherwise the mock so the recording/analysing flow still demos with no keys.
+ */
+export const transcriptionService: TranscriptionService = hasGroq
+  ? new GroqTranscriptionService(env.groq.apiKey, env.groq.baseUrl, env.groq.transcriptionModel)
+  : new MockTranscriptionService(1);

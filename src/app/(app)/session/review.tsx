@@ -1,10 +1,12 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowRight, CheckIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
+import { PageHeader, Screen } from '../../../components/Screen';
 import { AppText, Badge, Button, Card, Divider, Eyebrow, Row, TrustPill } from '../../../components/ui';
-import { AMARA_DRAFT } from '../../../data/fixtures';
+import { ZeroState } from '../../../components/ZeroState';
+import { useClient, useDraftNote } from '../../../data/DataProvider';
 import { DraftNote, NoteSection, PrepItem } from '../../../data/types';
 import { useTheme } from '../../../theme/ThemeProvider';
 
@@ -18,20 +20,39 @@ export default function ReviewNote() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const wide = width >= 1040;
-  const draft = AMARA_DRAFT;
+  const { clientId } = useLocalSearchParams<{ clientId: string }>();
+  const draft = useDraftNote(clientId);
+  const client = useClient(clientId);
 
   const [tab, setTab] = useState<Tab>('Note');
   const [signed, setSigned] = useState(false);
 
+  if (!draft) {
+    return (
+      <Screen maxWidth={760}>
+        <PageHeader eyebrow="Session" title="No note to review" subtitle="Capture a session and Aira will draft a note here for you to review and sign." />
+        <ZeroState
+          mood="thinking"
+          title="Nothing drafted yet"
+          body="Record or upload a session on the Session tab. Once it's transcribed and drafted, the SOAP note opens here."
+          primary={{ label: 'Go to Session', onPress: () => router.replace('/(app)/session') }}
+        />
+      </Screen>
+    );
+  }
+
+  // A multi-session (sample) client shows the session sidebar; a freshly-captured one doesn't.
+  const showSessions = !!client && client.sessionNumber > 1;
+
   const rail = <ReviewRail draft={draft} signed={signed} onSign={() => setSigned(true)} />;
-  const sessions = <SessionList signed={signed} />;
+  const sessions = <SessionList name={client?.name ?? 'this client'} signed={signed} />;
 
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
       <ScrollView contentContainerStyle={{ paddingBottom: signed ? 60 : 140 }}>
         <View style={{ flexDirection: wide ? 'row' : 'column', maxWidth: 1320, width: '100%', alignSelf: 'center', gap: wide ? 0 : theme.spacing.lg }}>
-          {/* Left: session list */}
-          {wide ? (
+          {/* Left: session list (only when there's a real history — sample clients). */}
+          {wide && showSessions ? (
             <View style={{ width: 232, borderRightWidth: 1, borderRightColor: c.line, paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.lg }}>
               {sessions}
             </View>
@@ -368,7 +389,7 @@ function Section({ section, measures, editable }: { section: NoteSection; measur
           ) : null}
           {section.marker === 'P' ? (
             <AppText variant="small" color="ink3" style={{ marginTop: 10 }}>
-              ↳ These items become the reminders you’ll see when prepping Amara’s next session.
+              ↳ These items become the reminders you’ll see when prepping this client’s next session.
             </AppText>
           ) : null}
         </View>
@@ -703,7 +724,7 @@ function SignOff({ signed, onSign }: { signed: boolean; onSign: () => void }) {
   );
 }
 
-function SessionList({ signed = false }: { signed?: boolean }) {
+function SessionList({ name, signed = false }: { name: string; signed?: boolean }) {
   const theme = useTheme();
   const c = theme.colors;
   const rows = [
@@ -722,7 +743,7 @@ function SessionList({ signed = false }: { signed?: boolean }) {
   ];
   return (
     <View>
-      <Eyebrow>Sessions · Amara K.</Eyebrow>
+      <Eyebrow>Sessions · {name}</Eyebrow>
       <View style={{ height: 12 }} />
       {rows.map((r) => (
         <View

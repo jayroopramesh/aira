@@ -2,13 +2,13 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { BackLink, PageHeader, Screen } from '../../../components/Screen';
 import { HistoryTimeline } from '../../../components/clinical';
-import { CLIENTS_BY_ID } from '../../../data/fixtures';
+import { useClient } from '../../../data/DataProvider';
 
 /** Chronological session-history timeline — typed feed, types never blurred. */
 export default function SessionHistory() {
   const router = useRouter();
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
-  const client = CLIENTS_BY_ID[clientId ?? 'amara'];
+  const client = useClient(clientId);
   if (!client) return null;
 
   return (
