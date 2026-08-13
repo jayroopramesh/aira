@@ -137,7 +137,7 @@ export const darkColors: ColorTokens = {
   bandSev: '#301A18',
   sand: '#221D14',
   sandBd: '#34291A',
-  onBrand: '#08201C',
+  onBrand: '#FFFFFF',
   unlockGradient: ['#0A3D3A', '#04120F'],
   unlockInk: '#EAF7F3',
   unlockInk2: 'rgba(234,247,243,0.72)',

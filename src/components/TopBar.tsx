@@ -2,6 +2,7 @@ import { usePathname, useGlobalSearchParams } from 'expo-router';
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CLIENTS_BY_ID } from '../data/fixtures';
 import { useTheme, useThemeControls } from '../theme/ThemeProvider';
 import { useEscalate } from './Escalate';
 import { MoonIcon, SunIcon } from './icons';
@@ -28,7 +29,8 @@ export function TopBar({
   const ink = inkColor ?? c.ink;
   const pathname = usePathname();
   const params = useGlobalSearchParams<{ risk?: string; clientId?: string }>();
-  const onRisk = params?.risk === '1' || params?.clientId === 'leah';
+  const onRisk =
+    params?.risk === '1' || (params?.clientId ? CLIENTS_BY_ID[params.clientId]?.risk === 'acute' : false);
   const mood = appBarMood(pathname, onRisk);
 
   return (
