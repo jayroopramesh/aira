@@ -1,4 +1,4 @@
-import { CaseloadKpi, Client, DayDashboard, DraftNote } from './types';
+import { Client, DayDashboard, DraftNote } from './types';
 
 /* =========================================================================
  * Amara K. — the primary longitudinal dataset (design-direction cohort).
@@ -382,12 +382,14 @@ export const CLIENTS_BY_ID: Record<string, Client> = Object.fromEntries(CLIENTS.
 /* ------------------------------------------------------------ day board --- */
 
 export const DAY_DASHBOARD: DayDashboard = {
-  dateLabel: 'TUESDAY · 12 AUGUST',
-  subtitle: 'Six sessions today · 2 need prep · caseload all sync’d on this device',
+  // Header date is set at load time (see todayLabel in buildSampleSnapshot) so it never claims the
+  // wrong weekday/date. Counts below match the 4-entry schedule (F15).
+  dateLabel: 'TODAY',
+  subtitle: 'Four sessions today · 2 need prep · caseload all sync’d on this device',
   nextInMinutes: 24,
   nextClientId: 'amara',
   glance: [
-    { label: 'Sessions today', value: '6' },
+    { label: 'Sessions today', value: '4' },
     { label: 'Need prep', value: '2' },
     { label: 'Notes to sign', value: '3' },
     { label: 'Follow-ups due', value: '1', tone: 'risk' },
@@ -400,15 +402,6 @@ export const DAY_DASHBOARD: DayDashboard = {
   ],
   standingSafety: { clientId: 'leah', note: 'Leah C. — acute · review at 1:00' },
 };
-
-/* ---------------------------------------------------------- caseload KPIs -- */
-
-export const CASELOAD_KPIS: CaseloadKpi[] = [
-  { label: 'Active clients', value: '24', sub: '+2 this month' },
-  { label: 'Measure adherence', value: '86', unit: '%', sub: 're-screened on schedule' },
-  { label: 'Improving (90d)', value: '17', sub: 'PHQ-9 or GAD-7 down' },
-  { label: 'Risk flags', value: '1', sub: 'acute · review — sober, not alarmed', tone: 'risk' },
-];
 
 /* ------------------------------------------------ Amara's session-5 draft -- */
 
