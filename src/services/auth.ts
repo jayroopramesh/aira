@@ -18,8 +18,45 @@
  */
 
 import { hasSupabase } from '../config/env';
+import { deviceStore } from './deviceStore';
 import { getSupabase } from './supabase';
 import { UnlockResult, vaultStorage, VaultStorage } from './storage';
+
+/**
+ * The recovery code and the clinician's name must survive a page reload — the whole point of the
+ * recovery code is that it works when you come back locked out (F1), and the sign-off attestation
+ * must name the clinician who actually signed in (F8). Both persist through `deviceStore` (the same
+ * device-local layer the vault uses). The recovery code is stored as a non-reversible hash, not the
+ * words themselves — the real Argon2id vault replaces this with a proper key-derivation envelope.
+ */
+const RECOVERY_HASH_KEY = 'auth.recovery-hash';
+const CLINICIAN_NAME_KEY = 'auth.clinician-name';
+
+/** Canonicalise a 12-word code so spacing/case never cause a false mismatch. */
+function normalizeCode(code: string): string {
+  return code.trim().toLowerCase().split(/\s+/).filter(Boolean).join(' ');
+}
+
+/** FNV-1a 32-bit → hex. Not cryptographic (v1 stores no crypto), but avoids keeping the words in cleartext. */
+function hashRecoveryCode(code: string): string {
+  const normalized = normalizeCode(code);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < normalized.length; i++) {
+    h ^= normalized.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+async function persistRecoveryHash(words: string[]): Promise<void> {
+  await deviceStore.set(RECOVERY_HASH_KEY, hashRecoveryCode(words.join(' ')));
+}
+
+/** True when the entered code hashes to the value persisted at account creation (survives reloads). */
+async function recoveryCodeMatches(entered: string): Promise<boolean> {
+  const stored = await deviceStore.get(RECOVERY_HASH_KEY);
+  return !!stored && stored === hashRecoveryCode(entered);
+}
 
 /** What account creation collects (Emirates ID for the manual-recovery identity check). */
 export type AccountDetails = {
@@ -83,6 +120,8 @@ export interface AuthService {
   markRecoverySaved(): void;
   /** The email of the account being set up / last used, so login can prefill it. */
   getKnownEmail(): string | null;
+  /** The signed-in clinician's display name — the sign-off attestation and greeting are attributed to it. */
+  getClinicianName(): string | null;
   /** Sign in with username/email + password; unlocks the vault on success. */
   signIn(username: string, password: string): Promise<UnlockResult>;
   /** Fallback path: unlock with the saved 12-word recovery code (lets them reset later). */
@@ -96,8 +135,14 @@ export class MockAuthService implements AuthService {
   private recoveryCode: string[] = [...RECOVERY_WORDS];
   private createdPassword: string | null = null;
   private knownEmail: string | null = null;
+  private clinicianName: string | null = null;
 
-  constructor(private readonly vault: VaultStorage) {}
+  constructor(private readonly vault: VaultStorage) {
+    // Best-effort hydrate the clinician name so a returning session attributes the sign-off correctly.
+    deviceStore.get(CLINICIAN_NAME_KEY).then((v) => {
+      if (v && !this.clinicianName) this.clinicianName = v;
+    });
+  }
 
   getStatus() {
     return this.status;
@@ -108,7 +153,11 @@ export class MockAuthService implements AuthService {
     // here we remember the chosen password, move state forward, and hand back the code.
     this.createdPassword = details.password;
     this.knownEmail = details.email;
+    this.clinicianName = details.fullName;
     this.recoveryCode = [...RECOVERY_WORDS];
+    // Persist the code's hash + the clinician name so recovery works and sign-off is attributed after a reload.
+    await persistRecoveryHash(this.recoveryCode);
+    await deviceStore.set(CLINICIAN_NAME_KEY, details.fullName);
     this.status = 'awaiting-recovery-save';
     return { recoveryCode: this.recoveryCode };
   }
@@ -125,6 +174,10 @@ export class MockAuthService implements AuthService {
     return this.knownEmail;
   }
 
+  getClinicianName() {
+    return this.clinicianName;
+  }
+
   async signIn(username: string, password: string): Promise<UnlockResult> {
     // Demo rule: the password chosen at account creation or DEMO_PASSWORD opens;
     // anything else reproduces the calm wrong-password state.
@@ -137,19 +190,16 @@ export class MockAuthService implements AuthService {
   }
 
   async signInWithRecoveryCode(code: string): Promise<UnlockResult> {
-    // The entered words must match the canonical 12-word code (no crypto — a plain
-    // normalized word-sequence check); the real impl checks the saved envelope.
-    const normalize = (s: string) => s.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const entered = normalize(code);
-    const expected = normalize(this.recoveryCode.join(' '));
-    const matches = entered.length === expected.length && entered.every((w, i) => w === expected[i]);
-    if (!matches) return { ok: false, reason: 'wrong-key' };
+    // Check against the hash persisted at account creation so the saved code works across reloads (F1).
+    if (!(await recoveryCodeMatches(code))) return { ok: false, reason: 'wrong-key' };
     const res = await this.vault.unlockWithRecoveryCode(code);
     if (res.ok) this.status = 'active';
     return res;
   }
 
   async signOut() {
+    // Re-lock the vault AND drop the session so the route guard re-challenges (F2).
+    this.status = 'none';
     await this.vault.lock();
   }
 }
@@ -172,10 +222,17 @@ export class MockAuthService implements AuthService {
  */
 export class SupabaseAuthService implements AuthService {
   private status: AccountStatus = 'none';
-  private recoveryCode: string[] = generateRecoveryCode();
+  // Generated once inside createAccount — NOT at construction — so a reload never displays a fresh
+  // set of 12 words under the "shown once" framing while the real (persisted) code is a different one.
+  private recoveryCode: string[] = [];
   private knownEmail: string | null = null;
+  private clinicianName: string | null = null;
 
-  constructor(private readonly vault: VaultStorage) {}
+  constructor(private readonly vault: VaultStorage) {
+    deviceStore.get(CLINICIAN_NAME_KEY).then((v) => {
+      if (v && !this.clinicianName) this.clinicianName = v;
+    });
+  }
 
   getStatus() {
     return this.status;
@@ -193,9 +250,14 @@ export class SupabaseAuthService implements AuthService {
     return this.knownEmail;
   }
 
+  getClinicianName() {
+    return this.clinicianName;
+  }
+
   async createAccount(details: AccountDetails): Promise<{ recoveryCode: string[] }> {
     const supabase = getSupabase();
     this.knownEmail = details.email;
+    this.clinicianName = details.fullName;
     this.recoveryCode = generateRecoveryCode();
     if (supabase) {
       const { error } = await supabase.auth.signUp({
@@ -211,6 +273,9 @@ export class SupabaseAuthService implements AuthService {
         throw new Error(error.message);
       }
     }
+    // Persist the code's hash + the clinician name so recovery works and sign-off is attributed after a reload.
+    await persistRecoveryHash(this.recoveryCode);
+    await deviceStore.set(CLINICIAN_NAME_KEY, details.fullName);
     // The recovery code is the app-side vault-key moment — unlock the local vault now.
     await this.vault.unlock(details.password);
     this.status = 'awaiting-recovery-save';
@@ -230,11 +295,8 @@ export class SupabaseAuthService implements AuthService {
   }
 
   async signInWithRecoveryCode(code: string): Promise<UnlockResult> {
-    const normalize = (s: string) => s.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const entered = normalize(code);
-    const expected = normalize(this.recoveryCode.join(' '));
-    const matches = entered.length === expected.length && entered.every((w, i) => w === expected[i]);
-    if (!matches) return { ok: false, reason: 'wrong-key' };
+    // Check against the hash persisted at account creation so the saved code works across reloads (F1).
+    if (!(await recoveryCodeMatches(code))) return { ok: false, reason: 'wrong-key' };
     const res = await this.vault.unlockWithRecoveryCode(code);
     if (res.ok) this.status = 'active';
     return res;
@@ -243,6 +305,8 @@ export class SupabaseAuthService implements AuthService {
   async signOut() {
     const supabase = getSupabase();
     if (supabase) await supabase.auth.signOut().catch(() => {});
+    // Re-lock the vault AND drop the session so the route guard re-challenges (F2).
+    this.status = 'none';
     await this.vault.lock();
   }
 }
