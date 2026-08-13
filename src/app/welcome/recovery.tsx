@@ -39,12 +39,16 @@ function fileBody(words: string[]) {
 export default function WelcomeRecovery() {
   const router = useRouter();
   const words = authService.getRecoveryCode();
+  // Revisiting this screen after setup shows no code — Copy/Save must be inert then, or "Save as file"
+  // would download an EMPTY aira-recovery-code.txt over the user's real one (N4).
+  const hasCode = words.length > 0;
   const [revealed, setRevealed] = useState(false);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const [savedFile, setSavedFile] = useState(false);
 
   const copy = () => {
+    if (!hasCode) return;
     // Only confirm "Copied" when the write actually succeeds (F12). A code shown exactly once must
     // never report success on a rejected clipboard write, or the user navigates on having lost it.
     if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -58,6 +62,7 @@ export default function WelcomeRecovery() {
   };
 
   const save = () => {
+    if (!hasCode) return;
     // Web: a real download of the code as a text file. Native: visual confirmation (mock).
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const blob = new Blob([fileBody(words)], { type: 'text/plain' });
@@ -174,17 +179,19 @@ export default function WelcomeRecovery() {
         ) : null}
       </View>
 
-      {/* Copy / Save affordances */}
+      {/* Copy / Save affordances — inert when there is no code to give (N4). */}
       <Row gap={10} style={{ justifyContent: 'center', marginTop: 14 }}>
         <RecTool
           icon={<CopyIcon size={14} color={MINT} />}
           label={copied ? R.recoveryCopied : R.recoveryCopy}
           onPress={copy}
+          disabled={!hasCode}
         />
         <RecTool
           icon={<DownloadIcon size={14} color={MINT} />}
           label={savedFile ? R.recoverySaved : R.recoverySave}
           onPress={save}
+          disabled={!hasCode}
         />
       </Row>
 
@@ -241,11 +248,13 @@ export default function WelcomeRecovery() {
   );
 }
 
-function RecTool({ icon, label, onPress }: { icon: React.ReactNode; label: string; onPress: () => void }) {
+function RecTool({ icon, label, onPress, disabled }: { icon: React.ReactNode; label: string; onPress: () => void; disabled?: boolean }) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
+      accessibilityState={{ disabled: !!disabled }}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
@@ -253,7 +262,8 @@ function RecTool({ icon, label, onPress }: { icon: React.ReactNode; label: strin
         paddingVertical: 9,
         paddingHorizontal: 14,
         borderRadius: 999,
-        backgroundColor: pressed ? 'rgba(234,247,243,0.18)' : 'rgba(234,247,243,0.1)',
+        opacity: disabled ? 0.4 : 1,
+        backgroundColor: pressed && !disabled ? 'rgba(234,247,243,0.18)' : 'rgba(234,247,243,0.1)',
       })}
     >
       {icon}
