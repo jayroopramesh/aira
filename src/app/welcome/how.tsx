@@ -1,8 +1,8 @@
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { View } from 'react-native';
-import { AuthHello, AuthLink, AuthScaffold, AuthSubmit, AuthTitle, INK, INK2, MINT, PagerDots } from '../../components/auth';
-import { Mascot } from '../../components/Mascot';
+import { AuthHello, AuthLink, AuthProgress, AuthScaffold, AuthSubmit, AuthTitle, INK, INK2, MINT, PagerDots } from '../../components/auth';
+import { MascotMood } from '../../components/mascotMoods';
 import { ShieldIcon } from '../../components/icons';
 import { AppText, Row } from '../../components/ui';
 import { recoveryStrings as R } from '../../strings/recovery';
@@ -12,8 +12,9 @@ export default function WelcomeHow() {
   const router = useRouter();
   return (
     <AuthScaffold maxWidth={460}>
-      <Mascot size={88} />
+      <MascotMood mood="encouraging" size={92} />
       <View style={{ height: 14 }} />
+      <AuthProgress percent={45} label="Setup · 45%" />
       <PagerDots count={2} active={1} />
       <AuthHello>{R.onboard2Eyebrow}</AuthHello>
       <AuthTitle>{R.onboard2Title}</AuthTitle>
@@ -27,9 +28,10 @@ export default function WelcomeHow() {
               alignItems: 'flex-start',
               padding: 13,
               borderRadius: 14,
-              backgroundColor: 'rgba(234,247,243,0.07)',
+              // Round-5 item 1: all three step boxes share ONE lighter seafoam green.
+              backgroundColor: 'rgba(127,206,192,0.12)',
               borderWidth: 1,
-              borderColor: 'rgba(234,247,243,0.1)',
+              borderColor: 'rgba(127,206,192,0.28)',
             }}
           >
             <View
@@ -37,12 +39,12 @@ export default function WelcomeHow() {
                 width: 26,
                 height: 26,
                 borderRadius: 13,
-                backgroundColor: MINT,
+                backgroundColor: 'rgba(127,206,192,0.24)',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <AppText variant="bodyStrong" tint="#0B3B34" style={{ fontSize: 13 }}>
+              <AppText variant="bodyStrong" tint="#EAFBF7" style={{ fontSize: 13 }}>
                 {i + 1}
               </AppText>
             </View>

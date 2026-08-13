@@ -1,10 +1,10 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { Highlights } from '../../../components/Highlights';
 import { Screen } from '../../../components/Screen';
 import { Waveform } from '../../../components/Waveform';
-import { FileUpIcon, MicIcon, ShieldIcon, StopIcon } from '../../../components/icons';
+import { FileUpIcon, MicIcon, PencilIcon, PlusIcon, ShieldIcon, StopIcon } from '../../../components/icons';
 import { AppText, Avatar, Button, Card, Row, TrustPill } from '../../../components/ui';
 import { CLIENTS_BY_ID } from '../../../data/fixtures';
 import { transcriptionService } from '../../../services/transcription';
@@ -101,12 +101,6 @@ function PreCapture({ client, onStart }: { client: (typeof CLIENTS_BY_ID)[string
 
 /* ---------------------------------------------------------------- recording */
 
-/** A therapist note pinned to a moment in the audio (visual mock of timestamp binding). */
-const PINNED_NOTES = [
-  { ts: '08:12', text: 'Sleep log clearly improving — worth reinforcing as a win.' },
-  { ts: '12:47', text: 'Exam anxiety resurfaces the nights before deadlines.' },
-];
-
 function Recording({ client, onStop }: { client: (typeof CLIENTS_BY_ID)[string]; onStop: () => void }) {
   const theme = useTheme();
   const c = theme.colors;
@@ -153,34 +147,19 @@ function Recording({ client, onStop }: { client: (typeof CLIENTS_BY_ID)[string];
         </AppText>
       </View>
 
-      {/* Optional therapist notebox — each note pins to a moment in the audio. */}
-      <Card radius="md" style={{ width: '100%', maxWidth: 520, marginTop: 22 }}>
-        <AppText variant="bodyStrong" style={{ fontSize: 13 }}>
-          Your notes for this recording
-        </AppText>
-        <AppText variant="small" color="ink3" style={{ marginTop: 2, lineHeight: 16 }}>
-          Each note pins to the moment in the audio · on replay, the matching note highlights here
-        </AppText>
-        {PINNED_NOTES.map((n) => (
-          <Row key={n.ts} gap={11} style={{ alignItems: 'flex-start', paddingTop: 9, marginTop: 9, borderTopWidth: 1, borderTopColor: c.lineSoft }}>
-            <TimePill label={n.ts} />
-            <AppText variant="small" color="ink2" style={{ flex: 1, fontSize: 12.5, lineHeight: 18 }}>
-              {n.text}
-            </AppText>
-          </Row>
-        ))}
-        <Row gap={11} style={{ alignItems: 'center', paddingTop: 9, marginTop: 9, borderTopWidth: 1, borderTopColor: c.lineSoft }}>
-          <TimePill label={`${mm}:${ss}`} live />
-          <TextInput
-            placeholder="Add a note at this moment…"
-            placeholderTextColor={c.ink3}
-            style={{ flex: 1, minWidth: 0, color: c.ink, fontFamily: theme.type.body.fontFamily, fontSize: 13, paddingVertical: 4 }}
-          />
-        </Row>
-      </Card>
+      {/* Comment-on-your-recording strip: a dotted "add" card first, earlier comments to its
+          right (newest-first), each editable with a pencil signal and its timestamp pill. */}
+      <RecordingNotes liveTs={`${mm}:${ss}`} />
 
       <View style={{ height: 22 }} />
       <TrustPill label="Audio stays on this device · nothing is uploaded" icon={<ShieldIcon size={13} color={c.brand} />} />
+      {/* Supanote-style compliance note — HIPAA-ALIGNED phrasing only (never "compliant/certified"). */}
+      <Row gap={7} style={{ alignItems: 'center', marginTop: 10, maxWidth: 520, paddingHorizontal: 8 }}>
+        <ShieldIcon size={12} color={c.ink3} />
+        <AppText variant="small" color="ink3" center style={{ flex: 1, fontSize: 11, lineHeight: 16 }}>
+          HIPAA-aligned safeguards · de-identified on your device · audio deleted after transcription by default
+        </AppText>
+      </Row>
       <View style={{ height: 22 }} />
       <Button title="Stop & transcribe" variant="secondary" size="lg" leftIcon={<StopIcon size={16} color={c.risk} />} onPress={onStop} />
       <AppText variant="small" color="ink3" center style={{ marginTop: 18, maxWidth: 420, lineHeight: 18 }}>
@@ -190,6 +169,132 @@ function Recording({ client, onStop }: { client: (typeof CLIENTS_BY_ID)[string];
         When you stop, Aira transcribes on-device, drafts the note, then deletes the recording (unless you choose to keep it).
       </AppText>
     </View>
+  );
+}
+
+type Comment = { id: string; ts: string; text: string };
+
+/**
+ * "Comment on your recording" strip (round-4 item 4 + round-5 item 4). The dotted "add" card is
+ * FIRST/leftmost so the affordance is visible with zero scroll; earlier comments follow to the
+ * right, newest-first. Each comment carries a pencil icon (editable signal), its timestamp pill,
+ * and editable text. Each comment syncs to the recording timestamp (jumps back on replay).
+ */
+function RecordingNotes({ liveTs }: { liveTs: string }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const [comments, setComments] = useState<Comment[]>([
+    { id: 'c-1247', ts: '12:47', text: 'Exam anxiety resurfaces the nights before deadlines.' },
+    { id: 'c-0812', ts: '08:12', text: 'Sleep log clearly improving — worth reinforcing as a win.' },
+  ]);
+  const [draft, setDraft] = useState('');
+  const nextId = useRef(0);
+  const scroller = useRef<ScrollView>(null);
+
+  const add = () => {
+    const text = draft.trim();
+    if (!text) return;
+    // Commit AFTER the add card (keeps it first) and reset scroll to 0 so the add card stays visible.
+    setComments((xs) => [{ id: `c-new-${++nextId.current}`, ts: liveTs, text }, ...xs]);
+    setDraft('');
+    scroller.current?.scrollTo({ x: 0, animated: true });
+  };
+
+  const editComment = (id: string, text: string) => setComments((xs) => xs.map((x) => (x.id === id ? { ...x, text } : x)));
+
+  return (
+    <Card radius="md" style={{ width: '100%', maxWidth: 520, marginTop: 22 }} padded={false}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
+        <AppText variant="bodyStrong" style={{ fontSize: 13 }}>
+          Comment on your recording
+        </AppText>
+        <AppText variant="small" color="ink3" style={{ marginTop: 2, lineHeight: 16 }}>
+          Each comment syncs to the recording timestamp · on replay it jumps back to that moment
+        </AppText>
+      </View>
+      <ScrollView
+        ref={scroller}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 10, paddingHorizontal: 16, paddingVertical: 14 }}
+        style={{ marginTop: 4 }}
+      >
+        {/* Dotted add card — first/leftmost. */}
+        <View
+          style={{
+            width: 208,
+            borderRadius: theme.radii.md,
+            borderWidth: 2,
+            borderStyle: 'dotted',
+            borderColor: c.brand,
+            backgroundColor: c.brandBg,
+            padding: 12,
+          }}
+        >
+          <Row gap={8} style={{ alignItems: 'center' }}>
+            <TimePill label={liveTs} live />
+            <Row gap={5} style={{ alignItems: 'center' }}>
+              <PlusIcon size={13} color={c.brand} />
+              <AppText variant="small" tint={c.brand} style={{ fontSize: 11.5 }}>
+                Add at this moment
+              </AppText>
+            </Row>
+          </Row>
+          <TextInput
+            value={draft}
+            onChangeText={setDraft}
+            onSubmitEditing={add}
+            onBlur={add}
+            placeholder="Type a comment…"
+            placeholderTextColor={c.ink3}
+            multiline
+            style={{
+              marginTop: 8,
+              minHeight: 54,
+              color: c.ink,
+              fontFamily: theme.type.body.fontFamily,
+              fontSize: 12.5,
+              lineHeight: 18,
+              textAlignVertical: 'top',
+            }}
+          />
+        </View>
+
+        {/* Earlier comments — newest-first, each editable with a pencil signal. */}
+        {comments.map((n) => (
+          <View
+            key={n.id}
+            style={{
+              width: 208,
+              borderRadius: theme.radii.md,
+              borderWidth: 1,
+              borderColor: c.line,
+              backgroundColor: c.sunken,
+              padding: 12,
+            }}
+          >
+            <Row gap={8} style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+              <TimePill label={n.ts} />
+              <PencilIcon size={13} color={c.ink3} />
+            </Row>
+            <TextInput
+              value={n.text}
+              onChangeText={(t) => editComment(n.id, t)}
+              multiline
+              style={{
+                marginTop: 8,
+                minHeight: 54,
+                color: c.ink2,
+                fontFamily: theme.type.body.fontFamily,
+                fontSize: 12.5,
+                lineHeight: 18,
+                textAlignVertical: 'top',
+              }}
+            />
+          </View>
+        ))}
+      </ScrollView>
+    </Card>
   );
 }
 

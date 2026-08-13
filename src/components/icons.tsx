@@ -228,3 +228,31 @@ export function PlayIcon({ size = 16, color = 'currentColor', strokeWidth = 2 }:
     </Svg>
   );
 }
+
+/** Paper-plane — the "send a follow-up email" outreach action. */
+export function SendIcon({ size = 16, color = 'currentColor', strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg {...base(size, strokeWidth)} stroke={color}>
+      <Path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+    </Svg>
+  );
+}
+
+/** Heart — the "thank you for dropping in" outreach action. */
+export function HeartIcon({ size = 16, color = 'currentColor', strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg {...base(size, strokeWidth)} stroke={color}>
+      <Path d="M20.8 5.6a5 5 0 00-7.1 0L12 7.3l-1.7-1.7a5 5 0 10-7.1 7.1l1.7 1.7L12 21.5l7.1-7.1 1.7-1.7a5 5 0 000-7.1z" />
+    </Svg>
+  );
+}
+
+/** Envelope — the "fresh email" outreach action. */
+export function MailIcon({ size = 16, color = 'currentColor', strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg {...base(size, strokeWidth)} stroke={color}>
+      <Rect x={3} y={5} width={18} height={14} rx={2} />
+      <Path d="M3 7l9 6 9-6" />
+    </Svg>
+  );
+}

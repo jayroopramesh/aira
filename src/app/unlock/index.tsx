@@ -14,8 +14,8 @@ import {
   MINT,
   VaultLine,
 } from '../../components/auth';
-import { Mascot } from '../../components/Mascot';
-import { KeyIcon, ShieldIcon } from '../../components/icons';
+import { MascotMood } from '../../components/mascotMoods';
+import { KeyIcon, LockIcon, ShieldIcon } from '../../components/icons';
 import { authService } from '../../services/auth';
 import { AppText, Row } from '../../components/ui';
 import { recoveryStrings as R } from '../../strings/recovery';
@@ -61,7 +61,7 @@ export default function UnlockScreen() {
 
   return (
     <AuthScaffold>
-      <Mascot size={128} float />
+      <MascotMood mood={wrong ? 'empathetic' : 'encouraging'} size={124} float />
       <View style={{ height: 16 }} />
       <AuthHello>{wrong ? R.wrongEyebrow : R.loginEyebrow(CLINICIAN)}</AuthHello>
       <AuthTitle>{wrong ? R.wrongTitle : R.loginTitle}</AuthTitle>
@@ -125,6 +125,25 @@ export default function UnlockScreen() {
           <View style={{ height: 14 }} />
           <AuthLink label={R.createAccountLink} onPress={() => router.push('/welcome/create')} tint="rgba(191,234,225,0.82)" />
           <VaultLine icon={<ShieldIcon size={13} color={INK} />}>{R.vaultLine}</VaultLine>
+          <View style={{ height: 10 }} />
+          <Row
+            gap={7}
+            style={{
+              alignItems: 'center',
+              alignSelf: 'center',
+              paddingVertical: 6,
+              paddingHorizontal: 12,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: 'rgba(191,234,225,0.28)',
+              backgroundColor: 'rgba(234,247,243,0.06)',
+            }}
+          >
+            <LockIcon size={12} color={MINT} />
+            <AppText variant="small" tint="rgba(234,247,243,0.82)" style={{ fontSize: 11.5 }}>
+              {R.hipaaLine}
+            </AppText>
+          </Row>
         </>
       )}
     </AuthScaffold>
@@ -147,7 +166,7 @@ function Decrypting() {
 
   return (
     <AuthScaffold>
-      <Mascot size={128} float />
+      <MascotMood mood="breathing" size={124} float />
       <View style={{ height: 16 }} />
       <AuthHello>{R.decryptingEyebrow}</AuthHello>
       <AuthTitle>{R.decryptingTitle}</AuthTitle>

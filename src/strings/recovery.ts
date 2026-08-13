@@ -23,6 +23,8 @@ export const recoveryStrings = {
   demoWrongLink: 'See a wrong-password state',
   createAccountLink: 'New to Aira? Create an account',
   vaultLine: 'Encrypted with your login · notes stay on this device.',
+  // Supanote-style trust note — HIPAA-ALIGNED phrasing only (never "compliant/certified"; counsel pending).
+  hipaaLine: 'HIPAA-aligned safeguards · encrypted on this device — only you hold the key.',
 
   // Wrong-password (calm, nothing locked out)
   wrongEyebrow: 'That didn’t match',
@@ -49,7 +51,7 @@ export const recoveryStrings = {
   onboard1Eyebrow: 'Welcome to Aira',
   onboard1Title: 'Your sessions, understood — and kept only by you',
   onboard1Lede:
-    'Aira listens alongside you, drafts the clinical note, and shows what’s changing over time. Everything private lives on your device, encrypted.',
+    'Aira is your personal scribe for after the session — not another ear in the room. You capture the conversation on your device; Aira drafts the clinical note once you’re done, and shows what’s changing over time. Everything private stays on your device, encrypted.',
   onboard1Chips: ['Encrypted on your device', 'Notes drafted for you', 'Patterns over time'],
   onboard1Cta: 'Get started',
   onboardSkip: 'Skip — I already have an account',
@@ -92,7 +94,7 @@ export const recoveryStrings = {
   recoverySave: 'Save as file',
   recoverySaved: 'Saved',
   recoveryWarning:
-    'Treat this code as the only way back in. Your notes are encrypted on this device, so if you lose both your password and this code, no one at Aira can simply hand your vault back — recovery would mean a slow, manually-verified process, if it’s possible at all. Keep the code somewhere safe and private.',
+    'Treat this code as your only way back in. Lose both it and your password, and recovery becomes a slow, manually-verified process — if it’s possible at all.',
   recoveryGate: 'I’ve saved my recovery code somewhere safe. I understand it won’t be shown again.',
   recoveryEnterCta: 'Enter Aira',
 } as const;

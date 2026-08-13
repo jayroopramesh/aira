@@ -27,7 +27,11 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
 
 ## Structural rules to preserve (locked design decisions)
 - Mascot only on human surfaces (welcome onboarding, unlock/login, wordmark) — never on
-  charts/tables/risk queue or the in-session capture screen.
+  charts/tables/risk queue or the in-session capture screen. The final art is the captain's
+  background-removed mood set in `assets/mascot/<mood>.png`, driven by
+  `src/components/mascotMoods.tsx` (`MOOD_ART` registry, `MascotMood`, and the per-workflow
+  `appBarMood` map); heroes are wired per screen. The app icon derives from `Mascot Designz/logo2.png`
+  via `app.json`. (The earlier hand-drawn inline-SVG mascot has been retired.)
 - Risk is clay, never alarm-red; colour is never the only signal (always paired with a word).
 - Escalate is a standing, dismissible sheet — never modal, never alarm.
 - Sparse series (≤ 2 readings) render as a dot-strip with no trend line.

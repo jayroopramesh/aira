@@ -1,10 +1,11 @@
+import { usePathname, useGlobalSearchParams } from 'expo-router';
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, useThemeControls } from '../theme/ThemeProvider';
 import { useEscalate } from './Escalate';
 import { MoonIcon, SunIcon } from './icons';
-import { Mascot } from './Mascot';
+import { appBarMood, MascotMood } from './mascotMoods';
 import { AppText, Row } from './ui';
 
 /**
@@ -25,6 +26,10 @@ export function TopBar({
   const { toggle } = useThemeControls();
   const escalate = useEscalate();
   const ink = inkColor ?? c.ink;
+  const pathname = usePathname();
+  const params = useGlobalSearchParams<{ risk?: string; clientId?: string }>();
+  const onRisk = params?.risk === '1' || params?.clientId === 'leah';
+  const mood = appBarMood(pathname, onRisk);
 
   return (
     <View
@@ -39,7 +44,7 @@ export function TopBar({
     >
       <Row style={{ justifyContent: 'space-between', maxWidth: 1120, width: '100%', alignSelf: 'center' }}>
         <Row gap={9}>
-          <Mascot size={30} />
+          <MascotMood mood={mood} size={30} />
           <AppText variant="h2" tint={ink} style={{ fontSize: 21 }}>
             Aira
           </AppText>

@@ -27,9 +27,9 @@ approved click-through prototype. Expo **replaces** the earlier SvelteKit plan a
 > (see [Locked v1 constraints](#locked-v1-constraints)).
 
 <p align="center">
-  <img src="docs/screenshots/r2r3-today-1-dashboard-light.png" alt="Get ready dashboard (light)" width="32%" />
-  <img src="docs/screenshots/r2r3-session-4-note-soap-dark.png" alt="SOAP note, session summary (dark)" width="32%" />
-  <img src="docs/screenshots/r2r3-patterns-2-client-light.png" alt="Client patterns view (light)" width="32%" />
+  <img src="docs/screenshots/r4r5-welcome-light.png" alt="Welcome onboarding with mascot hero (light)" width="32%" />
+  <img src="docs/screenshots/r4r5-patterns-phq-dark.png" alt="Client patterns — multi-scale stoic chart (dark)" width="32%" />
+  <img src="docs/screenshots/r4r5-review-dap-light.png" alt="Session note with SOAP/DAP switcher (light)" width="32%" />
 </p>
 
 ---
