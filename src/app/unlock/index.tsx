@@ -37,8 +37,12 @@ const DEFAULT_PASSWORD = hasSupabase ? 'seafoam-harbor-42' : 'clinicvault';
 export default function UnlockScreen() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('login');
-  const [username, setUsername] = useState(() => authService.getKnownEmail() ?? DEFAULT_USERNAME);
-  const [password, setPassword] = useState(DEFAULT_PASSWORD);
+  const knownEmail = authService.getKnownEmail();
+  const [username, setUsername] = useState(() => knownEmail ?? DEFAULT_USERNAME);
+  // Only prefill the demo password on a truly fresh device (no account yet). Once an account exists —
+  // just created, or a returning/signed-out user — leave the password blank so nobody is fighting a
+  // prefilled credential that isn't theirs (F17).
+  const [password, setPassword] = useState(() => (knownEmail ? '' : DEFAULT_PASSWORD));
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState('');
   const [recoveryError, setRecoveryError] = useState(false);
