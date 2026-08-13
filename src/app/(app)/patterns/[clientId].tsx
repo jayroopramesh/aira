@@ -30,14 +30,26 @@ function NoReadingsYet({ client }: { client: Client }) {
   return (
     <Screen>
       <BackLink label="Back to caseload" onPress={() => router.replace('/(app)/patterns')} />
-      <Row gap={14} style={{ marginTop: theme.spacing.sm }}>
-        <Avatar initials={client.initials} size={52} />
-        <View style={{ flex: 1 }}>
-          <AppText variant="h1">{client.name}</AppText>
-          <AppText variant="small" color="ink3" style={{ marginTop: 4 }}>
-            ID {client.tokenId} · client since {client.clientSince}
-          </AppText>
-        </View>
+      <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginTop: theme.spacing.sm }}>
+        <Row gap={14} style={{ flex: 1, minWidth: 220 }}>
+          <Avatar initials={client.initials} size={52} />
+          <View style={{ flex: 1 }}>
+            <AppText variant="h1">{client.name}</AppText>
+            <AppText variant="small" color="ink3" style={{ marginTop: 4 }}>
+              ID {client.tokenId} · client since {client.clientSince}
+            </AppText>
+          </View>
+        </Row>
+        {/* A freshly-captured client's signed note is only reachable through here (F5) — the sparse
+            state must still surface the session-history door, not just the full patterns view. */}
+        <Pressable onPress={() => router.push(`/(app)/patterns/history?clientId=${client.id}`)} style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}>
+          <Card elevation="sm" padded={false} radius="sm" style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
+            <Row gap={8}>
+              <AppText variant="bodyStrong">Session history</AppText>
+              <ArrowRight size={16} color={c.ink} />
+            </Row>
+          </Card>
+        </Pressable>
       </Row>
       <View style={{ height: theme.spacing.lg }} />
       <Card tone="sunken" elevation="none" radius="lg" style={{ backgroundColor: c.brandBg, borderColor: c.brandBd }}>
@@ -102,7 +114,7 @@ function PatternsView({ clientId }: { clientId: string }) {
             <AppText variant="h1">{client.name}</AppText>
             <Row gap={8} style={{ marginTop: 4, flexWrap: 'wrap' }}>
               <AppText variant="small" color="ink3">
-                ID {client.tokenId} · {client.age} · client since {client.clientSince}
+                ID {client.tokenId} · {client.age ?? '—'} · client since {client.clientSince}
               </AppText>
               <RiskDot level={client.risk} />
             </Row>
@@ -255,7 +267,7 @@ function RiskReview({ clientId }: { clientId: string }) {
           <AppText variant="h1">{client.name}</AppText>
           <Row gap={8} style={{ marginTop: 4, flexWrap: 'wrap' }}>
             <AppText variant="small" color="ink3">
-              ID {client.tokenId} · {client.age} · Session {client.sessionNumber} · today 1:00
+              ID {client.tokenId} · {client.age ?? '—'} · Session {client.sessionNumber} · today 1:00
             </AppText>
             <TrustPill label="Re-identified locally" icon={<ShieldIcon size={12} color={c.brand} />} />
           </Row>
