@@ -493,7 +493,7 @@ function OtherPane({ tab }: { tab: Tab }) {
   const copy: Record<string, string> = {
     Transcript: hasGroq
       ? 'The transcript lives here on this device. In demo mode the audio was sent to the cloud (Groq) to transcribe; the audio is deleted afterwards and only this reviewed text remains — there is no on-device de-identification hop in demo mode.'
-      : 'The transcript lives here on this device. Identifiers are tokenized on-device before drafting and the audio is deleted after transcription — only this reviewed text remains.',
+      : 'This is a sample transcript — the demo services aren’t configured, so nothing was sent anywhere and no de-identification step runs. It stays on this device.',
     Context:
       'Prior-session context Aira grounded the draft against: last plan, latest measures, and standing safety items. Companion-app journal entries are shown separately and never blended with clinical scores.',
     '+ Screening tools':
