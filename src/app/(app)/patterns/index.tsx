@@ -106,7 +106,17 @@ export default function Caseload() {
           </View>
         </Row>
 
-        {wide ? (
+        {filtered.length === 0 ? (
+          // Search/filter matched nothing — say so, instead of leaving bare table headers (F18).
+          <View style={{ paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.xl, alignItems: 'center' }}>
+            <AppText variant="bodyStrong" center>
+              No clients match {query.trim() ? `“${query.trim()}”` : 'this filter'}
+            </AppText>
+            <AppText variant="small" color="ink3" center style={{ marginTop: 6 }}>
+              {query.trim() ? 'Try a different name, or clear the search.' : 'Try a different filter, or choose “All statuses”.'}
+            </AppText>
+          </View>
+        ) : wide ? (
           <View>
             {/* header row */}
             <Row style={{ paddingHorizontal: theme.spacing.lg, paddingVertical: 10, backgroundColor: c.sunken }}>
@@ -131,9 +141,11 @@ export default function Caseload() {
           </View>
         )}
       </Card>
-      <AppText variant="small" color="ink3" style={{ marginTop: 12 }}>
-        Click any client to open their patterns · Leah C. opens the safety-review state.
-      </AppText>
+      {filtered.length > 0 ? (
+        <AppText variant="small" color="ink3" style={{ marginTop: 12 }}>
+          Click any client to open their patterns · Leah C. opens the safety-review state.
+        </AppText>
+      ) : null}
     </Screen>
   );
 }
@@ -149,7 +161,12 @@ function ClientRowWide({ client, first, onPress }: { client: Client; first: bool
   const theme = useTheme();
   const c = theme.colors;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => ({ backgroundColor: pressed ? c.sunken : 'transparent' })}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${client.name}’s patterns`}
+      style={({ pressed }) => ({ backgroundColor: pressed ? c.sunken : 'transparent' })}
+    >
       <Row style={{ paddingHorizontal: theme.spacing.lg, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.lineSoft }}>
         <Row gap={12} style={{ flex: 2.4 }}>
           <Avatar initials={client.initials} size={38} tone={client.risk === 'acute' ? 'risk' : 'brand'} />
@@ -270,7 +287,12 @@ function ClientRowNarrow({ client, first, onPress }: { client: Client; first: bo
   const theme = useTheme();
   const c = theme.colors;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => ({ backgroundColor: pressed ? c.sunken : 'transparent' })}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${client.name}’s patterns`}
+      style={({ pressed }) => ({ backgroundColor: pressed ? c.sunken : 'transparent' })}
+    >
       <Row style={{ justifyContent: 'space-between', paddingHorizontal: theme.spacing.lg, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.lineSoft }}>
         <Row gap={12} style={{ flex: 1 }}>
           <Avatar initials={client.initials} size={40} tone={client.risk === 'acute' ? 'risk' : 'brand'} />
