@@ -618,7 +618,7 @@ function AudioTrust() {
     <Card tone="elevated" elevation="none" radius="md" style={{ backgroundColor: bg, borderColor: bg }}>
       <Row gap={9}>
         <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: tint, alignItems: 'center', justifyContent: 'center' }}>
-          <CheckIcon size={12} color={c.onBrand} />
+          <CheckIcon size={12} color={c.surface} />
         </View>
         <AppText variant="bodyStrong" tint={tint}>
           {kept ? 'Audio kept for this session' : 'Recording deleted'}
