@@ -145,21 +145,32 @@ function PatientDetails({ client }: { client: Client }) {
   const [values, setValues] = useState<string[]>(() => saved.values ?? initial.map((d) => d.value));
   const [extra, setExtra] = useState(saved.extra ?? '');
 
-  // Persist on every edit, not just on "Done": the header X, the footer Close and "Open prep
-  // reminder" all unmount this card, and the free-text box promises the text stays on this device.
-  // The mount pass is skipped so the fictional defaults never overwrite what was saved earlier.
-  const firstRender = useRef(true);
-  // `savePatientDetails` is re-created on every snapshot change (i.e. by its own write), so it is
-  // held in a ref rather than declared as a dependency — depending on it would re-save in a loop.
+  // Persistence must survive every exit path — the header X, the footer Close and "Open prep
+  // reminder" all unmount this card without passing through "Done" — but each save serialises and
+  // writes the WHOLE caseload snapshot, so it happens once per edit session (on blur, and on
+  // unmount) rather than once per keystroke, where overlapping writes could land out of order.
+  const touched = useRef(false);
+  const latest = useRef({ values, extra });
+  latest.current = { values, extra };
   const saveRef = useRef(savePatientDetails);
   saveRef.current = savePatientDetails;
-  useEffect(() => {
-    if (firstRender.current) {
-      firstRender.current = false;
-      return;
-    }
-    saveRef.current(client.id, { values, extra });
-  }, [values, extra, client.id]);
+
+  const flush = () => {
+    if (!touched.current) return;
+    saveRef.current(client.id, latest.current);
+  };
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
+  useEffect(() => () => flushRef.current(), []);
+
+  const editValues = (i: number, t: string) => {
+    touched.current = true;
+    setValues((v) => v.map((x, j) => (j === i ? t : x)));
+  };
+  const editExtra = (t: string) => {
+    touched.current = true;
+    setExtra(t);
+  };
 
   const inputStyle = {
     flex: 1,
@@ -177,7 +188,10 @@ function PatientDetails({ client }: { client: Client }) {
       <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
         <Eyebrow>Patient details</Eyebrow>
         <Pressable
-          onPress={() => setEditing((e) => !e)}
+          onPress={() => {
+            if (editing) flush();
+            setEditing((e) => !e);
+          }}
           accessibilityRole="button"
           accessibilityLabel={editing ? 'Done editing patient details' : 'Add details'}
           style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
@@ -204,11 +218,7 @@ function PatientDetails({ client }: { client: Client }) {
               {d.label}
             </AppText>
             {editing ? (
-              <TextInput
-                value={values[i]}
-                onChangeText={(t) => setValues((v) => v.map((x, j) => (j === i ? t : x)))}
-                style={inputStyle}
-              />
+              <TextInput value={values[i]} onChangeText={(t) => editValues(i, t)} onBlur={flush} style={inputStyle} />
             ) : (
               <AppText variant="body" color="ink" style={{ flex: 1, textAlign: 'right' }}>
                 {values[i]}
@@ -225,7 +235,8 @@ function PatientDetails({ client }: { client: Client }) {
             <TextInput
               multiline
               value={extra}
-              onChangeText={setExtra}
+              onChangeText={editExtra}
+              onBlur={flush}
               placeholder="Notes about this patient (stays on this device)…"
               placeholderTextColor={c.ink3}
               style={{

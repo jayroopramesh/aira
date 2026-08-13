@@ -3,7 +3,7 @@ import React, { useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowRight, CheckIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
-import { PageHeader, Screen } from '../../../components/Screen';
+import { BackLink, PageHeader, Screen } from '../../../components/Screen';
 import { AppText, Badge, Button, Card, Divider, Eyebrow, Row, TrustPill } from '../../../components/ui';
 import { ZeroState } from '../../../components/ZeroState';
 import { hasGroq } from '../../../config/env';
@@ -39,9 +39,10 @@ export default function ReviewNote() {
   const { signNote } = useData();
 
   // The C4 rail switches notes via router.replace(...&note=i) without remounting, and notes rotate
-  // newest-first, so index alone can't identify the reviewed note. The tab is stored WITH the
-  // identity of the note it belongs to so a stale pane never leaks across note switches.
-  const noteKey = `${clientId ?? ''}::${draft?.sessionLabel ?? ''}`;
+  // newest-first, so index alone can't identify the reviewed note. Per-note UI state (the tab here,
+  // and the section editors / prescriptions rail via the React key below) is tied to this identity
+  // so one note's clinical content can never render under another note's label.
+  const noteKey = `${clientId ?? ''}::${draft?.sessionLabel ?? noteIndex}`;
   const [tabState, setTabState] = useState<{ key: string; tab: Tab }>({ key: noteKey, tab: 'Note' });
   const tab = tabState.key === noteKey ? tabState.tab : 'Note';
   const setTab = (t: Tab) => setTabState({ key: noteKey, tab: t });
@@ -75,7 +76,7 @@ export default function ReviewNote() {
   // Show the session sidebar when there is more than one retained note to switch between (C4).
   const showSessions = notes.length > 1;
 
-  const rail = <ReviewRail draft={draft} signed={signed} onSign={sign} clinician={signedByName} signedAt={signedAt} />;
+  const rail = <ReviewRail key={noteKey} draft={draft} signed={signed} onSign={sign} clinician={signedByName} signedAt={signedAt} />;
   const sessions =
     client && showSessions ? (
       <SessionList clientId={client.id} clientName={client.name} notes={notes} activeIndex={noteIndex} clinician={clinician} />
@@ -94,6 +95,9 @@ export default function ReviewNote() {
 
           {/* Center: note */}
           <View style={{ flex: 1, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, minWidth: 0 }}>
+            {/* A note is now openable from the client file and session history, so review needs its
+                own way back — the tab bar won't re-navigate the tab it is already on. */}
+            <BackLink label="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace('/(app)/today'))} />
             <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
               <Row gap={10} style={{ flexWrap: 'wrap' }}>
                 <AppText variant="h1" style={{ fontSize: 23 }}>
@@ -128,7 +132,7 @@ export default function ReviewNote() {
 
             <View style={{ height: theme.spacing.lg }} />
 
-            {tab === 'Note' ? <NotePane draft={draft} signed={signed} /> : <OtherPane tab={tab} />}
+            {tab === 'Note' ? <NotePane key={noteKey} draft={draft} signed={signed} /> : <OtherPane tab={tab} />}
 
             {/* On phone, the note-switcher and the rail (prescriptions / codes / sign-off) stack
                 below the note — earlier retained notes must stay reachable on narrow too (C4). */}

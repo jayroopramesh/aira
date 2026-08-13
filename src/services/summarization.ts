@@ -285,9 +285,13 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
 
   return {
     sessionLabel,
-    sourceLine: durMin
-      ? `From a ${durMin}-min voice note · transcribed in demo mode (cloud) · drafted for your review`
-      : 'Transcribed in demo mode (cloud) · drafted for your review',
+    sourceLine: hasGroq
+      ? durMin
+        ? `From a ${durMin}-min voice note · transcribed in demo mode (cloud) · drafted for your review`
+        : 'Transcribed in demo mode (cloud) · drafted for your review'
+      : durMin
+        ? `From a ${durMin}-min voice note · transcribed and drafted on this device · nothing was sent anywhere`
+        : 'Transcribed and drafted on this device · nothing was sent anywhere',
     status: 'draft',
     riskLevel: toRiskLevel(d.riskSafety?.level),
     sections,
