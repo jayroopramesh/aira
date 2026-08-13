@@ -13,7 +13,7 @@
  */
 
 import { env, hasGroq } from '../config/env';
-import { DraftNote, NoteSection, PrepItem, ReviewCode } from '../data/types';
+import { DraftNote, NoteSection, PrepItem, ReviewCode, RiskLevel } from '../data/types';
 
 export type SummaryInput = {
   transcript: string;
@@ -31,11 +31,17 @@ export interface SummarizationService {
 type LlmDraft = {
   subjective?: { body?: string[]; quote?: string };
   objective?: { body?: string[] };
-  riskSafety?: { summary?: string; rows?: { label: string; value: string }[] };
+  riskSafety?: { summary?: string; rows?: { label: string; value: string }[]; level?: string };
   assessment?: { body?: string[] };
   plan?: { bullets?: string[] };
   reviewCodes?: { code: string; label: string; relevance?: 'high' | 'med' | 'low' }[];
 };
+
+/** Coerce the model's risk-tier string to a RiskLevel; unknown/absent → undefined (UI derives). */
+function toRiskLevel(level?: string): RiskLevel | undefined {
+  const v = level?.trim().toLowerCase();
+  return v === 'clear' || v === 'watch' || v === 'elevated' || v === 'acute' ? v : undefined;
+}
 
 const SYSTEM_PROMPT = `You are a clinical documentation assistant for a licensed mental-health counselor.
 You turn a single-session, English, single-speaker-assumed therapy transcript into a DRAFT progress note.
@@ -46,12 +52,17 @@ addresses) in the body — refer to "the client". Always include a routine Risk 
 session is unremarkable (state plainly if nothing of concern was raised). The riskSafety.summary sentence
 MUST be consistent with riskSafety.rows — never say "no concerns were raised" if a row records ideation,
 self-harm, or that risk could not be assessed; if risk was not assessable, say so in the summary too.
+riskSafety.level is the caseload risk TIER for this session and drives a risk queue, so rate it for
+safety, not reassurance: "clear" only when suicidal ideation and self-harm were both screened and
+denied; "acute" for ANY disclosed/endorsed current suicidal ideation — passive, transient, fleeting,
+"better off not here", with or without a plan (a stated plan/means/intent is still acute); "elevated"
+for endorsed self-harm without suicidal ideation; "watch" when risk could not be assessed this session.
 
 Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY this shape:
 {
   "subjective": { "body": ["1-3 short paragraphs, the client's reported experience"], "quote": "one short verbatim-style client quote or empty string" },
   "objective": { "body": ["1-2 short paragraphs: observed presentation, engagement, mental status observations"] },
-  "riskSafety": { "summary": "one plain sentence on risk screened this session", "rows": [ { "label": "Suicidal ideation", "value": "Denied / Passive / ..." }, { "label": "Self-harm", "value": "..." }, { "label": "Safety plan", "value": "..." } ] },
+  "riskSafety": { "summary": "one plain sentence on risk screened this session", "rows": [ { "label": "Suicidal ideation", "value": "Denied / Passive / ..." }, { "label": "Self-harm", "value": "..." }, { "label": "Safety plan", "value": "..." } ], "level": "clear | watch | elevated | acute" },
   "assessment": { "body": ["1-2 short paragraphs: clinical impression and progress toward goals"] },
   "plan": { "bullets": ["3-6 concrete, actionable next-step items — these become prescriptions"] },
   "reviewCodes": [ { "code": "e.g. F41.1", "label": "human-readable label", "relevance": "high|med|low" } ]
@@ -122,6 +133,7 @@ export class MockSummarizationService implements SummarizationService {
           { label: 'Self-harm', value: 'None reported' },
           { label: 'Safety plan', value: 'Existing plan reaffirmed' },
         ],
+        level: 'clear',
       },
       assessment: { body: ['Draft impression pending clinician review. Progress consistent with the working plan.'] },
       plan: {
@@ -218,6 +230,7 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
       ? `From a ${durMin}-min voice note · transcribed in demo mode (cloud) · drafted for your review`
       : 'Transcribed in demo mode (cloud) · drafted for your review',
     status: 'draft',
+    riskLevel: toRiskLevel(d.riskSafety?.level),
     sections,
     measures: [],
     reviewCodes,

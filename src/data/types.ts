@@ -75,6 +75,12 @@ export type DraftNote = {
   status: 'draft' | 'signed';
   signedBy?: string;
   signedAt?: string;
+  /**
+   * Structured caseload risk tier the summarizer assigns for this session (F4). The UI maps this
+   * DIRECTLY onto Client.risk — never re-derived by sniffing the free-text rows — so an unseen
+   * phrasing of disclosed ideation can't be under-rated. Absent (mock/older notes) → derived.
+   */
+  riskLevel?: RiskLevel;
   sections: NoteSection[];
   measures: { measure: string; today: string; prev: string; band: string }[];
   reviewCodes: ReviewCode[];

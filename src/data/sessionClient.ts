@@ -15,14 +15,23 @@ function initialsOf(name: string): string {
 }
 
 /**
- * Derive the caseload risk level from the note's Risk & Safety check (F4). The caseload risk queue
- * is what a counselor scans to decide who needs attention, so it must reflect what the signed note
- * documents — never a hardcoded "clear". Reads the ideation / self-harm rows and maps conservatively:
- * an explicit denial reads clear, passive ideation or current self-harm reads elevated, ideation with
- * a plan/means/intent reads acute, and anything unclassifiable (e.g. "not assessed") reads watch so it
- * is never silently reassuring.
+ * The caseload risk tier for a captured session (F4). The caseload risk queue is what a counselor
+ * scans to decide who needs attention, so it must reflect what the note documents — never a hardcoded
+ * "clear", and never UNDER-rated on an unseen phrasing.
+ *
+ * PRIMARY: the summarizer emits a structured `riskLevel` and we map it straight through — no
+ * keyword-sniffing of free prose for a suicide-risk tier (that kept under-rating "transient"/"fleeting"
+ * ideation). FALLBACK (mock/older notes with no structured level): a deliberately conservative reading
+ * where ANY disclosed suicidal ideation — passive, transient, fleeting, "better off not here", with or
+ * without a plan — is ACUTE unless it is explicitly denied. This matches the app's own convention
+ * (Leah, whose last session had passive ideation, is "Acute · review") and only ever errs toward
+ * over-, never under-, rating.
  */
 export function riskFromNote(note: DraftNote): RiskLevel {
+  // Primary: trust the structured tier the summarizer assigned.
+  if (note.riskLevel) return note.riskLevel;
+
+  // Fallback: derive conservatively from the risk rows.
   const risk = note.sections.find((s) => s.isRisk);
   const rows = risk?.rows ?? [];
   const valueFor = (kw: string) => rows.find((r) => r.label.toLowerCase().includes(kw))?.value?.toLowerCase() ?? '';
@@ -32,25 +41,23 @@ export function riskFromNote(note: DraftNote): RiskLevel {
   const selfHarm = valueFor('self-harm') || valueFor('self harm');
   const allText = rows.map((r) => `${r.label} ${r.value}`.toLowerCase()).join(' | ');
 
-  const negated = (s: string) => has(s, 'denied', 'without plan', 'no plan', 'no specific plan', 'none', 'no means');
+  const isDenial = (s: string) =>
+    has(s, 'denied', 'denies', 'none reported', 'not present', 'no ideation', 'nil', 'negative', 'no concerns', 'absent');
+  const isNotAssessed = (s: string) =>
+    has(s, 'not assessed', 'not captured', 'unable to assess', 'not evaluated', 'review required', 'deferred');
 
-  // Ideation with a concrete plan / means / intent (and not explicitly negated) → acute.
-  if (ideation && has(ideation, 'plan', 'means', 'intent', 'active') && !negated(ideation)) return 'acute';
+  // ANY disclosed (non-denied, actually-assessed) suicidal ideation → acute. Documented ideation is
+  // the highest-priority caseload signal; we do not require the word "passive" or a stated plan.
+  if (ideation && !isDenial(ideation) && !isNotAssessed(ideation)) return 'acute';
 
-  // Passive ideation, or self-harm currently reported → elevated.
-  const passiveIdeation = ideation && has(ideation, 'passive') && !has(ideation, 'denied');
-  const selfHarmPresent = selfHarm && !has(selfHarm, 'denied', 'none', 'nil', 'no ', 'not reported');
-  if (passiveIdeation || selfHarmPresent) return 'elevated';
+  // Self-harm currently endorsed → elevated.
+  if (selfHarm && !isDenial(selfHarm) && !isNotAssessed(selfHarm)) return 'elevated';
 
-  // Risk that was NOT assessed / captured (e.g. the silence case, or the model omitting the check) →
-  // watch, so the caseload never reads a reassuring "clear" for a session where risk is simply unknown.
-  if (has(allText, 'not assessed', 'not captured', 'review required', 'unable to assess', 'not evaluated')) return 'watch';
+  // Risk simply not assessed (silence/failed capture, or model omission) → watch, never a false "clear".
+  if ((ideation && isNotAssessed(ideation)) || isNotAssessed(allText)) return 'watch';
 
   // Explicit denial / nothing of concern raised → clear.
-  if (ideation && has(ideation, 'denied', 'none', 'no ', 'nil', 'not present')) return 'clear';
-
-  // Some other risk text we couldn't classify → watch; truly no risk info at all → clear (routine).
-  return ideation || selfHarm ? 'watch' : 'clear';
+  return 'clear';
 }
 
 function planFromNote(note: DraftNote, dateLabel: string): PrepItem[] {
