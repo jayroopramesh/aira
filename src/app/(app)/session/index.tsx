@@ -458,6 +458,25 @@ function TimePill({ label, live }: { label: string; live?: boolean }) {
 
 type Stage = 'preparing' | 'transcribing' | 'deidentifying' | 'ready' | 'drafting' | 'error';
 
+/**
+ * Guard against drafting a confident clinical note from a failed/empty/near-silent recording (F11).
+ * A dead mic, a muted input or a failed upload yields transcripts like "you you you you" or a few
+ * stray words; those must NOT be written up as clinical findings about the patient. The clinician can
+ * still fix the transcript by hand and retry — this only blocks auto-drafting from noise.
+ */
+function transcriptQuality(text: string): 'ok' | 'too-short' | 'low-signal' {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length < 12) return 'too-short';
+  const norm = words.map((w) => w.toLowerCase().replace(/[^\p{L}]/gu, '')).filter(Boolean);
+  const unique = new Set(norm);
+  if (norm.length && unique.size / norm.length < 0.3) return 'low-signal';
+  const counts = new Map<string, number>();
+  norm.forEach((w) => counts.set(w, (counts.get(w) ?? 0) + 1));
+  const dominant = Math.max(0, ...counts.values());
+  if (norm.length && dominant / norm.length > 0.5) return 'low-signal';
+  return 'ok';
+}
+
 function Analysing({
   capture,
   client,
@@ -498,6 +517,17 @@ function Analysing({
   const draftAndContinue = async () => {
     const trimmed = transcript.trim();
     if (!trimmed) return;
+    // Don't draft a clinical note from silence/noise — surface why and let the clinician fix the
+    // transcript first (F11). Editing the text below to real content clears this.
+    const quality = transcriptQuality(trimmed);
+    if (quality !== 'ok') {
+      setError(
+        quality === 'too-short'
+          ? 'This capture is too short to draft a reliable note. Check the recording or upload, or paste the session transcript below, then draft.'
+          : 'This capture didn’t contain enough clear speech to draft from (a dead mic, muted input, or failed upload can cause this). Re-capture or paste the real transcript below — Aira won’t write up a note from an unclear recording.',
+      );
+      return;
+    }
     setError(null);
     setStage('drafting');
     const input = {
