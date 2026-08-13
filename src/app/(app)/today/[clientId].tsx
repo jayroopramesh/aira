@@ -1,11 +1,12 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HistoryTimeline, StatTile } from '../../../components/clinical';
 import { Highlights } from '../../../components/Highlights';
-import { ArrowRight, CloseIcon } from '../../../components/icons';
+import { ArrowRight, CheckIcon, CloseIcon, FileUpIcon } from '../../../components/icons';
 import { AppText, Avatar, Button, Card, Eyebrow, Row, TrustPill } from '../../../components/ui';
+import { Client } from '../../../data/types';
 import { CLIENTS_BY_ID } from '../../../data/fixtures';
 import { useTheme } from '../../../theme/ThemeProvider';
 
@@ -59,6 +60,12 @@ export default function ClientDrawer() {
             {sleep ? <StatTile label="Sleep" value={String(sleep.latest)} unit="h" delta="▲ improving" deltaTone="caution" /> : null}
           </Row>
 
+          {/* Patient details + mock external-records connection (round-5 item 3). */}
+          <View style={{ height: theme.spacing.xl }} />
+          <PatientDetails client={client} />
+          <View style={{ height: theme.spacing.md }} />
+          <EhrCard />
+
           {/* History timeline */}
           <View style={{ height: theme.spacing.xl }} />
           <Eyebrow>History timeline</Eyebrow>
@@ -106,5 +113,118 @@ export default function ClientDrawer() {
         </Row>
       </View>
     </View>
+  );
+}
+
+/* ---------------------------------------------------------- patient details --- */
+
+/**
+ * Therapist-facing patient-details card (round-5 item 3). Fictional intake data, consistent with
+ * each client's narrative — never real PHI. Sits beside the clinical scores in the drawer.
+ */
+function PatientDetails({ client }: { client: Client }) {
+  const theme = useTheme();
+  const details: { label: string; value: string }[] = [
+    { label: 'Age / DOB', value: `${client.age} · 14 Mar ${2026 - client.age}` },
+    { label: 'Contact', value: '+971 50 · redacted · via clinic portal' },
+    { label: 'Programme / year', value: client.id === 'amara' ? 'BSc Statistics · Year 2 (first-gen)' : 'University counselling programme' },
+    { label: 'Emergency contact', value: 'On file · consented to contact' },
+    { label: 'Consent status', value: `Signed ${client.clientSince} · current` },
+  ];
+  return (
+    <View>
+      <Eyebrow>Patient details</Eyebrow>
+      <Card tone="elevated" elevation="sm" radius="md" style={{ marginTop: 10 }}>
+        {details.map((d, i) => (
+          <Row
+            key={d.label}
+            style={{
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              paddingVertical: 9,
+              borderTopWidth: i === 0 ? 0 : 1,
+              borderTopColor: theme.colors.lineSoft,
+              gap: 16,
+            }}
+          >
+            <AppText variant="small" color="ink3" style={{ flexShrink: 0 }}>
+              {d.label}
+            </AppText>
+            <AppText variant="body" color="ink" style={{ flex: 1, textAlign: 'right' }}>
+              {d.value}
+            </AppText>
+          </Row>
+        ))}
+      </Card>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------- mock EHR card --- */
+
+/**
+ * Mock external-records connection (round-5 item 3). "SALAMA — Not connected · Connect" toggles to
+ * a connected state showing three pulled record lines. A persistent disclaimer makes clear this is
+ * a visual mock — no external system is contacted, no network call is made.
+ */
+function EhrCard() {
+  const theme = useTheme();
+  const c = theme.colors;
+  const [connected, setConnected] = useState(false);
+  const pulled = ['Discharge summary · 3 Jan 2026', 'Medications · 2 active', 'Allergies · none recorded'];
+
+  return (
+    <Card tone="elevated" elevation="sm" radius="md" style={{ borderColor: c.line }}>
+      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <Row gap={11} style={{ flex: 1 }}>
+          <View style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: c.brandBg, alignItems: 'center', justifyContent: 'center' }}>
+            <FileUpIcon size={17} color={c.brand} strokeWidth={2} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <AppText variant="bodyStrong">Load external health records</AppText>
+            <Row gap={7} style={{ alignItems: 'center', marginTop: 3 }}>
+              <AppText variant="small" color="ink3">
+                SALAMA
+              </AppText>
+              <View style={{ width: 3, height: 3, borderRadius: 2, backgroundColor: c.ink3 }} />
+              {connected ? (
+                <Row gap={5} style={{ alignItems: 'center' }}>
+                  <CheckIcon size={12} color={c.positive} />
+                  <AppText variant="small" tint={c.positive}>
+                    Connected · demo
+                  </AppText>
+                </Row>
+              ) : (
+                <AppText variant="small" color="ink3">
+                  Not connected
+                </AppText>
+              )}
+            </Row>
+          </View>
+        </Row>
+        <Button
+          title={connected ? 'Disconnect' : 'Connect'}
+          variant={connected ? 'ghost' : 'secondary'}
+          onPress={() => setConnected((v) => !v)}
+        />
+      </Row>
+
+      {connected ? (
+        <View style={{ marginTop: 14, backgroundColor: c.sunken, borderRadius: theme.radii.sm, padding: 12 }}>
+          {pulled.map((p, i) => (
+            <Row key={p} gap={9} style={{ alignItems: 'center', paddingVertical: 6, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.lineSoft }}>
+              <CheckIcon size={13} color={c.brand} />
+              <AppText variant="small" color="ink2" style={{ flex: 1 }}>
+                {p}
+              </AppText>
+            </Row>
+          ))}
+        </View>
+      ) : null}
+
+      <AppText variant="small" color="ink3" style={{ marginTop: 12, lineHeight: 16, fontSize: 11 }}>
+        Mock connection for this prototype — no external system is contacted and nothing leaves this device.
+      </AppText>
+    </Card>
   );
 }

@@ -3,9 +3,10 @@ import React, { useState } from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 import { BackLink, Screen } from '../../../components/Screen';
 import { useEscalate } from '../../../components/Escalate';
-import { BandedChart, DotStrip } from '../../../components/charts';
+import { BandedChart, DotStrip, ScaleChart } from '../../../components/charts';
 import { ArrowRight, PhoneIcon, ShieldIcon } from '../../../components/icons';
 import { AppText, Avatar, Button, Card, Chip, Eyebrow, Row, RiskDot, TrustPill } from '../../../components/ui';
+import { AMARA_SCALES } from '../../../data/scales';
 import { CLIENTS_BY_ID } from '../../../data/fixtures';
 import { useTheme } from '../../../theme/ThemeProvider';
 
@@ -72,23 +73,30 @@ function PatternsView({ clientId }: { clientId: string }) {
 
       <View style={{ height: theme.spacing.lg }} />
       <View style={{ flexDirection: wide ? 'row' : 'column', gap: theme.spacing.lg, alignItems: 'flex-start' }}>
-        {/* PHQ-9 banded chart */}
-        <Card style={{ flex: wide ? 1.3 : undefined, width: '100%' }}>
-          <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <AppText variant="h2">PHQ-9 over time</AppText>
-            <Row gap={8}>
-              {['3m', '6m', '1y'].map((r) => (
-                <Chip key={r} label={r} active={range === r} onPress={() => setRange(r)} />
-              ))}
+        {/* Assessment-scale chart. Amara carries the full multi-scale set (PHQ-9 · GAD-7 · MHI-5 ·
+            DASS-21) as tabs; each scale keeps the sparse ≤2-reading rule (MHI-5 → dot-strip). */}
+        {clientId === 'amara' ? (
+          <View style={{ flex: wide ? 1.3 : undefined, width: '100%' }}>
+            <ScaleCard clientLabel={client.name.split(' ')[0]} />
+          </View>
+        ) : (
+          <Card style={{ flex: wide ? 1.3 : undefined, width: '100%' }}>
+            <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+              <AppText variant="h2">PHQ-9 over time</AppText>
+              <Row gap={8}>
+                {['3m', '6m', '1y'].map((r) => (
+                  <Chip key={r} label={r} active={range === r} onPress={() => setRange(r)} />
+                ))}
+              </Row>
             </Row>
-          </Row>
-          <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
-            {phq.readings[0].value} → {phq.latest} across {phq.readings.length} visits · now in the{' '}
-            <AppText variant="bodyStrong">{phq.band}</AppText> band, down from moderate-severe at intake.
-          </AppText>
-          <View style={{ height: 14 }} />
-          <BandedChart readings={phq.readings} />
-        </Card>
+            <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
+              {phq.readings[0].value} → {phq.latest} across {phq.readings.length} visits · now in the{' '}
+              <AppText variant="bodyStrong">{phq.band}</AppText> band, down from moderate-severe at intake.
+            </AppText>
+            <View style={{ height: 14 }} />
+            <BandedChart readings={phq.readings} />
+          </Card>
+        )}
 
         {/* Sleep sparse dot-strip + naturalistic block */}
         <View style={{ flex: wide ? 1 : undefined, width: '100%', gap: theme.spacing.lg }}>
@@ -129,6 +137,43 @@ function PatternsView({ clientId }: { clientId: string }) {
         </View>
       </View>
     </Screen>
+  );
+}
+
+/**
+ * The multi-scale chart card. Scale tabs above the plot swap the data, severity bands, and the
+ * plain-language headline in place; the sparse ≤2-reading rule is kept per scale.
+ */
+function ScaleCard({ clientLabel }: { clientLabel: string }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const [key, setKey] = useState('PHQ-9');
+  const scale = AMARA_SCALES.find((s) => s.key === key) ?? AMARA_SCALES[0];
+
+  return (
+    <Card style={{ width: '100%' }}>
+      {/* Scale tabs */}
+      <Row gap={6} style={{ flexWrap: 'wrap' }}>
+        {AMARA_SCALES.map((s) => (
+          <Chip key={s.key} label={s.key} active={s.key === key} onPress={() => setKey(s.key)} />
+        ))}
+      </Row>
+      <View style={{ height: 12 }} />
+      <Row gap={8} style={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
+        <AppText variant="h2">{scale.key} over time</AppText>
+        {scale.sub ? (
+          <AppText variant="small" color="ink3">
+            {scale.sub}
+          </AppText>
+        ) : null}
+      </Row>
+      {/* Plain-language, headline-first reading for this scale. */}
+      <AppText variant="body" color="ink2" style={{ marginTop: 8, lineHeight: 22 }}>
+        {scale.read}
+      </AppText>
+      <View style={{ height: 14 }} />
+      <ScaleChart scale={scale} clientLabel={clientLabel} />
+    </Card>
   );
 }
 

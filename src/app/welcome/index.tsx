@@ -1,8 +1,8 @@
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { View } from 'react-native';
-import { AuthHello, AuthLede, AuthLink, AuthScaffold, AuthSubmit, AuthTitle, INK2, MINT, PagerDots } from '../../components/auth';
-import { Mascot } from '../../components/Mascot';
+import { AuthHello, AuthLede, AuthLink, AuthProgress, AuthScaffold, AuthSubmit, AuthTitle, INK2, MINT, PagerDots } from '../../components/auth';
+import { MascotMood } from '../../components/mascotMoods';
 import { PencilIcon, ShieldIcon, TrendingIcon } from '../../components/icons';
 import { AppText, Row } from '../../components/ui';
 import { recoveryStrings as R } from '../../strings/recovery';
@@ -13,8 +13,9 @@ export default function WelcomeIntro() {
   const CHIP_ICONS = [ShieldIcon, PencilIcon, TrendingIcon];
   return (
     <AuthScaffold>
-      <Mascot size={148} float />
+      <MascotMood mood="encouraging" size={132} float />
       <View style={{ height: 14 }} />
+      <AuthProgress percent={20} label="Setup · 20% started" />
       <PagerDots count={2} active={0} />
       <AuthHello>{R.onboard1Eyebrow}</AuthHello>
       <AuthTitle>{R.onboard1Title}</AuthTitle>

@@ -237,6 +237,28 @@ export function AuthLink({ label, onPress, tint = MINT }: { label: string; onPre
   );
 }
 
+/**
+ * Endowed-progress bar for the account-setup flow (round-5 item 2). Pre-filled 20% on the very
+ * first Welcome screen and advancing 20 → 45 → 72 → 100% across the four steps, so setup feels
+ * already-under-way (the endowed-progress effect). Sits above the pager dots on the intros.
+ */
+export function AuthProgress({ percent, label }: { percent: number; label: string }) {
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityValue={{ min: 0, max: 100, now: percent }}
+      style={{ width: '100%', maxWidth: 300, marginBottom: 16 }}
+    >
+      <View style={{ height: 5, borderRadius: 3, backgroundColor: 'rgba(234,247,243,0.16)', overflow: 'hidden' }}>
+        <View style={{ height: '100%', width: `${percent}%`, borderRadius: 3, backgroundColor: MINT }} />
+      </View>
+      <AppText variant="label" tint={INK2} uppercase style={{ marginTop: 7, fontSize: 10.5, letterSpacing: 0.5 }}>
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
 /** The onboarding pager dots (2 steps). `active` is the 0-based current step. */
 export function PagerDots({ count, active }: { count: number; active: number }) {
   return (

@@ -14,7 +14,8 @@ constraints — don't duplicate it here.
 - Verify with `npx tsc --noEmit` and `npx expo export --platform web --platform ios --platform
   android`. `expo export` **overwrites `dist/`** per run — don't expect web HTML to survive a
   later native export.
-- Design tokens are ported verbatim from `aira-ui-s3/design-direction.html`; the prototype spec is
+- Design tokens come from `aira-ui-s3/design-direction.html` (light: verbatim; dark: revised
+  turquoise in round 4 — see `README.md` "Theme / token architecture"); the prototype spec is
   `aira-ui-screens-s4/screens.html`. Treat those as source-of-truth for any UI change.
 
 ## Server infra (`infra/`)
@@ -27,7 +28,11 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
 
 ## Structural rules to preserve (locked design decisions)
 - Mascot only on human surfaces (welcome onboarding, unlock/login, wordmark) — never on
-  charts/tables/risk queue or the in-session capture screen.
+  charts/tables/risk queue or the in-session capture screen. The final art is the captain's
+  background-removed mood set in `assets/mascot/<mood>.png`, driven by
+  `src/components/mascotMoods.tsx` (`MOOD_ART` registry, `MascotMood`, and the per-workflow
+  `appBarMood` map); heroes are wired per screen. The app icon derives from `Mascot Designz/logo2.png`
+  via `app.json`. (The earlier hand-drawn inline-SVG mascot has been retired.)
 - Risk is clay, never alarm-red; colour is never the only signal (always paired with a word).
 - Escalate is a standing, dismissible sheet — never modal, never alarm.
 - Sparse series (≤ 2 readings) render as a dot-strip with no trend line.

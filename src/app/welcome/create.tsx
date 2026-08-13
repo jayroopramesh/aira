@@ -7,6 +7,7 @@ import {
   AuthLede,
   AuthLink,
   AuthPasswordField,
+  AuthProgress,
   AuthScaffold,
   AuthSubmit,
   AuthTitle,
@@ -42,6 +43,7 @@ export default function WelcomeCreate() {
 
   return (
     <AuthScaffold maxWidth={440}>
+      <AuthProgress percent={72} label="Setup · 72%" />
       <AuthHello>{R.createEyebrow}</AuthHello>
       <AuthTitle>{R.createTitle}</AuthTitle>
       <AuthLede>{R.createLede}</AuthLede>

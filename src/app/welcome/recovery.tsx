@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Platform, Pressable, View } from 'react-native';
 import {
   AuthLede,
+  AuthProgress,
   AuthScaffold,
   AuthSubmit,
   AuthTitle,
@@ -10,6 +11,7 @@ import {
   INK2,
   MINT,
 } from '../../components/auth';
+import { MascotMood } from '../../components/mascotMoods';
 import { AlertTriangleIcon, CopyIcon, DownloadIcon, EyeIcon } from '../../components/icons';
 import { authService } from '../../services/auth';
 import { AppText, Row } from '../../components/ui';
@@ -70,6 +72,10 @@ export default function WelcomeRecovery() {
 
   return (
     <AuthScaffold maxWidth={440}>
+      <AuthProgress percent={100} label="Setup · last step" />
+      {/* Rev 7: a modest supportive hero over the "shown once" badge — sober, reassuring. */}
+      <MascotMood mood="supportive" size={92} float />
+      <View style={{ height: 12 }} />
       <Row
         gap={7}
         style={{

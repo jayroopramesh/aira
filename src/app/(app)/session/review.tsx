@@ -136,9 +136,19 @@ export default function ReviewNote() {
 
 /* ------------------------------------------------------------- note pane --- */
 
+type NoteFormat = 'SOAP' | 'DAP';
+
 function NotePane({ draft, signed }: { draft: DraftNote; signed: boolean }) {
   const theme = useTheme();
   const c = theme.colors;
+  const [format, setFormat] = useState<NoteFormat>('SOAP');
+
+  const subjective = draft.sections.find((s) => s.marker === 'S');
+  const objective = draft.sections.find((s) => s.marker === 'O');
+  const risk = draft.sections.find((s) => s.isRisk);
+  const assessment = draft.sections.find((s) => s.marker === 'A');
+  const plan = draft.sections.find((s) => s.marker === 'P');
+
   return (
     <View>
       {/* Standing review-before-sign banner (never modal). Hidden once signed. */}
@@ -157,9 +167,86 @@ function NotePane({ draft, signed }: { draft: DraftNote; signed: boolean }) {
         </Card>
       ) : null}
 
-      {draft.sections.map((s) => (
-        <Section key={s.id} section={s} measures={draft.measures} editable={!signed} />
+      {/* Note-format switcher (round-4 item 5). Re-lays the note in place: DAP merges Subjective +
+          Objective (incl. the measures table) under one D — Data section; Risk & Safety Check stays
+          its own always-present section, then A, then P. SOAP is the default. */}
+      <Row gap={10} style={{ alignItems: 'center', marginBottom: theme.spacing.lg, flexWrap: 'wrap' }}>
+        <AppText variant="label" color="ink3" uppercase>
+          Note format
+        </AppText>
+        <Row style={{ borderWidth: 1, borderColor: c.line, borderRadius: theme.radii.pill, overflow: 'hidden' }}>
+          {(['SOAP', 'DAP'] as NoteFormat[]).map((f) => {
+            const active = f === format;
+            return (
+              <Pressable key={f} onPress={() => setFormat(f)} style={{ paddingVertical: 6, paddingHorizontal: 16, backgroundColor: active ? c.brandBg : 'transparent' }}>
+                <AppText variant="bodyStrong" tint={active ? c.brand : c.ink3} style={{ fontSize: 13 }}>
+                  {f}
+                </AppText>
+              </Pressable>
+            );
+          })}
+        </Row>
+      </Row>
+
+      {format === 'SOAP' ? (
+        draft.sections.map((s) => <Section key={s.id} section={s} measures={draft.measures} editable={!signed} />)
+      ) : (
+        <>
+          {subjective && objective ? <DataSection subjective={subjective} objective={objective} measures={draft.measures} /> : null}
+          {risk ? <Section key={risk.id} section={risk} measures={draft.measures} editable={!signed} /> : null}
+          {assessment ? <Section key={assessment.id} section={assessment} measures={draft.measures} editable={!signed} /> : null}
+          {plan ? <Section key={plan.id} section={plan} measures={draft.measures} editable={!signed} /> : null}
+        </>
+      )}
+    </View>
+  );
+}
+
+/**
+ * DAP "D — Data" section: the merged Subjective + Objective view (incl. the measures table),
+ * derived from the same SOAP sections so content never diverges from the SOAP layout.
+ */
+function DataSection({ subjective, objective, measures }: { subjective: NoteSection; objective: NoteSection; measures: DraftNote['measures'] }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  return (
+    <View style={{ marginBottom: theme.spacing.xl }}>
+      <Row gap={10}>
+        <View style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: c.brandBg, alignItems: 'center', justifyContent: 'center' }}>
+          <AppText variant="label" tint={c.brand} style={{ fontSize: 12 }}>
+            D
+          </AppText>
+        </View>
+        <Eyebrow color="brand">Data</Eyebrow>
+      </Row>
+      <View style={{ height: 10 }} />
+
+      <AppText variant="label" color="ink3" uppercase style={{ marginBottom: 8 }}>
+        Subjective
+      </AppText>
+      {subjective.body.map((p, i) => (
+        <AppText key={i} variant="body" color="ink" style={{ marginBottom: 8 }}>
+          {p}
+        </AppText>
       ))}
+      {subjective.quote ? (
+        <View style={{ borderLeftWidth: 3, borderLeftColor: c.brandBd, paddingLeft: 12, marginTop: 6, marginBottom: 8 }}>
+          <AppText variant="body" color="ink2" style={{ fontStyle: 'italic' }}>
+            “{subjective.quote}”
+          </AppText>
+        </View>
+      ) : null}
+
+      <View style={{ height: 8 }} />
+      <AppText variant="label" color="ink3" uppercase style={{ marginBottom: 8 }}>
+        Objective
+      </AppText>
+      {objective.body.map((p, i) => (
+        <AppText key={i} variant="body" color="ink" style={{ marginBottom: 8 }}>
+          {p}
+        </AppText>
+      ))}
+      {objective.hasMeasures ? <MeasureTable measures={measures} /> : null}
     </View>
   );
 }
@@ -531,7 +618,7 @@ function AudioTrust() {
     <Card tone="elevated" elevation="none" radius="md" style={{ backgroundColor: bg, borderColor: bg }}>
       <Row gap={9}>
         <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: tint, alignItems: 'center', justifyContent: 'center' }}>
-          <CheckIcon size={12} color={c.onBrand} />
+          <CheckIcon size={12} color={c.surface} />
         </View>
         <AppText variant="bodyStrong" tint={tint}>
           {kept ? 'Audio kept for this session' : 'Recording deleted'}
