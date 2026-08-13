@@ -4,7 +4,7 @@ import { View } from 'react-native';
 import { Screen } from '../../../components/Screen';
 import { ArrowRight, CheckIcon, ShieldIcon } from '../../../components/icons';
 import { AppText, Button, Card, Eyebrow, Row, TrustPill } from '../../../components/ui';
-import { CLIENTS_BY_ID } from '../../../data/fixtures';
+import { useClient } from '../../../data/DataProvider';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 /** "You're ready" — prep complete → start the session (hands off to the Session workflow). */
@@ -13,7 +13,7 @@ export default function ReadyScreen() {
   const c = theme.colors;
   const router = useRouter();
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
-  const client = CLIENTS_BY_ID[clientId ?? 'amara'];
+  const client = useClient(clientId);
   const first = client?.name.split(' ')[0] ?? 'your client';
 
   return (
@@ -47,7 +47,7 @@ export default function ReadyScreen() {
             title="Start the session"
             variant="primary"
             rightIcon={<ArrowRight size={18} color={c.onBrand} />}
-            onPress={() => router.replace(`/(app)/session?clientId=${client?.id ?? 'amara'}`)}
+            onPress={() => router.replace(client ? `/(app)/session?clientId=${client.id}` : '/(app)/session')}
           />
         </Row>
         <View style={{ height: 18 }} />

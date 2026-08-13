@@ -5,7 +5,8 @@ import { PageHeader, Screen } from '../../../components/Screen';
 import { Sparkline } from '../../../components/charts';
 import { HeartIcon, MailIcon, SearchIcon, SendIcon } from '../../../components/icons';
 import { AppText, Avatar, Badge, Card, Chip, Eyebrow, Row, RiskDot } from '../../../components/ui';
-import { CASELOAD_KPIS, CLIENTS } from '../../../data/fixtures';
+import { ZeroState } from '../../../components/ZeroState';
+import { useCaseloadKpis, useClients, useData } from '../../../data/DataProvider';
 import { Client } from '../../../data/types';
 import { useTheme } from '../../../theme/ThemeProvider';
 
@@ -17,21 +18,48 @@ export default function Caseload() {
   const wide = width >= 860;
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'due' | 'risk'>('all');
+  const clients = useClients();
+  const kpis = useCaseloadKpis();
+  const { hydrated, loadSample } = useData();
 
-  const filtered = CLIENTS.filter((cl) => {
+  const filtered = clients.filter((cl) => {
     if (query && !cl.name.toLowerCase().includes(query.toLowerCase())) return false;
     if (filter === 'due') return cl.followUpDue;
     if (filter === 'risk') return cl.risk === 'acute' || cl.risk === 'elevated';
     return true;
   });
 
+  if (!hydrated) {
+    return <Screen>{null}</Screen>;
+  }
+
+  if (clients.length === 0) {
+    return (
+      <Screen>
+        <PageHeader eyebrow="Caseload" title="Patterns across your caseload" subtitle="Everything here is re-identified locally · nothing synced to a server" />
+        <ZeroState
+          mood="curious"
+          title="No clients yet"
+          body="Your caseload is empty. Capture a session to add your first client, or load the sample cohort to explore patterns, charts and a fully-drafted note."
+          primary={{ label: 'Start a session', onPress: () => router.push('/(app)/session') }}
+          secondary={{ label: 'Load sample data', onPress: () => void loadSample() }}
+          note="Sample data is fictional (no real PHI) and lives only on this device — clear it anytime in Settings."
+        />
+      </Screen>
+    );
+  }
+
   return (
     <Screen>
-      <PageHeader eyebrow="Caseload · 24 active clients" title="Patterns across your caseload" subtitle="Everything here is re-identified locally · nothing synced to a server" />
+      <PageHeader
+        eyebrow={`Caseload · ${clients.length} client${clients.length === 1 ? '' : 's'}`}
+        title="Patterns across your caseload"
+        subtitle="Everything here is re-identified locally · nothing synced to a server"
+      />
 
       {/* KPI tiles */}
       <Row gap={12} wrap>
-        {CASELOAD_KPIS.map((k) => (
+        {kpis.map((k) => (
           <Card key={k.label} elevation="sm" radius="md" style={{ flex: 1, minWidth: 160 }}>
             <AppText variant="small" color="ink2">
               {k.label}

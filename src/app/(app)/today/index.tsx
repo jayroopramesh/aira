@@ -4,7 +4,8 @@ import { Pressable, useWindowDimensions, View } from 'react-native';
 import { PageHeader, Screen } from '../../../components/Screen';
 import { ArrowRight, ChevronRight } from '../../../components/icons';
 import { AppText, Avatar, Badge, Card, Divider, Eyebrow, RiskDot, Row } from '../../../components/ui';
-import { CLIENTS_BY_ID, DAY_DASHBOARD } from '../../../data/fixtures';
+import { ZeroState } from '../../../components/ZeroState';
+import { useClient, useData, useDayDashboard } from '../../../data/DataProvider';
 import { ScheduleEntry } from '../../../data/types';
 import { useTheme } from '../../../theme/ThemeProvider';
 
@@ -14,8 +15,29 @@ export default function TodayDashboard() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const wide = width >= 900;
-  const d = DAY_DASHBOARD;
-  const nextClient = CLIENTS_BY_ID[d.nextClientId];
+  const d = useDayDashboard();
+  const { hydrated, loadSample } = useData();
+  const nextClient = useClient(d?.nextClientId);
+
+  if (!hydrated) {
+    return <Screen>{null}</Screen>;
+  }
+
+  if (!d) {
+    return (
+      <Screen>
+        <PageHeader eyebrow="Get ready" title="Your day, when it starts" subtitle="Nothing is scheduled yet." />
+        <ZeroState
+          mood="encouraging"
+          title="No sessions scheduled"
+          body="When you have clients, today's sessions and a calm countdown show up here. Capture a session to begin, or load the sample cohort to see a full day."
+          primary={{ label: 'Start a session', onPress: () => router.push('/(app)/session') }}
+          secondary={{ label: 'Load sample data', onPress: () => void loadSample() }}
+          note="Everything stays on this device — nothing is synced to a server."
+        />
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -39,10 +61,10 @@ export default function TodayDashboard() {
             <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.16)' }} />
             <View style={{ flex: 1 }}>
               <AppText variant="small" tint={c.onBrand} style={{ opacity: 0.85 }}>
-                {nextClient.summaryLine.includes('Session') ? '10:30 · INDIVIDUAL' : ''}
+                {nextClient?.summaryLine.includes('Session') ? '10:30 · INDIVIDUAL' : ''}
               </AppText>
               <AppText variant="h2" tint={c.onBrand}>
-                {nextClient.name}
+                {nextClient?.name ?? 'Your next client'}
               </AppText>
               <AppText variant="small" tint={c.onBrand} style={{ opacity: 0.85, marginTop: 2 }}>
                 Session 5 · academic anxiety, sleep · PHQ-9 trending down
@@ -139,7 +161,8 @@ export default function TodayDashboard() {
 function SessionCard({ entry, onPress }: { entry: ScheduleEntry; onPress: () => void }) {
   const theme = useTheme();
   const c = theme.colors;
-  const client = CLIENTS_BY_ID[entry.clientId];
+  const client = useClient(entry.clientId);
+  if (!client) return null;
   return (
     <Pressable onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}>
       <Card elevation="sm" padded={false} style={{ padding: theme.spacing.md }}>

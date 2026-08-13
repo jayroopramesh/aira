@@ -16,6 +16,7 @@ import {
 } from '../../components/auth';
 import { MascotMood } from '../../components/mascotMoods';
 import { KeyIcon, LockIcon, ShieldIcon } from '../../components/icons';
+import { hasSupabase } from '../../config/env';
 import { authService } from '../../services/auth';
 import { AppText, Row } from '../../components/ui';
 import { recoveryStrings as R } from '../../strings/recovery';
@@ -23,6 +24,12 @@ import { recoveryStrings as R } from '../../strings/recovery';
 const CLINICIAN = 'Dr. Okafor';
 
 type Phase = 'login' | 'wrong' | 'decrypting';
+
+// With real accounts (Supabase), sign-in uses an email; defaults follow the create-account form so
+// the guided create → recovery → login walkthrough succeeds in one pass. With no keys, the mock
+// demo defaults apply.
+const DEFAULT_USERNAME = hasSupabase ? 'a.okafor@clinic.ae' : 'dr.okafor';
+const DEFAULT_PASSWORD = hasSupabase ? 'seafoam-harbor-42' : 'clinicvault';
 
 /**
  * Unlock — username + password (round-2 change #1, replacing the passcode keypad). A calm
@@ -32,8 +39,8 @@ type Phase = 'login' | 'wrong' | 'decrypting';
 export default function UnlockScreen() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('login');
-  const [username, setUsername] = useState('dr.okafor');
-  const [password, setPassword] = useState('clinicvault');
+  const [username, setUsername] = useState(() => authService.getKnownEmail() ?? DEFAULT_USERNAME);
+  const [password, setPassword] = useState(DEFAULT_PASSWORD);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState('');
   const [recoveryError, setRecoveryError] = useState(false);

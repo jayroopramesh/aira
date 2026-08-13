@@ -7,15 +7,66 @@ import { BandedChart, DotStrip, ScaleChart } from '../../../components/charts';
 import { ArrowRight, PhoneIcon, ShieldIcon } from '../../../components/icons';
 import { AppText, Avatar, Button, Card, Chip, Eyebrow, Row, RiskDot, TrustPill } from '../../../components/ui';
 import { AMARA_SCALES } from '../../../data/scales';
-import { CLIENTS_BY_ID } from '../../../data/fixtures';
+import { useClient } from '../../../data/DataProvider';
+import { Client } from '../../../data/types';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 export default function ClientPatterns() {
   const { clientId, risk } = useLocalSearchParams<{ clientId: string; risk?: string }>();
-  const client = CLIENTS_BY_ID[clientId ?? 'amara'];
+  const client = useClient(clientId);
   if (!client) return null;
   const showRisk = risk === '1' || client.risk === 'acute';
   return showRisk && client.safety ? <RiskReview clientId={client.id} /> : <PatternsView clientId={client.id} />;
+}
+
+/**
+ * Sparse patterns state for a freshly-captured client with no assessment series yet. Honours the
+ * sparse-series rule (no trend line before there are readings) and points at what does exist.
+ */
+function NoReadingsYet({ client }: { client: Client }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const router = useRouter();
+  return (
+    <Screen>
+      <BackLink label="Back to caseload" onPress={() => router.replace('/(app)/patterns')} />
+      <Row gap={14} style={{ marginTop: theme.spacing.sm }}>
+        <Avatar initials={client.initials} size={52} />
+        <View style={{ flex: 1 }}>
+          <AppText variant="h1">{client.name}</AppText>
+          <AppText variant="small" color="ink3" style={{ marginTop: 4 }}>
+            ID {client.tokenId} · client since {client.clientSince}
+          </AppText>
+        </View>
+      </Row>
+      <View style={{ height: theme.spacing.lg }} />
+      <Card tone="sunken" elevation="none" radius="lg" style={{ backgroundColor: c.brandBg, borderColor: c.brandBd }}>
+        <Eyebrow color="brand">Patterns</Eyebrow>
+        <AppText variant="h2" style={{ marginTop: 8 }}>
+          Not enough readings yet
+        </AppText>
+        <AppText variant="body" color="ink2" style={{ marginTop: 8, lineHeight: 22 }}>
+          Trends appear once this client has a few scored sessions. A single visit is shown as a point, never a
+          trend line — the shape only means something with readings behind it.
+        </AppText>
+        {client.lastPlan.length ? (
+          <>
+            <View style={{ height: theme.spacing.md }} />
+            <Eyebrow>From the last session</Eyebrow>
+            <View style={{ height: 8 }} />
+            {client.lastPlan.map((p) => (
+              <Row key={p.id} gap={8} style={{ alignItems: 'flex-start', marginBottom: 6 }}>
+                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c.brand, marginTop: 7 }} />
+                <AppText variant="body" color="ink" style={{ flex: 1 }}>
+                  {p.text}
+                </AppText>
+              </Row>
+            ))}
+          </>
+        ) : null}
+      </Card>
+    </Screen>
+  );
 }
 
 /* --------------------------------------------------------- patterns view --- */
@@ -26,10 +77,14 @@ function PatternsView({ clientId }: { clientId: string }) {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const wide = width >= 900;
-  const client = CLIENTS_BY_ID[clientId];
-  const phq = client.measures.find((m) => m.key === 'phq9')!;
-  const sleep = client.measures.find((m) => m.key === 'sleep');
+  const client = useClient(clientId);
   const [range, setRange] = useState('6m');
+  const phq = client?.measures.find((m) => m.key === 'phq9');
+  const sleep = client?.measures.find((m) => m.key === 'sleep');
+
+  if (!client) return null;
+  // A freshly-captured client has no assessment series yet — respect the sparse-series rule.
+  if (!phq) return <NoReadingsYet client={client} />;
 
   const headline =
     clientId === 'amara'
@@ -186,8 +241,9 @@ function RiskReview({ clientId }: { clientId: string }) {
   const { width } = useWindowDimensions();
   const wide = width >= 760;
   const escalate = useEscalate();
-  const client = CLIENTS_BY_ID[clientId];
-  const safety = client.safety!;
+  const client = useClient(clientId);
+  if (!client?.safety) return null;
+  const safety = client.safety;
 
   return (
     <Screen maxWidth={860}>

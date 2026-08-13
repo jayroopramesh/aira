@@ -1,11 +1,11 @@
-import { usePathname, useGlobalSearchParams } from 'expo-router';
+import { usePathname, useGlobalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CLIENTS_BY_ID } from '../data/fixtures';
+import { useClient } from '../data/DataProvider';
 import { useTheme, useThemeControls } from '../theme/ThemeProvider';
 import { useEscalate } from './Escalate';
-import { MoonIcon, SunIcon } from './icons';
+import { MoonIcon, SettingsIcon, SunIcon } from './icons';
 import { appBarMood, MascotMood } from './mascotMoods';
 import { AppText, Row } from './ui';
 
@@ -26,11 +26,12 @@ export function TopBar({
   const insets = useSafeAreaInsets();
   const { toggle } = useThemeControls();
   const escalate = useEscalate();
+  const router = useRouter();
   const ink = inkColor ?? c.ink;
   const pathname = usePathname();
   const params = useGlobalSearchParams<{ risk?: string; clientId?: string }>();
-  const onRisk =
-    params?.risk === '1' || (params?.clientId ? CLIENTS_BY_ID[params.clientId]?.risk === 'acute' : false);
+  const paramClient = useClient(params?.clientId);
+  const onRisk = params?.risk === '1' || paramClient?.risk === 'acute';
   const mood = appBarMood(pathname, onRisk);
 
   return (
@@ -95,6 +96,28 @@ export function TopBar({
           >
             {theme.mode === 'dark' ? <SunIcon size={19} color={ink} /> : <MoonIcon size={19} color={ink} />}
           </Pressable>
+
+          {/* Settings — sample data, demo-service status, sign out. Hidden on the pre-auth chrome. */}
+          {transparent ? null : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open settings"
+              onPress={() => router.push('/(app)/settings')}
+              style={({ pressed }) => ({
+                width: 40,
+                height: 40,
+                borderRadius: theme.radii.pill,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: c.elevated,
+                borderWidth: 1,
+                borderColor: c.line,
+                opacity: pressed ? 0.82 : 1,
+              })}
+            >
+              <SettingsIcon size={19} color={ink} />
+            </Pressable>
+          )}
         </Row>
       </Row>
     </View>

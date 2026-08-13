@@ -5,7 +5,7 @@ import { BackLink, PageHeader, Screen } from '../../../components/Screen';
 import { Highlights } from '../../../components/Highlights';
 import { ArrowRight } from '../../../components/icons';
 import { Button, Card, Eyebrow } from '../../../components/ui';
-import { CLIENTS_BY_ID } from '../../../data/fixtures';
+import { useClient } from '../../../data/DataProvider';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 /**
@@ -17,7 +17,7 @@ export default function PrepReminder() {
   const router = useRouter();
   const c = useTheme().colors;
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
-  const client = CLIENTS_BY_ID[clientId ?? 'amara'];
+  const client = useClient(clientId);
 
   if (!client) return null;
   const lastDate = client.lastPlan[0]?.source.match(/\d+ \w+/)?.[0] ?? 'the last session';

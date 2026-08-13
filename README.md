@@ -21,9 +21,12 @@ This repository is the **Expo (React Native) application** — the production ap
 approved click-through prototype. Expo **replaces** the earlier SvelteKit plan as *the* Aira app
 (captain decision, 2026-08-12).
 
-> **Status:** v1 foundation. Five navigable workflows with mocked services. Auth (account +
-> one-time recovery code), crypto, transcription, and live data are stubbed behind interfaces
-> (see [Service seams](#service-seams)). The recovery-key policy is captain-resolved
+> **Status:** v1 foundation with a **live demo mode**. Five navigable workflows. A fresh install
+> boots **blank** (zero-states everywhere; load the sample cohort from Settings). Behind the existing
+> seams, accounts run against **Supabase** and transcription/summarization against **Groq**
+> (whisper-large-v3 + llama-3.3-70b); with no keys the app degrades to on-device mocks. Clinical data
+> stays device-local. Crypto is still stubbed. See [Demo-mode live services](#demo-mode-live-services)
+> and [Service seams](#service-seams). The recovery-key policy is captain-resolved
 > (see [Locked v1 constraints](#locked-v1-constraints)).
 
 <p align="center">
@@ -43,7 +46,7 @@ Five workflows, built to the s4 prototype's steps and phone-adapted:
 | **Welcome** (boots here when signed out) | onboarding (post-session "personal scribe" framing; endowed setup progress bar, prefilled 20% → 45% → 72% → 100%) → create account (Emirates ID + "why?", phone, name, email, password) → one-time recovery code (reveal once, copy/save, "I saved it" gate) → login |
 | **Unlock** | login (username + password, "Encrypted with your login", HIPAA-aligned trust note) → calm wrong-password state (inline recovery-code fallback) → decrypt transition |
 | **Get ready** | day dashboard (countdown, session cards) → client drawer (scores, timeline, last plan, patient-details card, mock SALAMA/EHR connection card with a persistent no-external-system disclaimer) → read-only prep reminder → ready state |
-| **Session summary** | pre-capture (read-only reminders) → recording (waveform, current-word live readout, timestamp-synced comment-card strip with a dotted add-first card, HIPAA-aligned trust note) → analysing (editable transcript) → note with SOAP/DAP format switcher (SOAP: S · O · Risk & Safety · A · P; DAP merges S+O into one D — Data section, derived so content never diverges; three-pane on web, stacked on phone) → per-section edit/regenerate → Prescriptions rail → sign-off → audio-trust moment (delete-by-default, keep toggle) |
+| **Session summary** | pre-capture (read-only reminders; record, upload a clip, or use sample audio) → recording (waveform + timer, timestamp-synced comment-card strip with a dotted add-first card, trust note; transcription is one-shot on stop — no live readout) → analysing (editable transcript) → note with SOAP/DAP format switcher (SOAP: S · O · Risk & Safety · A · P; DAP merges S+O into one D — Data section, derived so content never diverges; three-pane on web, stacked on phone) → per-section edit/regenerate → Prescriptions rail → sign-off → audio-trust moment (delete-by-default, keep toggle) |
 | **Patterns** | caseload table (search, status chips, sparklines with a dashed first-reading baseline, sober risk column, Outreach mailto templates that grey out once used) → client patterns (plain-language headline *before* charts; multi-scale tabs PHQ-9 · GAD-7 · MHI-5 · DASS-21 with a muted dashed "Caseload avg" comparison stroke + legend; sparse ≤2-reading dot-strip rule kept per scale; companion-app journal box) → history timeline → acute-risk review |
 
 The standing calm **Escalate** affordance sits on every screen (never alarm-red, never modal — a
@@ -73,6 +76,16 @@ Requires **Node ≥ 22.13** (Expo SDK 57). Install once:
 npm install
 ```
 
+For the **live demo** (accounts + transcription + summarization), copy the env template and fill in
+keys; without it the app runs entirely on on-device mocks (and says so):
+
+```bash
+cp .env.example .env.local   # then set EXPO_PUBLIC_SUPABASE_* and EXPO_PUBLIC_GROQ_*
+```
+
+`.env.local` is gitignored — never commit real keys. Only the Supabase **publishable** (anon) key
+belongs in a client env var. See [Demo-mode live services](#demo-mode-live-services).
+
 ### Web
 ```bash
 npx expo start --web       # dev server with hot reload
@@ -84,8 +97,9 @@ npx expo export --platform web && npx expo serve
 ```bash
 npx expo start             # scan the QR with Expo Go (iOS/Android)
 ```
-Everything in this v1 runs in **Expo Go** because transcription is mocked. The real on-device
-whisper engine is a native module and will require a **dev build** (see [Service seams](#service-seams)).
+Everything in this v1 runs in **Expo Go** — no native module yet (demo transcription is a plain
+HTTPS call to Groq, or the mock). The real on-device whisper engine is a native module and will
+require a **dev build** (see [Service seams](#service-seams)).
 
 ### Native bundle check
 ```bash
@@ -136,34 +150,58 @@ src/theme/
 
 ---
 
+## Demo-mode live services
+
+Clinical data always stays on the device. The seams below are wired to **real cloud services for the
+demo**, and each degrades to its on-device mock when its keys are absent (a calm banner + Settings row
+report which are live). Configuration is `EXPO_PUBLIC_*` in `.env.local`, read via `src/config/env.ts`.
+
+| Concern | Live (keys present) | Mock (no keys) |
+|---|---|---|
+| **Accounts** | Supabase `signUp` / `signInWithPassword` (`SupabaseAuthService`). Email confirmation OFF; Emirates ID/phone/name → user metadata. The one-time recovery code stays app-side (local vault key). | `MockAuthService` |
+| **Transcription** | Groq **whisper-large-v3** over recorded/uploaded audio (`GroqTranscriptionService`). Web capture via MediaRecorder + a file-picker fallback (`services/audioCapture.ts`). | `MockTranscriptionService` (canned transcript) |
+| **Summarization** | Groq **llama-3.3-70b** → SOAP sections + risk/safety + plan → `DraftNote` (`services/summarization.ts`) | `MockSummarizationService` |
+
+Transcription + summarization are a **cloud hop over the session text** — the demo banner says so
+plainly so the on-device trust copy never overclaims. Notes, transcripts and prescriptions still
+persist **device-local** behind the vault seam.
+
+**Blank boot.** A fresh install starts EMPTY — no clients, zero-states everywhere. Caseload state is a
+reactive context (`src/data/DataProvider.tsx`) persisted through `ClientRepository` → `VaultStorage`
+(`LocalVaultStorage` → `deviceStore`: localStorage on web, a JSON file on native). Load the Amara
+sample cohort from **Settings → Load sample data** (or the zero-state CTA); clear it there too.
+
 ## Service seams
 
-Patient data never leaves the device. Three future foundations are stubbed behind interfaces so the
-real implementations slot in without touching callers.
+Patient data never leaves the device. These foundations sit behind interfaces so implementations slot
+in without touching callers (see live wiring above; crypto is still a mock).
 
 ### Auth / session — `src/services/auth.ts`
 - `AuthService` is the account + session seam in front of the vault. It models the captain-approved
   recovery-key policy with realistic in-memory state transitions
   (`none → awaiting-recovery-save → active`): account creation, the **one-time recovery code**
   (generated once, revealed once), sign-in (username + password), the calm wrong-password state, and
-  the recovery-code fallback. v1 ships `MockAuthService` (the password chosen at account creation is
-  accepted, in addition to the demo default `clinicvault`; anything else drives the wrong-password
-  state). It delegates the actual vault open to `VaultStorage`. **No
-  real crypto and no server calls** — the real impl (registry check + Argon2id envelope + server-side
-  key escrow) slots in behind the same interface.
+  the recovery-code fallback. With Supabase configured the app uses `SupabaseAuthService` (see
+  [Demo-mode live services](#demo-mode-live-services)); otherwise `MockAuthService` (the password
+  chosen at account creation is accepted, in addition to the demo default `clinicvault`; anything
+  else drives the wrong-password state — no crypto, no server calls). Either way the actual vault
+  open is delegated to `VaultStorage` and the recovery code stays app-side. The production impl
+  (registry check + Argon2id envelope + server-side key escrow) slots in behind the same interface.
 
 ### Data / vault — `src/services/storage.ts`, `src/data/repository.ts`
-- `ClientRepository` is the seam the **encrypted vault** slots behind. v1 reads typed in-memory
-  fixtures (`src/data/fixtures.ts` — the Amara K. cohort + the report's fictional clients, **no real
-  PHI**). A future `VaultClientRepository` implements the same interface, decrypting on read.
+- `ClientRepository` is the seam the **encrypted vault** slots behind. `VaultClientRepository`
+  loads/saves the whole caseload snapshot through `VaultStorage`; a fresh install is blank, and the
+  Amara K. sample cohort (`src/data/fixtures.ts` — **no real PHI**) loads on demand from Settings.
+  Screens read through the reactive hooks in `src/data/DataProvider.tsx`, never fixtures directly.
 - `VaultStorage` is the **Argon2id-envelope** contract (unlock by password, recovery-code unlock,
-  read/write, export/import). v1 ships `MockVaultStorage` (no crypto — it just flips the in-memory
-  unlocked flag; acceptance is decided in `AuthService`). **Crypto is deliberately not implemented
-  in this task.**
+  read/write, export/import). v1 ships `LocalVaultStorage`: still **no crypto** (plaintext blobs;
+  acceptance is decided in `AuthService`), but records now persist device-locally through
+  `deviceStore` (localStorage on web, a JSON file on native). The real Argon2id vault encrypts
+  these same blobs behind the same interface.
 
 ### Transcription — `src/services/transcription.ts`
-Shaped to the whisper.cpp spike (`aira-whisper-spike-s5`). Transcription itself is **out of scope**;
-the seam encodes the spike's decisions so `whisper.rn` slots in later:
+Shaped to the whisper.cpp spike (`aira-whisper-spike-s5`). **On-device** transcription itself is
+out of scope for v1; the seam encodes the spike's decisions so `whisper.rn` slots in later:
 - **One-shot, post-session** transcription — *not* streaming (naive chunking hallucinates at chunk
   boundaries). `transcribe()` resolves once with the full transcript; there is no partial callback.
 - The model (`small.en`, ~465 MB) is **downloaded on first run, never bundled** (`ensureModel`).
@@ -171,8 +209,10 @@ the seam encodes the spike's decisions so `whisper.rn` slots in later:
 - `whisper.rn` is a **native module — it does not run in Expo Go.** It needs `expo-dev-client` +
   `npx expo prebuild` + an EAS dev build. The app is structured for that pipeline from day one.
 
-v1 uses `MockTranscriptionService` (mocked timing, canned transcript) so the recording/analysing
-states demo end-to-end with no native module.
+With Groq configured the app uses `GroqTranscriptionService` — a disclosed **cloud hop** (see
+[Demo-mode live services](#demo-mode-live-services)); note the on-device de-identification hop does
+**not** run in demo mode. Otherwise `MockTranscriptionService` (mocked timing, canned transcript)
+drives the recording/analysing states. Neither needs a native module.
 
 ---
 
@@ -190,13 +230,14 @@ states demo end-to-end with no native module.
   surfaced as a UI button. Setup framing is stern but truthful (effectively unrecoverable without
   claiming impossibility). **All** recovery + login copy is isolated in `src/strings/recovery.ts`.
 
-### What is stubbed
+### What is live vs stubbed
 | Area | Status |
 |---|---|
-| Auth (account creation, one-time recovery code, sign-in) | **Stubbed** — `MockAuthService`, in-memory state, no server |
-| Encryption / vault (Argon2id, recovery-code unlock, export/import) | **Stubbed** — `MockVaultStorage`, no crypto |
-| Transcription (whisper.rn) | **Stubbed** — `MockTranscriptionService`, mocked timing; needs a dev build |
-| Live / persisted data | **Stubbed** — typed in-memory fixtures behind `ClientRepository` |
+| Auth (account creation, sign-in) | **Live (demo)** — Supabase when configured, else `MockAuthService`. One-time recovery code stays app-side. |
+| Transcription | **Live (demo)** — Groq whisper-large-v3 when configured, else `MockTranscriptionService`. |
+| Summarization → SOAP draft | **Live (demo)** — Groq llama-3.3-70b when configured, else `MockSummarizationService`. |
+| Persisted data | **Device-local** — reactive store behind `ClientRepository` → `VaultStorage`; blank on first boot. |
+| Encryption / vault crypto (Argon2id, recovery-code unlock, export/import) | **Stubbed** — `LocalVaultStorage` persists plaintext blobs; no crypto yet. |
 | Server-side key escrow (manual recovery path) | **Not built** — policy-only; never surfaced in UI |
 
 ---
@@ -212,10 +253,12 @@ src/
       today/           Get ready: dashboard → drawer → prep reminder → ready
       session/         Session summary: capture → recording → analysing → review (SOAP)
       patterns/        Patterns: caseload → client patterns → history → risk review
-  components/          mascot moods (mascotMoods), auth surface, Highlights, charts, waveform, escalate sheet, ui primitives
+      settings/        demo-services status, load sample data / clear all data, sign out
+  components/          mascot moods (mascotMoods), auth surface, DemoBanner, ZeroState, Highlights, charts, waveform, escalate sheet, ui primitives
+  config/              env.ts (EXPO_PUBLIC_* + hasSupabase/hasGroq flags)
   theme/               tokens + ThemeProvider
-  data/                types, fixtures (no PHI), assessment scales, repository interface
-  services/            auth (account/session) + storage (vault) + transcription seams
+  data/                types, sample fixtures (no PHI), assessment scales, repository + reactive DataProvider
+  services/            auth (Supabase/mock), storage (vault) + deviceStore, transcription + summarization (Groq/mock), audio capture
   strings/             recovery.ts (login + recovery copy, captain-resolved policy)
 docs/screenshots/      rendered captures of every workflow step (light/dark/phone)
 ```
