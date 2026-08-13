@@ -7,8 +7,8 @@ import { PageHeader, Screen } from '../../../components/Screen';
 import { AppText, Badge, Button, Card, Divider, Eyebrow, Row, TrustPill } from '../../../components/ui';
 import { ZeroState } from '../../../components/ZeroState';
 import { hasGroq } from '../../../config/env';
-import { useClient, useDraftNote } from '../../../data/DataProvider';
-import { Client, DraftNote, NoteSection, PrepItem } from '../../../data/types';
+import { useClient, useClientNotes, useDraftNote } from '../../../data/DataProvider';
+import { DraftNote, NoteSection, PrepItem } from '../../../data/types';
 import { authService } from '../../../services/auth';
 import { useTheme } from '../../../theme/ThemeProvider';
 
@@ -29,8 +29,12 @@ export default function ReviewNote() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const wide = width >= 1040;
-  const { clientId } = useLocalSearchParams<{ clientId: string }>();
-  const draft = useDraftNote(clientId);
+  const { clientId, note: noteParam } = useLocalSearchParams<{ clientId: string; note?: string }>();
+  // Up to 3 notes are retained per client (C4); `note` selects which retained note to review (newest = 0).
+  const notes = useClientNotes(clientId);
+  const parsedIndex = noteParam ? Number(noteParam) : 0;
+  const noteIndex = Number.isInteger(parsedIndex) && parsedIndex >= 0 && parsedIndex < notes.length ? parsedIndex : 0;
+  const draft = useDraftNote(clientId, noteIndex);
   const client = useClient(clientId);
 
   const [tab, setTab] = useState<Tab>('Note');
@@ -58,11 +62,14 @@ export default function ReviewNote() {
     );
   }
 
-  // A multi-session (sample) client shows the session sidebar; a freshly-captured one doesn't.
-  const showSessions = !!client && client.sessionNumber > 1;
+  // Show the session sidebar when there is more than one retained note to switch between (C4).
+  const showSessions = notes.length > 1;
 
   const rail = <ReviewRail draft={draft} signed={signed} onSign={sign} clinician={clinician} signedAt={signedAt} />;
-  const sessions = client ? <SessionList client={client} signed={signed} /> : null;
+  const sessions =
+    client && showSessions ? (
+      <SessionList clientId={client.id} clientName={client.name} notes={notes} activeIndex={noteIndex} signed={signed} />
+    ) : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
@@ -764,33 +771,48 @@ function SignOff({ signed, onSign, clinician, signedAt }: { signed: boolean; onS
 }
 
 /**
- * The session-history rail — derived from THIS client's own timeline (N1), never a hardcoded fixture
- * list. The top entry is the session currently under review (Draft/Signed by you); earlier entries
- * are labelled by their real type, so the rail can never assert another client's history under this
- * client's name.
+ * The session rail — the client's OWN retained notes (up to 3, newest first — C4), never a hardcoded
+ * fixture list (N1). Each entry switches the review pane to that note, so an earlier session's full
+ * note text stays reachable instead of being overwritten. The active note reflects the live sign
+ * state; earlier retained notes show their own persisted status.
  */
-function SessionList({ client, signed }: { client: Client; signed: boolean }) {
+function SessionList({
+  clientId,
+  clientName,
+  notes,
+  activeIndex,
+  signed,
+}: {
+  clientId: string;
+  clientName: string;
+  notes: DraftNote[];
+  activeIndex: number;
+  signed: boolean;
+}) {
   const theme = useTheme();
   const c = theme.colors;
-
-  const statusFor = (kind: string, active: boolean): { label: string; tone: 'positive' | 'draft' | 'brand' | 'neutral' } => {
-    if (active) return signed ? { label: 'Signed · you', tone: 'positive' } : { label: 'Draft · review', tone: 'draft' };
-    if (kind === 'session' || kind === 'intake') return { label: 'Signed · you', tone: 'positive' };
-    if (kind === 'safety') return { label: 'Safety check', tone: 'brand' };
-    return { label: kind.charAt(0).toUpperCase() + kind.slice(1), tone: 'neutral' };
-  };
+  const router = useRouter();
 
   return (
     <View>
-      <Eyebrow>Sessions · {client.name}</Eyebrow>
+      <Eyebrow>Sessions · {clientName}</Eyebrow>
       <View style={{ height: 12 }} />
-      {client.timeline.map((entry, i) => {
-        const active = i === 0;
-        const status = statusFor(entry.kind, active);
-        const sub = entry.scores || entry.body;
+      {notes.map((n, i) => {
+        const active = i === activeIndex;
+        const status: { label: string; tone: 'positive' | 'draft' | 'neutral' } = active
+          ? signed
+            ? { label: 'Signed · you', tone: 'positive' }
+            : { label: 'Draft · review', tone: 'draft' }
+          : n.status === 'signed'
+            ? { label: 'Signed · you', tone: 'positive' }
+            : { label: 'Earlier note', tone: 'neutral' };
         return (
-          <View
-            key={entry.id}
+          <Pressable
+            key={i}
+            onPress={() => router.replace(`/(app)/session/review?clientId=${encodeURIComponent(clientId)}&note=${i}`)}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${n.sessionLabel}`}
+            accessibilityState={{ selected: active }}
             style={{
               backgroundColor: active ? c.brandBg : 'transparent',
               borderRadius: theme.radii.sm,
@@ -800,25 +822,21 @@ function SessionList({ client, signed }: { client: Client; signed: boolean }) {
               borderLeftColor: c.brand,
             }}
           >
-            <Row style={{ justifyContent: 'space-between' }}>
-              <AppText variant="bodyStrong" style={{ fontSize: 14 }}>
-                {entry.title ?? (entry.kind.charAt(0).toUpperCase() + entry.kind.slice(1))}
-              </AppText>
-              <AppText variant="small" color="ink3" style={{ fontSize: 11 }}>
-                {entry.date}
-              </AppText>
-            </Row>
-            {sub ? (
-              <AppText variant="small" color="ink3" numberOfLines={1} style={{ marginTop: 4 }}>
-                {sub}
-              </AppText>
-            ) : null}
+            <AppText variant="bodyStrong" style={{ fontSize: 14 }}>
+              {n.sessionLabel}
+            </AppText>
+            <AppText variant="small" color="ink3" numberOfLines={1} style={{ marginTop: 4 }}>
+              {n.sourceLine}
+            </AppText>
             <View style={{ marginTop: 8 }}>
               <Badge label={status.label} tone={status.tone} />
             </View>
-          </View>
+          </Pressable>
         );
       })}
+      <AppText variant="small" color="ink3" style={{ marginTop: 2, fontSize: 11 }}>
+        Up to 3 recent notes are kept per client.
+      </AppText>
     </View>
   );
 }

@@ -8,11 +8,16 @@
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT } from './repository';
+import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT, MAX_NOTES_PER_CLIENT } from './repository';
 import { CaseloadKpi, Client, DayDashboard, DraftNote } from './types';
 import { appendSessionToClient, clientFromSession } from './sessionClient';
 
 const normalizeName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** Prepend the newest note and keep at most MAX_NOTES_PER_CLIENT per client (C4) — oldest rotates out. */
+function withNote(existing: DraftNote[] | undefined, note: DraftNote): DraftNote[] {
+  return [note, ...(existing ?? [])].slice(0, MAX_NOTES_PER_CLIENT);
+}
 
 /**
  * Caseload KPI tiles computed from the ACTUAL caseload (F10). The tiles used to be static fixtures
@@ -40,7 +45,7 @@ type DataContextValue = {
   clientsById: Record<string, Client>;
   dayDashboard: DayDashboard | null;
   caseloadKpis: CaseloadKpi[];
-  notes: Record<string, DraftNote>;
+  notes: Record<string, DraftNote[]>;
   sampleLoaded: boolean;
   /** Load the Amara K. sample cohort (Settings / dev affordance). */
   loadSample: () => Promise<void>;
@@ -93,16 +98,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     async (note: DraftNote, opts?: { clientId?: string; name?: string }) => {
       const existingId = opts?.clientId;
       const dateLabel = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-      const name = opts?.name?.trim() || 'New client';
+      const typedName = opts?.name?.trim() ?? '';
+      const name = typedName || 'New client'; // display fallback only — NEVER a fold key
 
       // A session for a client we already know → fold it in rather than minting a duplicate (F3),
       // so trends accumulate, the session history stays reachable, and the note's risk reaches the
       // caseload on EVERY capture path (F4) — whether the client arrived by id (day board → session)
-      // or by typed name. The name match is scoped to captured clients ('s-' ids) so it never
-      // collides with the sample cohort.
+      // or by a REAL typed name. Folding by name is scoped to captured clients ('s-' ids) AND requires
+      // a non-blank typed name: a blank capture defaults to "New client" for display but must never
+      // fold, or two different unnamed patients would merge into one record and cross-contaminate risk
+      // and notes (fold-name-collision).
       const existing = existingId
         ? snapshot.clients.find((cl) => cl.id === existingId)
-        : snapshot.clients.find((cl) => cl.id.startsWith('s-') && normalizeName(cl.name) === normalizeName(name));
+        : typedName
+          ? snapshot.clients.find((cl) => cl.id.startsWith('s-') && normalizeName(cl.name) === normalizeName(typedName))
+          : undefined;
       if (existing) {
         const sessionNumber = existing.sessionNumber + 1;
         const updated = appendSessionToClient(existing, note, { sessionNumber, dateLabel });
@@ -110,7 +120,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await persist({
           ...snapshot,
           clients: snapshot.clients.map((cl) => (cl.id === existing.id ? updated : cl)),
-          notes: { ...snapshot.notes, [existing.id]: noteForClient },
+          // Retain up to 3 notes (C4) — the newer session no longer erases the prior note's full text.
+          notes: { ...snapshot.notes, [existing.id]: withNote(snapshot.notes[existing.id], noteForClient) },
         });
         return existing.id;
       }
@@ -118,7 +129,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // A clientId whose client no longer exists (e.g. cleared data mid-session) — keep the note
       // reachable under that id rather than silently minting an unrelated client.
       if (existingId) {
-        await persist({ ...snapshot, notes: { ...snapshot.notes, [existingId]: note } });
+        await persist({ ...snapshot, notes: { ...snapshot.notes, [existingId]: withNote(snapshot.notes[existingId], note) } });
         return existingId;
       }
 
@@ -130,7 +141,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       await persist({
         ...snapshot,
         clients: [client, ...snapshot.clients],
-        notes: { ...snapshot.notes, [id]: noteForClient },
+        notes: { ...snapshot.notes, [id]: withNote(snapshot.notes[id], noteForClient) },
       });
       return id;
     },
@@ -185,8 +196,14 @@ export function useCaseloadKpis(): CaseloadKpi[] {
   return useContext(DataContext)?.caseloadKpis ?? [];
 }
 
-/** The saved/generated draft for a client, if any. */
-export function useDraftNote(id?: string): DraftNote | undefined {
+/** All retained session notes for a client (newest first, up to 3 — C4). Empty outside the provider. */
+export function useClientNotes(id?: string): DraftNote[] {
   const ctx = useContext(DataContext);
-  return ctx && id ? ctx.notes[id] : undefined;
+  return ctx && id ? ctx.notes[id] ?? [] : [];
+}
+
+/** One saved/generated draft for a client — the newest by default, or the note at `index` (C4). */
+export function useDraftNote(id?: string, index = 0): DraftNote | undefined {
+  const ctx = useContext(DataContext);
+  return ctx && id ? ctx.notes[id]?.[index] : undefined;
 }

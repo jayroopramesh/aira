@@ -10,12 +10,18 @@ import { vaultStorage, VaultStorage } from '../services/storage';
  * clientId. Everything here is written through the vault seam (VaultStorage) and never leaves the
  * device.
  */
+/** How many session notes are retained per client (captain C4) — newest first, oldest rotates out. */
+export const MAX_NOTES_PER_CLIENT = 3;
+
 export type CaseloadSnapshot = {
   clients: Client[];
   dayDashboard: DayDashboard | null;
   caseloadKpis: CaseloadKpi[];
-  /** Session-generated (or sample) draft notes, keyed by clientId. */
-  notes: Record<string, DraftNote>;
+  /**
+   * Session-generated (or sample) draft notes, keyed by clientId. Up to MAX_NOTES_PER_CLIENT are
+   * kept per client, NEWEST FIRST (C4) — the one-note-per-client overwrite limit is removed.
+   */
+  notes: Record<string, DraftNote[]>;
   /** True once the sample cohort has been loaded (so Settings can offer "Clear"). */
   sampleLoaded: boolean;
 };
@@ -43,7 +49,7 @@ export function buildSampleSnapshot(): CaseloadSnapshot {
     clients: CLIENTS.map((c) => ({ ...c })),
     dayDashboard: { ...DAY_DASHBOARD, dateLabel: todayLabel() },
     caseloadKpis: [], // computed from clients in DataProvider (F10) — no static tiles
-    notes: { amara: AMARA_DRAFT },
+    notes: { amara: [AMARA_DRAFT] },
     sampleLoaded: true,
   };
 }
@@ -77,7 +83,18 @@ class VaultClientRepository implements ClientRepository {
       const bytes = await this.vault.read(RECORD_ID);
       if (!bytes) return { ...EMPTY_SNAPSHOT };
       const parsed = JSON.parse(decoder.decode(bytes)) as Partial<CaseloadSnapshot>;
-      return { ...EMPTY_SNAPSHOT, ...parsed, notes: parsed.notes ?? {} };
+      // Normalise the notes map to arrays (C4): older persisted snapshots stored a single DraftNote
+      // per client; wrap those, and cap every list at MAX_NOTES_PER_CLIENT newest-first.
+      const rawNotes = (parsed.notes ?? {}) as Record<string, DraftNote | DraftNote[]>;
+      const notes: Record<string, DraftNote[]> = {};
+      for (const [clientId, value] of Object.entries(rawNotes)) {
+        notes[clientId] = (Array.isArray(value) ? value : [value]).slice(0, MAX_NOTES_PER_CLIENT);
+      }
+      const snapshot = { ...EMPTY_SNAPSHOT, ...parsed, notes };
+      // Re-stamp the day-board date at READ time — the label must reflect the day the counselor
+      // opens the app, not the day the sample was loaded and persisted (F15).
+      if (snapshot.dayDashboard) snapshot.dayDashboard = { ...snapshot.dayDashboard, dateLabel: todayLabel() };
+      return snapshot;
     } catch {
       return { ...EMPTY_SNAPSHOT };
     }
