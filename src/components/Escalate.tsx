@@ -1,11 +1,14 @@
+import { useRouter } from 'expo-router';
 import React, { createContext, useContext, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
+import { Linking, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { crisisLine } from '../config/env';
 import { useTheme } from '../theme/ThemeProvider';
 import { CloseIcon, PhoneIcon, ShieldIcon } from './icons';
 import { AppText, Card, Divider, Eyebrow, Row } from './ui';
 
-type EscalateContextValue = { open: () => void; close: () => void; isOpen: boolean };
+type OpenOpts = { clientId?: string };
+type EscalateContextValue = { open: (opts?: OpenOpts) => void; close: () => void; isOpen: boolean };
 const EscalateContext = createContext<EscalateContextValue | null>(null);
 
 export function useEscalate() {
@@ -14,32 +17,87 @@ export function useEscalate() {
   return ctx;
 }
 
-const OPTIONS = [
-  { key: 'crisis', title: 'Call a crisis line', sub: 'Regional 24/7 line · opens your dialer' },
-  { key: 'handoff', title: 'Warm handoff to on-call', sub: 'Route to the on-call clinician — the client is never auto-messaged' },
-  { key: 'safety', title: 'Open the safety plan', sub: 'Review coping steps and trusted contacts together' },
-];
+/** Warm handoff to the on-call clinician — a mailto the clinician sends; the client is never messaged. */
+function onCallMailto(clientId?: string): string {
+  const ref = clientId ? ` (re: locally-identified client ${clientId})` : '';
+  const subject = 'Warm handoff — on-call review requested';
+  const body = `Hi,\n\nRequesting a warm handoff${ref} to the on-call clinician for review. Please advise on availability.\n\n(No message has been sent to the client.)`;
+  return `mailto:on-call@clinic.example?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
 
 /**
  * The standing Escalate affordance. Calm clay tones — never alarm-red. Presented as a
  * dismissible panel/sheet, never a blocking alarm. Nothing here auto-acts or messages the
- * client; every option routes to the clinician.
+ * client; every option routes to the clinician. No option is a dead promise (F6): the crisis
+ * line dials a real number, the handoff opens a real mailto, and the safety plan opens the
+ * client's plan when there is a client in context — otherwise it says so honestly (F19).
  */
 export function EscalateProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setOpen] = useState(false);
-  const value = useMemo(() => ({ open: () => setOpen(true), close: () => setOpen(false), isOpen }), [isOpen]);
+  const [clientId, setClientId] = useState<string | undefined>(undefined);
+  const value = useMemo(
+    () => ({
+      open: (opts?: OpenOpts) => {
+        setClientId(opts?.clientId);
+        setOpen(true);
+      },
+      close: () => setOpen(false),
+      isOpen,
+    }),
+    [isOpen],
+  );
   return (
     <EscalateContext.Provider value={value}>
       {children}
-      <EscalateSheet visible={isOpen} onClose={() => setOpen(false)} />
+      <EscalateSheet visible={isOpen} clientId={clientId} onClose={() => setOpen(false)} />
     </EscalateContext.Provider>
   );
 }
 
-function EscalateSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+function EscalateSheet({ visible, clientId, onClose }: { visible: boolean; clientId?: string; onClose: () => void }) {
   const theme = useTheme();
   const c = theme.colors;
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  const options: { key: string; title: string; sub: string; disabled?: boolean; onPress?: () => void }[] = [
+    {
+      key: 'crisis',
+      title: 'Call a crisis line',
+      sub: crisisLine.configured
+        ? `${crisisLine.display} · opens your dialer`
+        : `Opens your dialer — no dedicated line configured, dials ${crisisLine.display}`,
+      onPress: () => {
+        Linking.openURL(crisisLine.tel).catch(() => {});
+        onClose();
+      },
+    },
+    {
+      key: 'handoff',
+      title: 'Warm handoff to on-call',
+      sub: 'Opens an email to the on-call clinician — the client is never auto-messaged',
+      onPress: () => {
+        Linking.openURL(onCallMailto(clientId)).catch(() => {});
+        onClose();
+      },
+    },
+    clientId
+      ? {
+          key: 'safety',
+          title: 'Open the safety plan',
+          sub: 'Review the safety information on file for this client',
+          onPress: () => {
+            onClose();
+            router.push(`/(app)/patterns/safety-plan?clientId=${clientId}`);
+          },
+        }
+      : {
+          key: 'safety',
+          title: 'Open the safety plan',
+          sub: 'Open a client’s review first — a safety plan belongs to a specific client',
+          disabled: true,
+        },
+  ];
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -83,16 +141,20 @@ function EscalateSheet({ visible, onClose }: { visible: boolean; onClose: () => 
           <View style={{ height: theme.spacing.md }} />
 
           <ScrollView style={{ maxHeight: 360 }}>
-            {OPTIONS.map((o, i) => (
+            {options.map((o, i) => (
               <View key={o.key}>
                 {i > 0 && <Divider />}
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !!o.disabled }}
+                  disabled={o.disabled}
+                  onPress={o.onPress}
                   style={({ pressed }) => ({
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: 12,
                     paddingVertical: 14,
-                    opacity: pressed ? 0.7 : 1,
+                    opacity: o.disabled ? 0.45 : pressed ? 0.7 : 1,
                   })}
                 >
                   <View

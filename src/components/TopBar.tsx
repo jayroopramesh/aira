@@ -58,7 +58,7 @@ export function TopBar({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Escalate — open calm options"
-            onPress={escalate.open}
+            onPress={() => escalate.open()}
             style={({ pressed }) => ({
               flexDirection: 'row',
               alignItems: 'center',

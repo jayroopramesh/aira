@@ -17,6 +17,7 @@ const raw = {
   supabaseKey: process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ?? '',
   groqKey: process.env.EXPO_PUBLIC_GROQ_API_KEY?.trim() ?? '',
   groqBaseUrl: (process.env.EXPO_PUBLIC_GROQ_BASE_URL?.trim() || 'https://api.groq.com/openai/v1').replace(/\/$/, ''),
+  crisisLine: process.env.EXPO_PUBLIC_CRISIS_LINE?.trim() ?? '',
 };
 
 /** A placeholder (from .env.example) is treated as "not configured". */
@@ -46,6 +47,20 @@ export const hasGroq = isRealValue(raw.groqKey);
 
 /** Any cloud service is wired — drives the demo-mode banner. */
 export const demoServicesConfigured = hasSupabase || hasGroq;
+
+/**
+ * The crisis line the Escalate + safety surfaces dial (F6/F7). A deployment sets its regional 24/7
+ * line via EXPO_PUBLIC_CRISIS_LINE. When none is configured we do NOT fabricate a mental-health
+ * number — we fall back to local emergency services (always a correct 24/7 path) and label it
+ * honestly, and the UI says a dedicated line isn't set for this build. `configured` drives that copy.
+ */
+export const crisisLine: { configured: boolean; display: string; tel: string } = (() => {
+  if (isRealValue(raw.crisisLine)) {
+    const digits = raw.crisisLine.replace(/[^\d+]/g, '');
+    return { configured: true, display: raw.crisisLine, tel: `tel:${digits}` };
+  }
+  return { configured: false, display: '999 · local emergency services', tel: 'tel:999' };
+})();
 
 /** Which cloud services are live, for the demo banner / settings copy. */
 export function configuredServices(): { label: string; on: boolean }[] {
