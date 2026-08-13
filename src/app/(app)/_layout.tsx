@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { PatternsTabIcon, ReadyTabIcon, SessionTabIcon } from '../../components/
 import { TopBar } from '../../components/TopBar';
 import { AppText } from '../../components/ui';
 import { DataProvider } from '../../data/DataProvider';
+import { vaultStorage } from '../../services/storage';
 import { useTheme } from '../../theme/ThemeProvider';
 
 const TAB_META: Record<string, { label: string; Icon: React.ComponentType<{ size?: number; color?: string }> }> = {
@@ -76,6 +77,13 @@ function WorkflowTabBar({ state, navigation }: TabBarProps) {
 
 export default function AppLayout() {
   const theme = useTheme();
+  // Route guard (F2): the (app) group holds the entire caseload. It renders ONLY when the vault is
+  // open. Signing out (and a plain reload) locks the vault, so any direct navigation here — e.g.
+  // typing /patterns while signed out — is bounced back to the unlock screen instead of exposing
+  // client data. isUnlocked() is in-memory, so a reload also re-locks and re-challenges.
+  if (!vaultStorage.isUnlocked()) {
+    return <Redirect href="/unlock" />;
+  }
   return (
     <DataProvider>
       <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
