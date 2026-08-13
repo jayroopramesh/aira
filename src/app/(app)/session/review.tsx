@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowRight, CheckIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
@@ -37,22 +37,22 @@ export default function ReviewNote() {
   const draft = useDraftNote(clientId, noteIndex);
   const client = useClient(clientId);
 
-  const [tab, setTab] = useState<Tab>('Note');
-  const [signed, setSigned] = useState(false);
+  // The C4 rail switches notes via router.replace(...&note=i) without remounting, and notes rotate
+  // newest-first, so index alone can't identify the reviewed note. The sign state (and tab) are
+  // stored WITH the identity of the note they belong to and only apply while that identity still
+  // matches — any switch or rotation reads as unsigned at render time, with no effect delay.
+  const noteKey = `${clientId ?? ''}::${draft?.sessionLabel ?? ''}`;
+  const [tabState, setTabState] = useState<{ key: string; tab: Tab }>({ key: noteKey, tab: 'Note' });
+  const tab = tabState.key === noteKey ? tabState.tab : 'Note';
+  const setTab = (t: Tab) => setTabState({ key: noteKey, tab: t });
   // Sign-off attribution (F8): the clinician who actually signed in, and the moment they signed —
   // this is the legal attestation line, so neither may be hardcoded.
-  const [signedAt, setSignedAt] = useState<string | null>(null);
+  const [signState, setSignState] = useState<{ key: string; at: string | null }>({ key: noteKey, at: null });
+  const signed = signState.key === noteKey && signState.at !== null;
+  const signedAt = signed ? signState.at : null;
   const clinician = authService.getClinicianName() ?? 'You';
-  // The C4 rail switches notes via router.replace(...&note=i) without remounting, so the sign
-  // state must reset per reviewed note — a signed note's attestation must never carry over.
-  useEffect(() => {
-    setSigned(false);
-    setSignedAt(null);
-    setTab('Note');
-  }, [clientId, noteIndex]);
   const sign = () => {
-    setSignedAt(formatSignedAt(new Date()));
-    setSigned(true);
+    setSignState({ key: noteKey, at: formatSignedAt(new Date()) });
   };
 
   if (!draft) {
