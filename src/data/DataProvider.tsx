@@ -14,6 +14,26 @@ import { appendSessionToClient, clientFromSession } from './sessionClient';
 
 const normalizeName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
 
+/**
+ * Caseload KPI tiles computed from the ACTUAL caseload (F10). The tiles used to be static fixtures
+ * ("24 active clients", "17 improving") that contradicted a 7-client caseload and never moved when
+ * real clients were added. These derive from the clients on screen, so they can never disagree with
+ * the table below them.
+ */
+function computeCaseloadKpis(clients: Client[]): CaseloadKpi[] {
+  if (!clients.length) return [];
+  const active = clients.filter((c) => c.status === 'active').length;
+  const improving = clients.filter((c) => c.sparkline.length >= 2 && c.sparkline[c.sparkline.length - 1] < c.sparkline[0]).length;
+  const followUpsDue = clients.filter((c) => c.followUpDue).length;
+  const riskFlags = clients.filter((c) => c.risk === 'acute' || c.risk === 'elevated').length;
+  return [
+    { label: 'Clients', value: String(clients.length), sub: `${active} active` },
+    { label: 'Improving', value: String(improving), sub: 'PHQ-9 trending down' },
+    { label: 'Follow-ups due', value: String(followUpsDue), sub: followUpsDue ? 'need scheduling' : 'all scheduled' },
+    { label: 'Risk flags', value: String(riskFlags), sub: riskFlags ? 'elevated / acute · review' : 'none flagged', tone: riskFlags ? 'risk' : 'default' },
+  ];
+}
+
 type DataContextValue = {
   hydrated: boolean;
   clients: Client[];
@@ -117,7 +137,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       clients: snapshot.clients,
       clientsById,
       dayDashboard: snapshot.dayDashboard,
-      caseloadKpis: snapshot.caseloadKpis,
+      caseloadKpis: computeCaseloadKpis(snapshot.clients),
       notes: snapshot.notes,
       sampleLoaded: snapshot.sampleLoaded,
       loadSample,

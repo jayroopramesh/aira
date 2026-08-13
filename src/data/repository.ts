@@ -1,4 +1,4 @@
-import { AMARA_DRAFT, CASELOAD_KPIS, CLIENTS, DAY_DASHBOARD } from './fixtures';
+import { AMARA_DRAFT, CLIENTS, DAY_DASHBOARD } from './fixtures';
 import { CaseloadKpi, Client, DayDashboard, DraftNote } from './types';
 import { vaultStorage, VaultStorage } from '../services/storage';
 
@@ -28,12 +28,21 @@ export const EMPTY_SNAPSHOT: CaseloadSnapshot = {
   sampleLoaded: false,
 };
 
+/** "WEDNESDAY · 13 AUGUST" for today, so the sample day board never shows a stale hardcoded date (F15). */
+function todayLabel(): string {
+  const d = new Date();
+  const weekday = d.toLocaleDateString(undefined, { weekday: 'long' });
+  const day = d.toLocaleDateString(undefined, { day: 'numeric' });
+  const month = d.toLocaleDateString(undefined, { month: 'long' });
+  return `${weekday} · ${day} ${month}`.toUpperCase();
+}
+
 /** The Amara K. cohort + report clients, assembled as a loadable sample snapshot (no real PHI). */
 export function buildSampleSnapshot(): CaseloadSnapshot {
   return {
     clients: CLIENTS.map((c) => ({ ...c })),
-    dayDashboard: DAY_DASHBOARD,
-    caseloadKpis: CASELOAD_KPIS,
+    dayDashboard: { ...DAY_DASHBOARD, dateLabel: todayLabel() },
+    caseloadKpis: [], // computed from clients in DataProvider (F10) — no static tiles
     notes: { amara: AMARA_DRAFT },
     sampleLoaded: true,
   };
