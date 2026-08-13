@@ -149,6 +149,12 @@ export class MockSummarizationService implements SummarizationService {
  * A conservative keyword scan the no-keys mock uses so it never asserts a safety finding the
  * transcript did not contain. Errs toward flagging: any ideation cue → acute; else self-harm → elevated;
  * else it says plainly that safety was not explicitly addressed (never a fabricated "Denied").
+ *
+ * Two honesty rules the stub must respect, since a keyword hit is not a clinical finding:
+ *  • A cue that appears alongside a DENIAL ("denied suicidal ideation", "no self-harm") is not a
+ *    disclosure — flagging it would fabricate a finding the transcript explicitly contradicts.
+ *  • Even when it does flag, the row says a possible REFERENCE was seen and asks the clinician to
+ *    confirm — it never asserts "Disclosed in session", which the stub cannot establish.
  */
 function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafety']> {
   const s = transcript.toLowerCase();
@@ -171,26 +177,47 @@ function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafet
   );
   const selfHarm = has('self-harm', 'self harm', 'cut myself', 'cutting myself', 'hurt myself', 'harm myself');
 
-  if (ideation) {
+  // Whether the transcript NEGATES a cue ("denied suicidal ideation", "no self-harm"). Scoped to the
+  // cue it precedes, so denying a *plan* ("passive thoughts, denies a plan") never suppresses the
+  // ideation itself — that is still acute.
+  const deniedNear = (cues: string) =>
+    new RegExp(`\\b(?:denied|denies)\\b[^.?!]{0,40}?(?:${cues})|\\b(?:no|not|without(?: any)?)\\s+(?:[\\w'-]+\\s+){0,2}(?:${cues})`).test(s);
+  const ideationDenied = deniedNear('suicid|ideation|thoughts of|wanting to die|kill (?:her|him|my|them)sel(?:f|ves)');
+  const selfHarmDenied = deniedNear('self[- ]?harm|(?:cut|harm|hurt)(?:ting|ming|ing)? (?:her|him|my|them)sel(?:f|ves)');
+  const REVIEW = 'Possible reference in transcript — clinician to review and confirm';
+  const DENIED = 'Denied on an automated read of the transcript — clinician to confirm';
+
+  if (ideation && !ideationDenied) {
     return {
-      summary: 'Possible suicidal ideation detected in the session — review and confirm with the client.',
+      summary: 'A possible reference to suicidal ideation was picked up in the transcript — review and confirm with the client.',
       rows: [
-        { label: 'Suicidal ideation', value: 'Disclosed in session — clinician to assess plan / intent / means' },
-        { label: 'Self-harm', value: selfHarm ? 'Referenced in session — assess' : 'Not explicitly addressed' },
+        { label: 'Suicidal ideation', value: REVIEW },
+        { label: 'Self-harm', value: selfHarm && !selfHarmDenied ? REVIEW : 'Not explicitly addressed' },
         { label: 'Safety plan', value: 'Review or establish a safety plan this session' },
       ],
       level: 'acute',
     };
   }
-  if (selfHarm) {
+  if (selfHarm && !selfHarmDenied) {
     return {
-      summary: 'Possible self-harm referenced in the session — review with the client.',
+      summary: 'A possible reference to self-harm was picked up in the transcript — review and confirm with the client.',
       rows: [
         { label: 'Suicidal ideation', value: 'Not explicitly addressed' },
-        { label: 'Self-harm', value: 'Referenced in session — clinician to assess' },
+        { label: 'Self-harm', value: REVIEW },
         { label: 'Safety plan', value: 'Review coping steps this session' },
       ],
       level: 'elevated',
+    };
+  }
+  if (ideation || selfHarm) {
+    return {
+      summary: 'Ideation / self-harm appear to have been raised and denied in this session — confirm with the client.',
+      rows: [
+        { label: 'Suicidal ideation', value: ideationDenied ? DENIED : 'Not raised this session' },
+        { label: 'Self-harm', value: selfHarmDenied ? DENIED : 'Not raised this session' },
+        { label: 'Safety plan', value: 'Not discussed this session' },
+      ],
+      level: 'clear',
     };
   }
   return {
