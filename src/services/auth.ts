@@ -325,11 +325,13 @@ export class SupabaseAuthService implements AuthService {
   async signIn(username: string, password: string): Promise<UnlockResult> {
     const supabase = getSupabase();
     this.knownEmail = username;
-    await deviceStore.set(KNOWN_EMAIL_KEY, username);
     if (supabase) {
       const { error } = await supabase.auth.signInWithPassword({ email: username.trim(), password });
       if (error) return { ok: false, reason: 'wrong-key' };
     }
+    // Persist the email ONLY after the credentials are accepted, so a failed attempt with a mistyped
+    // email never overwrites the correct persisted one that F17's unlock prefill relies on.
+    await deviceStore.set(KNOWN_EMAIL_KEY, username);
     const res = await this.vault.unlock(password);
     if (res.ok) this.status = 'active';
     return res;
