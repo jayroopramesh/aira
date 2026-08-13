@@ -200,7 +200,7 @@ function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafet
       { label: 'Self-harm', value: 'Not raised this session' },
       { label: 'Safety plan', value: 'Not discussed this session' },
     ],
-    level: 'clear',
+    level: 'watch',
   };
 }
 

@@ -453,8 +453,8 @@ export const DAY_DASHBOARD: DayDashboard = {
   glance: [
     { label: 'Sessions today', value: '4' },
     { label: 'Need prep', value: '2' },
-    { label: 'Notes to sign', value: '3' },
-    { label: 'Follow-ups due', value: '1', tone: 'risk' },
+    { label: 'Notes to sign', value: '1' },
+    { label: 'Follow-ups due', value: '2', tone: 'risk' },
   ],
   schedule: [
     { clientId: 'amara', time: '10:30', meridiem: 'AM', durationMin: 50, kind: 'Individual', sessionLabel: 'Session 5 · re-engagement week', prepCount: 3 },

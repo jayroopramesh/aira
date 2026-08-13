@@ -64,7 +64,8 @@ export default function WelcomeRecovery() {
 
   const save = () => {
     if (!hasCode) return;
-    // Web: a real download of the code as a text file. Native: visual confirmation (mock).
+    // Only confirm "Saved" after a real download was triggered (F12 — no platform exceptions):
+    // on native no file is written, so claiming success would lose a code shown exactly once.
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const blob = new Blob([fileBody(words)], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
@@ -73,8 +74,8 @@ export default function WelcomeRecovery() {
       a.download = 'aira-recovery-code.txt';
       a.click();
       URL.revokeObjectURL(url);
+      setSavedFile(true);
     }
-    setSavedFile(true);
   };
 
   const enter = () => {

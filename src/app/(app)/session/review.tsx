@@ -127,7 +127,15 @@ export default function ReviewNote() {
 
             {tab === 'Note' ? <NotePane draft={draft} signed={signed} /> : <OtherPane tab={tab} />}
 
-            {/* On phone, the rail (prescriptions / codes / sign-off) stacks below the note. */}
+            {/* On phone, the note-switcher and the rail (prescriptions / codes / sign-off) stack
+                below the note — earlier retained notes must stay reachable on narrow too (C4). */}
+            {!wide && sessions ? (
+              <View style={{ marginTop: theme.spacing.xl }}>
+                <Divider />
+                <View style={{ height: theme.spacing.lg }} />
+                {sessions}
+              </View>
+            ) : null}
             {!wide ? (
               <View style={{ marginTop: theme.spacing.xl }}>
                 <Divider />
