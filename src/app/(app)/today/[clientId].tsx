@@ -8,7 +8,7 @@ import { Highlights } from '../../../components/Highlights';
 import { ArrowRight, CheckIcon, CloseIcon, FileUpIcon } from '../../../components/icons';
 import { AppText, Avatar, Button, Card, Eyebrow, Row, TrustPill } from '../../../components/ui';
 import { Client } from '../../../data/types';
-import { useClient } from '../../../data/DataProvider';
+import { useClient, useData, usePatientDetails } from '../../../data/DataProvider';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 /**
@@ -126,7 +126,8 @@ export default function ClientDrawer() {
 /**
  * Editable patient-details card (C2). Sits beside the client's name, ABOVE the optional SALAMA
  * integration. The clinician can tap "Add details" to edit each field inline and jot a free-text
- * note. Edits are local to this drawer session (like the SALAMA mock below) — no PHI leaves the device.
+ * note. Edits persist per client through the vault seam ("Done" saves) — device-local, no PHI
+ * leaves the device.
  */
 function PatientDetails({ client }: { client: Client }) {
   const theme = useTheme();
@@ -138,9 +139,11 @@ function PatientDetails({ client }: { client: Client }) {
     { label: 'Emergency contact', value: 'On file · consented to contact' },
     { label: 'Consent status', value: `Signed ${client.clientSince} · current` },
   ];
+  const saved = usePatientDetails(client.id);
+  const { savePatientDetails } = useData();
   const [editing, setEditing] = useState(false);
-  const [values, setValues] = useState<string[]>(() => initial.map((d) => d.value));
-  const [extra, setExtra] = useState('');
+  const [values, setValues] = useState<string[]>(() => saved.values ?? initial.map((d) => d.value));
+  const [extra, setExtra] = useState(saved.extra ?? '');
 
   const inputStyle = {
     flex: 1,
@@ -158,7 +161,10 @@ function PatientDetails({ client }: { client: Client }) {
       <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
         <Eyebrow>Patient details</Eyebrow>
         <Pressable
-          onPress={() => setEditing((e) => !e)}
+          onPress={() => {
+            if (editing) savePatientDetails(client.id, { values, extra });
+            setEditing((e) => !e);
+          }}
           accessibilityRole="button"
           accessibilityLabel={editing ? 'Done editing patient details' : 'Add details'}
           style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}

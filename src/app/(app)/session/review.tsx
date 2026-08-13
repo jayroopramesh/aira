@@ -7,7 +7,7 @@ import { PageHeader, Screen } from '../../../components/Screen';
 import { AppText, Badge, Button, Card, Divider, Eyebrow, Row, TrustPill } from '../../../components/ui';
 import { ZeroState } from '../../../components/ZeroState';
 import { hasGroq } from '../../../config/env';
-import { useClient, useClientNotes, useDraftNote } from '../../../data/DataProvider';
+import { useClient, useClientNotes, useData, useDraftNote } from '../../../data/DataProvider';
 import { DraftNote, NoteSection, PrepItem } from '../../../data/types';
 import { authService } from '../../../services/auth';
 import { useTheme } from '../../../theme/ThemeProvider';
@@ -36,23 +36,26 @@ export default function ReviewNote() {
   const noteIndex = Number.isInteger(parsedIndex) && parsedIndex >= 0 && parsedIndex < notes.length ? parsedIndex : 0;
   const draft = useDraftNote(clientId, noteIndex);
   const client = useClient(clientId);
+  const { signNote } = useData();
 
   // The C4 rail switches notes via router.replace(...&note=i) without remounting, and notes rotate
-  // newest-first, so index alone can't identify the reviewed note. The sign state (and tab) are
-  // stored WITH the identity of the note they belong to and only apply while that identity still
-  // matches — any switch or rotation reads as unsigned at render time, with no effect delay.
+  // newest-first, so index alone can't identify the reviewed note. The tab is stored WITH the
+  // identity of the note it belongs to so a stale pane never leaks across note switches.
   const noteKey = `${clientId ?? ''}::${draft?.sessionLabel ?? ''}`;
   const [tabState, setTabState] = useState<{ key: string; tab: Tab }>({ key: noteKey, tab: 'Note' });
   const tab = tabState.key === noteKey ? tabState.tab : 'Note';
   const setTab = (t: Tab) => setTabState({ key: noteKey, tab: t });
   // Sign-off attribution (F8): the clinician who actually signed in, and the moment they signed —
-  // this is the legal attestation line, so neither may be hardcoded.
-  const [signState, setSignState] = useState<{ key: string; at: string | null }>({ key: noteKey, at: null });
-  const signed = signState.key === noteKey && signState.at !== null;
-  const signedAt = signed ? signState.at : null;
+  // this is the legal attestation line, so neither may be hardcoded. The sign-off lives ON the
+  // stored note (status/signedBy/signedAt persisted through the vault seam), so each note renders
+  // its OWN status — switching or rotating notes can never carry an attestation across, and a
+  // completed sign-off survives navigation and reload.
   const clinician = authService.getClinicianName() ?? 'You';
+  const signed = draft?.status === 'signed';
+  const signedAt = (signed ? draft?.signedAt : null) ?? null;
+  const signedByName = (signed ? draft?.signedBy : null) ?? clinician;
   const sign = () => {
-    setSignState({ key: noteKey, at: formatSignedAt(new Date()) });
+    if (clientId) signNote(clientId, noteIndex, clinician, formatSignedAt(new Date()));
   };
 
   if (!draft) {
@@ -72,7 +75,7 @@ export default function ReviewNote() {
   // Show the session sidebar when there is more than one retained note to switch between (C4).
   const showSessions = notes.length > 1;
 
-  const rail = <ReviewRail draft={draft} signed={signed} onSign={sign} clinician={clinician} signedAt={signedAt} />;
+  const rail = <ReviewRail draft={draft} signed={signed} onSign={sign} clinician={signedByName} signedAt={signedAt} />;
   const sessions =
     client && showSessions ? (
       <SessionList clientId={client.id} clientName={client.name} notes={notes} activeIndex={noteIndex} signed={signed} />
@@ -96,7 +99,7 @@ export default function ReviewNote() {
                 <AppText variant="h1" style={{ fontSize: 23 }}>
                   {draft.sessionLabel}
                 </AppText>
-                {signed ? <SignedChip clinician={clinician} signedAt={signedAt} /> : <Badge label="Draft · review" tone="draft" />}
+                {signed ? <SignedChip clinician={signedByName} signedAt={signedAt} /> : <Badge label="Draft · review" tone="draft" />}
               </Row>
               {/* Honest scope (F9): the DRAFT is device-local; there is no de-identification hop in demo
                   mode, so this must not claim "de-identified". The cloud transcription hop is disclosed

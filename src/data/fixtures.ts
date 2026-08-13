@@ -469,7 +469,7 @@ export const DAY_DASHBOARD: DayDashboard = {
 
 export const AMARA_DRAFT: DraftNote = {
   sessionLabel: 'Session 5 — 12 Aug',
-  sourceLine: 'From a 47-min voice note · transcribed on-device · Identifiers never left this device',
+  sourceLine: 'Sample note · fictional session, no real PHI — nothing was transcribed',
   status: 'draft',
   // SOAP order (round-2 change #9): Subjective · Objective · Risk & Safety Check · Assessment · Plan.
   // Risk is its own always-present section, between Objective and Assessment.

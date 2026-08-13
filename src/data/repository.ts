@@ -13,6 +13,9 @@ import { vaultStorage, VaultStorage } from '../services/storage';
 /** How many session notes are retained per client (captain C4) — newest first, oldest rotates out. */
 export const MAX_NOTES_PER_CLIENT = 3;
 
+/** Clinician-entered patient-details card edits (C2) — device-local, keyed by clientId. */
+export type PatientDetailsEntry = { values?: string[]; extra?: string };
+
 export type CaseloadSnapshot = {
   clients: Client[];
   dayDashboard: DayDashboard | null;
@@ -22,6 +25,8 @@ export type CaseloadSnapshot = {
    * kept per client, NEWEST FIRST (C4) — the one-note-per-client overwrite limit is removed.
    */
   notes: Record<string, DraftNote[]>;
+  /** Edits made in the patient-details card, keyed by clientId — the "stays on this device" store. */
+  patientDetails: Record<string, PatientDetailsEntry>;
   /** True once the sample cohort has been loaded (so Settings can offer "Clear"). */
   sampleLoaded: boolean;
 };
@@ -31,6 +36,7 @@ export const EMPTY_SNAPSHOT: CaseloadSnapshot = {
   dayDashboard: null,
   caseloadKpis: [],
   notes: {},
+  patientDetails: {},
   sampleLoaded: false,
 };
 
@@ -50,6 +56,7 @@ export function buildSampleSnapshot(): CaseloadSnapshot {
     dayDashboard: { ...DAY_DASHBOARD, dateLabel: todayLabel() },
     caseloadKpis: [], // computed from clients in DataProvider (F10) — no static tiles
     notes: { amara: [AMARA_DRAFT] },
+    patientDetails: {},
     sampleLoaded: true,
   };
 }
@@ -90,7 +97,7 @@ class VaultClientRepository implements ClientRepository {
       for (const [clientId, value] of Object.entries(rawNotes)) {
         notes[clientId] = (Array.isArray(value) ? value : [value]).slice(0, MAX_NOTES_PER_CLIENT);
       }
-      const snapshot = { ...EMPTY_SNAPSHOT, ...parsed, notes };
+      const snapshot = { ...EMPTY_SNAPSHOT, ...parsed, notes, patientDetails: parsed.patientDetails ?? {} };
       // Re-stamp the day-board date at READ time — the label must reflect the day the counselor
       // opens the app, not the day the sample was loaded and persisted (F15).
       if (snapshot.dayDashboard) snapshot.dayDashboard = { ...snapshot.dayDashboard, dateLabel: todayLabel() };

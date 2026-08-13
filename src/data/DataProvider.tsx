@@ -8,7 +8,7 @@
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT, MAX_NOTES_PER_CLIENT } from './repository';
+import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT, MAX_NOTES_PER_CLIENT, PatientDetailsEntry } from './repository';
 import { CaseloadKpi, Client, DayDashboard, DraftNote } from './types';
 import { appendSessionToClient, clientFromSession } from './sessionClient';
 
@@ -46,6 +46,7 @@ type DataContextValue = {
   dayDashboard: DayDashboard | null;
   caseloadKpis: CaseloadKpi[];
   notes: Record<string, DraftNote[]>;
+  patientDetails: Record<string, PatientDetailsEntry>;
   sampleLoaded: boolean;
   /** Load the Amara K. sample cohort (Settings / dev affordance). */
   loadSample: () => Promise<void>;
@@ -56,6 +57,10 @@ type DataContextValue = {
    * captured session appears in the caseload. Returns the clientId the note is stored under.
    */
   saveSessionNote: (note: DraftNote, opts?: { clientId?: string; name?: string }) => Promise<string>;
+  /** Persist the clinician-entered patient-details card edits for a client (C2) — device-local. */
+  savePatientDetails: (clientId: string, patch: PatientDetailsEntry) => Promise<void>;
+  /** Persist a sign-off onto the stored note (F8) so the attestation survives navigation/reload. */
+  signNote: (clientId: string, noteIndex: number, signedBy: string, signedAt: string) => Promise<void>;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -148,6 +153,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [persist, snapshot],
   );
 
+  const savePatientDetails = useCallback(
+    async (clientId: string, patch: PatientDetailsEntry) => {
+      await persist({
+        ...snapshot,
+        patientDetails: { ...snapshot.patientDetails, [clientId]: { ...snapshot.patientDetails[clientId], ...patch } },
+      });
+    },
+    [persist, snapshot],
+  );
+
+  const signNote = useCallback(
+    async (clientId: string, noteIndex: number, signedBy: string, signedAt: string) => {
+      const list = snapshot.notes[clientId];
+      if (!list?.[noteIndex]) return;
+      const next = list.map((n, i) => (i === noteIndex ? { ...n, status: 'signed' as const, signedBy, signedAt } : n));
+      await persist({ ...snapshot, notes: { ...snapshot.notes, [clientId]: next } });
+    },
+    [persist, snapshot],
+  );
+
   const value = useMemo<DataContextValue>(() => {
     const clientsById = Object.fromEntries(snapshot.clients.map((c) => [c.id, c]));
     return {
@@ -157,12 +182,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       dayDashboard: snapshot.dayDashboard,
       caseloadKpis: computeCaseloadKpis(snapshot.clients),
       notes: snapshot.notes,
+      patientDetails: snapshot.patientDetails,
       sampleLoaded: snapshot.sampleLoaded,
       loadSample,
       clearAll,
       saveSessionNote,
+      savePatientDetails,
+      signNote,
     };
-  }, [snapshot, hydrated, loadSample, clearAll, saveSessionNote]);
+  }, [snapshot, hydrated, loadSample, clearAll, saveSessionNote, savePatientDetails, signNote]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
@@ -206,4 +234,10 @@ export function useClientNotes(id?: string): DraftNote[] {
 export function useDraftNote(id?: string, index = 0): DraftNote | undefined {
   const ctx = useContext(DataContext);
   return ctx && id ? ctx.notes[id]?.[index] : undefined;
+}
+
+/** The persisted patient-details card edits for a client (C2). Empty outside the provider. */
+export function usePatientDetails(id?: string): PatientDetailsEntry {
+  const ctx = useContext(DataContext);
+  return (ctx && id ? ctx.patientDetails[id] : undefined) ?? {};
 }
