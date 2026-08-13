@@ -16,8 +16,12 @@ export default function TodayDashboard() {
   const { width } = useWindowDimensions();
   const wide = width >= 900;
   const d = useDayDashboard();
-  const { loadSample } = useData();
+  const { hydrated, loadSample } = useData();
   const nextClient = useClient(d?.nextClientId);
+
+  if (!hydrated) {
+    return <Screen>{null}</Screen>;
+  }
 
   if (!d) {
     return (

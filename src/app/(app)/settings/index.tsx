@@ -21,6 +21,7 @@ export default function Settings() {
   const { clients, sampleLoaded, loadSample, clearAll } = useData();
   const [busy, setBusy] = useState(false);
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const [confirmingLoad, setConfirmingLoad] = useState(false);
 
   const hasData = clients.length > 0 || sampleLoaded;
 
@@ -28,7 +29,12 @@ export default function Settings() {
     setBusy(true);
     await loadSample();
     setBusy(false);
+    setConfirmingLoad(false);
     router.push('/(app)/patterns');
+  };
+  const requestLoad = () => {
+    if (clients.length > 0) setConfirmingLoad(true);
+    else void doLoad();
   };
   const doClear = async () => {
     setBusy(true);
@@ -75,13 +81,27 @@ export default function Settings() {
               <Button title="Cancel" variant="secondary" disabled={busy} onPress={() => setConfirmingClear(false)} />
             </Row>
           </View>
+        ) : confirmingLoad ? (
+          <View style={{ backgroundColor: c.riskBg, borderRadius: 10, padding: 14 }}>
+            <AppText variant="bodyStrong" style={{ fontSize: 14 }}>
+              Replace your data with the sample?
+            </AppText>
+            <AppText variant="small" color="ink2" style={{ marginTop: 4, lineHeight: 17 }}>
+              Loading sample data replaces every note, transcript and prescription on this device — this cannot be undone.
+            </AppText>
+            <View style={{ height: 12 }} />
+            <Row gap={10} wrap>
+              <Button title="Yes, load sample data" variant="danger" loading={busy} onPress={doLoad} />
+              <Button title="Cancel" variant="secondary" disabled={busy} onPress={() => setConfirmingLoad(false)} />
+            </Row>
+          </View>
         ) : (
           <Row gap={10} wrap>
             <Button
               title={sampleLoaded ? 'Reload sample data' : 'Load sample data'}
               variant="primary"
               loading={busy}
-              onPress={doLoad}
+              onPress={requestLoad}
             />
             {hasData ? (
               <Button title="Clear all data" variant="secondary" disabled={busy} onPress={() => setConfirmingClear(true)} />

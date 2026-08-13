@@ -488,7 +488,7 @@ function Analysing({
         setStage('ready');
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
-        setError('Transcription failed — you can edit the transcript below or continue with a sample draft.');
+        setError('Transcription failed — type or paste the transcript below, then draft the note.');
         setStage('ready');
       }
     })();
@@ -496,10 +496,12 @@ function Analysing({
   }, [capture]);
 
   const draftAndContinue = async () => {
+    const trimmed = transcript.trim();
+    if (!trimmed) return;
     setError(null);
     setStage('drafting');
     const input = {
-      transcript: transcript.trim() || 'Client reported a steadier week. Continued the agreed practice. Denied ideation on screening.',
+      transcript: trimmed,
       clientName: client?.name ?? name,
       sessionNumber: client?.sessionNumber ?? 1,
       durationMs: capture.durationMs,
@@ -526,6 +528,7 @@ function Analysing({
             : 'Preparing…';
 
   const working = stage === 'preparing' || stage === 'transcribing' || stage === 'deidentifying' || stage === 'drafting';
+  const transcriptEmpty = transcript.trim().length === 0;
 
   return (
     <View style={{ paddingTop: theme.spacing.lg }}>
@@ -606,11 +609,16 @@ function Analysing({
 
       <View style={{ height: theme.spacing.lg }} />
       <View style={{ alignItems: 'flex-end' }}>
+        {!working && transcriptEmpty ? (
+          <AppText variant="small" color="ink3" style={{ marginBottom: 8 }}>
+            Add or edit the transcript before drafting.
+          </AppText>
+        ) : null}
         <Button
           title={stage === 'drafting' ? 'Drafting…' : 'Next → draft the note'}
           variant="primary"
           loading={stage === 'drafting'}
-          disabled={working}
+          disabled={working || transcriptEmpty}
           onPress={draftAndContinue}
         />
       </View>

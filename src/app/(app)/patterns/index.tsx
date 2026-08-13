@@ -20,7 +20,7 @@ export default function Caseload() {
   const [filter, setFilter] = useState<'all' | 'due' | 'risk'>('all');
   const clients = useClients();
   const kpis = useCaseloadKpis();
-  const { loadSample } = useData();
+  const { hydrated, loadSample } = useData();
 
   const filtered = clients.filter((cl) => {
     if (query && !cl.name.toLowerCase().includes(query.toLowerCase())) return false;
@@ -28,6 +28,10 @@ export default function Caseload() {
     if (filter === 'risk') return cl.risk === 'acute' || cl.risk === 'elevated';
     return true;
   });
+
+  if (!hydrated) {
+    return <Screen>{null}</Screen>;
+  }
 
   if (clients.length === 0) {
     return (

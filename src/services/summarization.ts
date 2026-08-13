@@ -141,6 +141,18 @@ function toPrep(bullets: string[]): PrepItem[] {
   return bullets.filter(Boolean).map((text, i) => ({ id: `rx-${i}`, text, source: 'from Plan', done: false }));
 }
 
+/**
+ * Shown when the model omitted a section. Never backfill omitted sections with plausible clinical
+ * content — a synthesized "Denied" or invented prose would attach fabricated findings to a real
+ * transcript. The mock service supplies complete sections, so only live-path gaps surface this.
+ */
+const NOT_CAPTURED = 'Not captured in this draft — review required';
+
+function nonEmpty(items?: string[]): string[] | null {
+  const filtered = items?.filter(Boolean) ?? [];
+  return filtered.length ? filtered : null;
+}
+
 function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
   const sections: NoteSection[] = [];
 
@@ -148,7 +160,7 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
     id: 'subjective',
     marker: 'S',
     title: 'Subjective',
-    body: d.subjective?.body?.filter(Boolean) ?? ['The client reported on the week since the last session.'],
+    body: nonEmpty(d.subjective?.body) ?? [NOT_CAPTURED],
     quote: d.subjective?.quote || undefined,
   });
 
@@ -156,7 +168,7 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
     id: 'objective',
     marker: 'O',
     title: 'Objective',
-    body: d.objective?.body?.filter(Boolean) ?? ['Engaged and reflective throughout the session.'],
+    body: nonEmpty(d.objective?.body) ?? [NOT_CAPTURED],
     hasMeasures: false,
   });
 
@@ -164,10 +176,8 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
     id: 'risk',
     marker: 'R',
     title: 'Risk & Safety Check',
-    body: d.riskSafety?.summary ? [d.riskSafety.summary] : ['Risk screened this session · routine.'],
-    rows: d.riskSafety?.rows?.length
-      ? d.riskSafety.rows
-      : [{ label: 'Suicidal ideation', value: 'Denied on screening today' }],
+    body: d.riskSafety?.summary ? [d.riskSafety.summary] : [NOT_CAPTURED],
+    rows: d.riskSafety?.rows?.length ? d.riskSafety.rows : [{ label: 'Risk screening', value: NOT_CAPTURED }],
     isRisk: true,
   });
 
@@ -175,16 +185,16 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
     id: 'assessment',
     marker: 'A',
     title: 'Assessment',
-    body: d.assessment?.body?.filter(Boolean) ?? ['Draft impression pending clinician review.'],
+    body: nonEmpty(d.assessment?.body) ?? [NOT_CAPTURED],
   });
 
-  const planBullets = d.plan?.bullets?.filter(Boolean) ?? ['Continue the agreed between-session practice'];
+  const planBullets = d.plan?.bullets?.filter(Boolean) ?? [];
   sections.push({
     id: 'plan',
     marker: 'P',
     title: 'Plan & Next Steps',
     body: [],
-    bullets: planBullets,
+    bullets: planBullets.length ? planBullets : [NOT_CAPTURED],
   });
 
   const reviewCodes: ReviewCode[] = (d.reviewCodes ?? []).map((rc) => ({
