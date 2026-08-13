@@ -7,6 +7,9 @@
 
 import { Client, DraftNote, PrepItem, RiskLevel } from './types';
 
+/** Severity ordering for the caseload risk tiers — used to compare, never to render. */
+const RISK_ORDER: Record<RiskLevel, number> = { clear: 0, watch: 1, elevated: 2, acute: 3 };
+
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return 'NC';
@@ -34,6 +37,10 @@ export function riskFromNote(note: DraftNote): RiskLevel {
   // Fallback: derive conservatively from the risk rows.
   const risk = note.sections.find((s) => s.isRisk);
   const rows = risk?.rows ?? [];
+
+  // No risk rows at all means nothing was assessed — that is "watch", never a false "clear".
+  if (!rows.length) return 'watch';
+
   const valueFor = (kw: string) => rows.find((r) => r.label.toLowerCase().includes(kw))?.value?.toLowerCase() ?? '';
   const has = (s: string, ...kws: string[]) => kws.some((k) => s.includes(k));
 
@@ -45,13 +52,23 @@ export function riskFromNote(note: DraftNote): RiskLevel {
     has(s, 'denied', 'denies', 'none reported', 'not present', 'no ideation', 'nil', 'negative', 'no concerns', 'absent');
   const isNotAssessed = (s: string) =>
     has(s, 'not assessed', 'not captured', 'unable to assess', 'not evaluated', 'review required', 'deferred');
+  // A row like "Passive ideation reported; denies plan or intent" DISCLOSES even though it also
+  // contains a denial token — a positive-disclosure marker outranks the denial of a plan/means.
+  // Negated forms ("none reported", "not present") are scrubbed first so they never read as disclosure.
+  const discloses = (s: string) => {
+    const scrubbed = s.replace(/\b(?:none|not|no|nothing|denies|denied|without)\s+(?:[\w-]+\s+){0,2}(?:reported|endorsed|present|noted)\b/g, '');
+    return (
+      has(scrubbed, 'passive', 'transient', 'fleeting', 'intermittent', 'endorsed', 'reported', 'noted', 'thoughts of', 'better off', 'not wanting to be') ||
+      /(?:ideation|thoughts?|urges?)\s+present/.test(scrubbed)
+    );
+  };
 
   // ANY disclosed (non-denied, actually-assessed) suicidal ideation → acute. Documented ideation is
   // the highest-priority caseload signal; we do not require the word "passive" or a stated plan.
-  if (ideation && !isDenial(ideation) && !isNotAssessed(ideation)) return 'acute';
+  if (ideation && !isNotAssessed(ideation) && (discloses(ideation) || !isDenial(ideation))) return 'acute';
 
   // Self-harm currently endorsed → elevated.
-  if (selfHarm && !isDenial(selfHarm) && !isNotAssessed(selfHarm)) return 'elevated';
+  if (selfHarm && !isNotAssessed(selfHarm) && (discloses(selfHarm) || !isDenial(selfHarm))) return 'elevated';
 
   // Risk simply not assessed (silence/failed capture, or model omission) → watch, never a false "clear".
   if ((ideation && isNotAssessed(ideation)) || isNotAssessed(allText)) return 'watch';
@@ -114,8 +131,8 @@ export function clientFromSession(
 /**
  * Fold a second (or later) captured session into an EXISTING caseload client (F3) instead of minting
  * a duplicate. Bumps the session count, refreshes the last-session/summary/plan, prepends a new
- * timeline entry, and re-derives risk from the newest note — so "patterns over time" can accumulate
- * for real data and the session history stays reachable.
+ * timeline entry, and raises risk from the newest note — a client's standing risk tier is never
+ * auto-DOWNGRADED by a calmer session (captain ruling); lowering it is a deliberate clinician act.
  */
 export function appendSessionToClient(
   existing: Client,
@@ -124,10 +141,11 @@ export function appendSessionToClient(
 ): Client {
   const subjective = note.sections.find((s) => s.marker === 'S');
   const summary = subjective?.body?.[0] ?? existing.summaryLine;
+  const noteRisk = riskFromNote(note);
 
   return {
     ...existing,
-    risk: riskFromNote(note),
+    risk: RISK_ORDER[noteRisk] > RISK_ORDER[existing.risk] ? noteRisk : existing.risk,
     sessionNumber: opts.sessionNumber,
     lastSessionLabel: `Today · ${opts.dateLabel}`,
     summaryLine: summary,

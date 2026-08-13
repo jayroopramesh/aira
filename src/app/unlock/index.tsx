@@ -35,6 +35,21 @@ export default function UnlockScreen() {
   // account creation / sign-in and hydrated on boot, so it's the real user's email after a reload.
   const [username, setUsername] = useState(() => authService.getKnownEmail() ?? '');
   const [password, setPassword] = useState('');
+  // Hydration from the device store is async, so the first render can precede it; once it resolves,
+  // land the persisted email (only if the field is still empty) and re-render for the greeting name.
+  const [, setAuthHydrated] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    authService.whenHydrated().then(() => {
+      if (!alive) return;
+      setAuthHydrated(true);
+      const known = authService.getKnownEmail();
+      if (known) setUsername((prev) => prev || known);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState('');
   const [recoveryError, setRecoveryError] = useState(false);

@@ -92,17 +92,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const saveSessionNote = useCallback(
     async (note: DraftNote, opts?: { clientId?: string; name?: string }) => {
       const existingId = opts?.clientId;
-      if (existingId) {
-        await persist({ ...snapshot, notes: { ...snapshot.notes, [existingId]: note } });
-        return existingId;
-      }
       const dateLabel = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
       const name = opts?.name?.trim() || 'New client';
 
-      // Repeat session for a client we already captured under this name → fold it in rather than
-      // minting a duplicate (F3), so trends accumulate and the session history stays reachable.
-      // Scoped to captured clients ('s-' ids) so it never collides with the sample cohort.
-      const existing = snapshot.clients.find((cl) => cl.id.startsWith('s-') && normalizeName(cl.name) === normalizeName(name));
+      // A session for a client we already know → fold it in rather than minting a duplicate (F3),
+      // so trends accumulate, the session history stays reachable, and the note's risk reaches the
+      // caseload on EVERY capture path (F4) — whether the client arrived by id (day board → session)
+      // or by typed name. The name match is scoped to captured clients ('s-' ids) so it never
+      // collides with the sample cohort.
+      const existing = existingId
+        ? snapshot.clients.find((cl) => cl.id === existingId)
+        : snapshot.clients.find((cl) => cl.id.startsWith('s-') && normalizeName(cl.name) === normalizeName(name));
       if (existing) {
         const sessionNumber = existing.sessionNumber + 1;
         const updated = appendSessionToClient(existing, note, { sessionNumber, dateLabel });
@@ -113,6 +113,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           notes: { ...snapshot.notes, [existing.id]: noteForClient },
         });
         return existing.id;
+      }
+
+      // A clientId whose client no longer exists (e.g. cleared data mid-session) — keep the note
+      // reachable under that id rather than silently minting an unrelated client.
+      if (existingId) {
+        await persist({ ...snapshot, notes: { ...snapshot.notes, [existingId]: note } });
+        return existingId;
       }
 
       // Standalone session — mint a lightweight client so blank boot visibly populates.

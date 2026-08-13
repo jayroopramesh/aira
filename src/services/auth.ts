@@ -121,6 +121,11 @@ export interface AuthService {
   markRecoverySaved(): void;
   /** The email of the account being set up / last used, so login can prefill it. */
   getKnownEmail(): string | null;
+  /**
+   * Resolves once the persisted email + clinician name have been read back from the device store,
+   * so screens that render before hydration can re-sync (F17/F8). Never rejects.
+   */
+  whenHydrated(): Promise<void>;
   /** The signed-in clinician's display name — the sign-off attestation and greeting are attributed to it. */
   getClinicianName(): string | null;
   /** Sign in with username/email + password; unlocks the vault on success. */
@@ -137,20 +142,30 @@ export class MockAuthService implements AuthService {
   private createdPassword: string | null = null;
   private knownEmail: string | null = null;
   private clinicianName: string | null = null;
+  private readonly hydrated: Promise<void>;
 
   constructor(private readonly vault: VaultStorage) {
     // Best-effort hydrate the clinician name + known email so a returning session attributes the
     // sign-off correctly (F8) and login prefills the RIGHT email, never a demo default (F17).
-    deviceStore.get(CLINICIAN_NAME_KEY).then((v) => {
-      if (v && !this.clinicianName) this.clinicianName = v;
-    });
-    deviceStore.get(KNOWN_EMAIL_KEY).then((v) => {
-      if (v && !this.knownEmail) this.knownEmail = v;
-    });
+    this.hydrated = Promise.all([
+      deviceStore.get(CLINICIAN_NAME_KEY).then((v) => {
+        if (v && !this.clinicianName) this.clinicianName = v;
+      }),
+      deviceStore.get(KNOWN_EMAIL_KEY).then((v) => {
+        if (v && !this.knownEmail) this.knownEmail = v;
+      }),
+    ]).then(
+      () => undefined,
+      () => undefined,
+    );
   }
 
   getStatus() {
     return this.status;
+  }
+
+  whenHydrated() {
+    return this.hydrated;
   }
 
   async createAccount(details: AccountDetails): Promise<{ recoveryCode: string[] }> {
@@ -235,20 +250,30 @@ export class SupabaseAuthService implements AuthService {
   private recoveryCode: string[] = [];
   private knownEmail: string | null = null;
   private clinicianName: string | null = null;
+  private readonly hydrated: Promise<void>;
 
   constructor(private readonly vault: VaultStorage) {
     // Hydrate the clinician name + known email so a reload attributes the sign-off (F8) and prefills
     // the right login email, never a demo default (F17).
-    deviceStore.get(CLINICIAN_NAME_KEY).then((v) => {
-      if (v && !this.clinicianName) this.clinicianName = v;
-    });
-    deviceStore.get(KNOWN_EMAIL_KEY).then((v) => {
-      if (v && !this.knownEmail) this.knownEmail = v;
-    });
+    this.hydrated = Promise.all([
+      deviceStore.get(CLINICIAN_NAME_KEY).then((v) => {
+        if (v && !this.clinicianName) this.clinicianName = v;
+      }),
+      deviceStore.get(KNOWN_EMAIL_KEY).then((v) => {
+        if (v && !this.knownEmail) this.knownEmail = v;
+      }),
+    ]).then(
+      () => undefined,
+      () => undefined,
+    );
   }
 
   getStatus() {
     return this.status;
+  }
+
+  whenHydrated() {
+    return this.hydrated;
   }
 
   getRecoveryCode() {
