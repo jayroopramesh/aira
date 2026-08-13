@@ -6,12 +6,21 @@ import { ArrowRight, CheckIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } f
 import { PageHeader, Screen } from '../../../components/Screen';
 import { AppText, Badge, Button, Card, Divider, Eyebrow, Row, TrustPill } from '../../../components/ui';
 import { ZeroState } from '../../../components/ZeroState';
+import { hasGroq } from '../../../config/env';
 import { useClient, useDraftNote } from '../../../data/DataProvider';
 import { DraftNote, NoteSection, PrepItem } from '../../../data/types';
+import { authService } from '../../../services/auth';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 const TABS = ['Note', 'Transcript', 'Context', '+ Screening tools'] as const;
 type Tab = (typeof TABS)[number];
+
+/** "13 Aug 14:18" — the real moment the clinician signed (F8), not a hardcoded timestamp. */
+function formatSignedAt(d: Date): string {
+  const date = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${date} ${time}`;
+}
 
 export default function ReviewNote() {
   const theme = useTheme();
@@ -26,6 +35,14 @@ export default function ReviewNote() {
 
   const [tab, setTab] = useState<Tab>('Note');
   const [signed, setSigned] = useState(false);
+  // Sign-off attribution (F8): the clinician who actually signed in, and the moment they signed —
+  // this is the legal attestation line, so neither may be hardcoded.
+  const [signedAt, setSignedAt] = useState<string | null>(null);
+  const clinician = authService.getClinicianName() ?? 'You';
+  const sign = () => {
+    setSignedAt(formatSignedAt(new Date()));
+    setSigned(true);
+  };
 
   if (!draft) {
     return (
@@ -44,7 +61,7 @@ export default function ReviewNote() {
   // A multi-session (sample) client shows the session sidebar; a freshly-captured one doesn't.
   const showSessions = !!client && client.sessionNumber > 1;
 
-  const rail = <ReviewRail draft={draft} signed={signed} onSign={() => setSigned(true)} />;
+  const rail = <ReviewRail draft={draft} signed={signed} onSign={sign} clinician={clinician} signedAt={signedAt} />;
   const sessions = <SessionList name={client?.name ?? 'this client'} signed={signed} />;
 
   return (
@@ -65,9 +82,12 @@ export default function ReviewNote() {
                 <AppText variant="h1" style={{ fontSize: 23 }}>
                   {draft.sessionLabel}
                 </AppText>
-                {signed ? <SignedChip /> : <Badge label="Draft · review" tone="draft" />}
+                {signed ? <SignedChip clinician={clinician} signedAt={signedAt} /> : <Badge label="Draft · review" tone="draft" />}
               </Row>
-              <TrustPill label="De-identified on this device" icon={<ShieldIcon size={13} color={c.brand} />} />
+              {/* Honest scope (F9): the DRAFT is device-local; there is no de-identification hop in demo
+                  mode, so this must not claim "de-identified". The cloud transcription hop is disclosed
+                  by the demo banner and the audio-trust note below. */}
+              <TrustPill label="Draft stays on this device" icon={<ShieldIcon size={13} color={c.brand} />} />
             </Row>
             <AppText variant="small" color="ink3" style={{ marginTop: 8 }}>
               {draft.sourceLine}
@@ -137,7 +157,7 @@ export default function ReviewNote() {
             </Row>
             <Row gap={10}>
               <Button title="Edit note" variant="secondary" onPress={() => {}} />
-              <Button title="Sign off" variant="primary" onPress={() => setSigned(true)} />
+              <Button title="Sign off" variant="primary" onPress={sign} />
             </Row>
           </Row>
         </View>
@@ -442,8 +462,9 @@ function MeasureTable({ measures }: { measures: DraftNote['measures'] }) {
 
 function OtherPane({ tab }: { tab: Tab }) {
   const copy: Record<string, string> = {
-    Transcript:
-      'The de-identified transcript lives here. Identifiers were tokenized on-device before drafting and the audio is deleted after transcription — only this reviewed text remains.',
+    Transcript: hasGroq
+      ? 'The transcript lives here on this device. In demo mode the audio was sent to the cloud (Groq) to transcribe; the audio is deleted afterwards and only this reviewed text remains — there is no on-device de-identification hop in demo mode.'
+      : 'The transcript lives here on this device. Identifiers are tokenized on-device before drafting and the audio is deleted after transcription — only this reviewed text remains.',
     Context:
       'Prior-session context Aira grounded the draft against: last plan, latest measures, and standing safety items. Companion-app journal entries are shown separately and never blended with clinical scores.',
     '+ Screening tools':
@@ -460,7 +481,19 @@ function OtherPane({ tab }: { tab: Tab }) {
 
 /* ------------------------------------------------------------------ rail --- */
 
-function ReviewRail({ draft, signed, onSign }: { draft: DraftNote; signed: boolean; onSign: () => void }) {
+function ReviewRail({
+  draft,
+  signed,
+  onSign,
+  clinician,
+  signedAt,
+}: {
+  draft: DraftNote;
+  signed: boolean;
+  onSign: () => void;
+  clinician: string;
+  signedAt: string | null;
+}) {
   const theme = useTheme();
   return (
     <View style={{ gap: theme.spacing.lg }}>
@@ -469,7 +502,7 @@ function ReviewRail({ draft, signed, onSign }: { draft: DraftNote; signed: boole
       <ReviewCodes draft={draft} />
       <Divider />
       {signed ? <AudioTrust /> : null}
-      <SignOff signed={signed} onSign={onSign} />
+      <SignOff signed={signed} onSign={onSign} clinician={clinician} signedAt={signedAt} />
     </View>
   );
 }
@@ -646,9 +679,15 @@ function AudioTrust() {
         </AppText>
       </Row>
       <AppText variant="small" color="ink2" style={{ marginTop: 8, lineHeight: 18 }}>
+        {/* Honest audio provenance (F9): in demo mode the audio was sent to the cloud to transcribe,
+            so we must not claim it "never left this device". */}
         {kept
-          ? 'You chose to keep this recording. It stays encrypted on this device and never leaves it. Keeping the audio is what makes replay-with-notes possible for this session.'
-          : 'The recording never left this device, and it’s now gone — deletion is the default after every session. Only the de-identified draft you reviewed remains.'}
+          ? hasGroq
+            ? 'You chose to keep this recording. In demo mode a copy was sent to the cloud (Groq) to transcribe; the copy you kept stays on this device and makes replay-with-notes possible for this session.'
+            : 'You chose to keep this recording. It stays on this device and never leaves it. Keeping the audio is what makes replay-with-notes possible for this session.'
+          : hasGroq
+            ? 'In demo mode this recording was sent to the cloud (Groq) to transcribe, then deleted — deletion is the default after every session. Only the draft you reviewed remains.'
+            : 'The recording never left this device, and it’s now gone — deletion is the default after every session. Only the draft you reviewed remains.'}
       </AppText>
 
       <Pressable
@@ -693,7 +732,7 @@ function AudioTrust() {
   );
 }
 
-function SignOff({ signed, onSign }: { signed: boolean; onSign: () => void }) {
+function SignOff({ signed, onSign, clinician, signedAt }: { signed: boolean; onSign: () => void; clinician: string; signedAt: string | null }) {
   const theme = useTheme();
   const c = theme.colors;
   if (signed) {
@@ -703,7 +742,7 @@ function SignOff({ signed, onSign }: { signed: boolean; onSign: () => void }) {
         <Row gap={8} style={{ marginTop: 8 }}>
           <CheckIcon size={16} color={c.positive} />
           <AppText variant="body" color="ink2" style={{ flex: 1 }}>
-            Signed by Dr. Okafor · 12 Aug 11:18 · read-only
+            Signed by {clinician}{signedAt ? ` · ${signedAt}` : ''} · read-only
           </AppText>
         </Row>
       </Card>
@@ -777,14 +816,14 @@ function SessionList({ name, signed = false }: { name: string; signed?: boolean 
   );
 }
 
-function SignedChip() {
+function SignedChip({ clinician, signedAt }: { clinician: string; signedAt: string | null }) {
   const theme = useTheme();
   const c = theme.colors;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: c.positiveBg, borderRadius: theme.radii.pill, paddingVertical: 4, paddingHorizontal: 10 }}>
       <CheckIcon size={13} color={c.positive} />
       <AppText variant="bodyStrong" tint={c.positive} style={{ fontSize: 12 }}>
-        Signed · Dr. Okafor · 12 Aug 11:18
+        Signed · {clinician}{signedAt ? ` · ${signedAt}` : ''}
       </AppText>
     </View>
   );
