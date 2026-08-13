@@ -103,7 +103,8 @@ export const lightColors: ColorTokens = {
 
 // Round-4 item 6: dark palette shifted turquoise-green (blue channel lifted) rather than
 // fully green. Contrast recomputed — every text pairing meets AA/AAA and white-on-brandStrong
-// primary buttons went from 1.70:1 (FAIL) to 4.79:1 (AA). See revision-4-notes.md for the table.
+// primary buttons went from 1.70:1 (FAIL) to 4.79:1 (AA). Contrast table:
+// aira-ui-screens-s4/revision-4-notes.md (prototype workspace, alongside screens.html).
 export const darkColors: ColorTokens = {
   surface: '#0C1B1D',
   elevated: '#132829',

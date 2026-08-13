@@ -40,17 +40,19 @@ Five workflows, built to the s4 prototype's steps and phone-adapted:
 
 | Workflow | Steps |
 |---|---|
-| **Welcome** (boots here when signed out) | onboarding (what Aira is · what Aira does) → create account (Emirates ID + "why?", phone, name, email, password) → one-time recovery code (reveal once, copy/save, "I saved it" gate) → login |
-| **Unlock** | login (username + password, "Encrypted with your login") → calm wrong-password state (inline recovery-code fallback) → decrypt transition |
-| **Get ready** | day dashboard (countdown, session cards) → client drawer (scores, timeline, last plan) → read-only prep reminder → ready state |
-| **Session summary** | pre-capture (read-only reminders) → recording (waveform, current-word live readout, timestamped notebox) → analysing (editable transcript) → SOAP note (S · O · Risk & Safety · A · P; three-pane on web, stacked on phone) → per-section edit/regenerate → Prescriptions rail → sign-off → audio-trust moment (delete-by-default, keep toggle) |
-| **Patterns** | caseload table (search, status chips, sparklines, sober risk column) → client patterns (plain-language headline *before* charts; banded chart; sparse dot-strip rule; companion-app journal box) → history timeline → acute-risk review |
+| **Welcome** (boots here when signed out) | onboarding (post-session "personal scribe" framing; endowed setup progress bar, prefilled 20% → 45% → 72% → 100%) → create account (Emirates ID + "why?", phone, name, email, password) → one-time recovery code (reveal once, copy/save, "I saved it" gate) → login |
+| **Unlock** | login (username + password, "Encrypted with your login", HIPAA-aligned trust note) → calm wrong-password state (inline recovery-code fallback) → decrypt transition |
+| **Get ready** | day dashboard (countdown, session cards) → client drawer (scores, timeline, last plan, patient-details card, mock SALAMA/EHR connection card with a persistent no-external-system disclaimer) → read-only prep reminder → ready state |
+| **Session summary** | pre-capture (read-only reminders) → recording (waveform, current-word live readout, timestamp-synced comment-card strip with a dotted add-first card, HIPAA-aligned trust note) → analysing (editable transcript) → note with SOAP/DAP format switcher (SOAP: S · O · Risk & Safety · A · P; DAP merges S+O into one D — Data section, derived so content never diverges; three-pane on web, stacked on phone) → per-section edit/regenerate → Prescriptions rail → sign-off → audio-trust moment (delete-by-default, keep toggle) |
+| **Patterns** | caseload table (search, status chips, sparklines with a dashed first-reading baseline, sober risk column, Outreach mailto templates that grey out once used) → client patterns (plain-language headline *before* charts; multi-scale tabs PHQ-9 · GAD-7 · MHI-5 · DASS-21 with a muted dashed "Caseload avg" comparison stroke + legend; sparse ≤2-reading dot-strip rule kept per scale; companion-app journal box) → history timeline → acute-risk review |
 
 The standing calm **Escalate** affordance sits on every screen (never alarm-red, never modal — a
-dismissible sheet). The **mascot** appears only on human surfaces (welcome onboarding, unlock/login,
-wordmark); it is banned from charts, tables, the risk queue, and the in-session capture screen.
+dismissible sheet). The **mascot** (the captain's background-removed mood set — hero moods on the
+welcome/login/recovery screens, a per-workflow mood beside the app-bar wordmark) appears only on
+human surfaces; it is banned from charts, tables, the risk queue, and the in-session capture
+content (see `src/components/mascotMoods.tsx`).
 
-Rendered captures of every state (light, dark, and phone width) live in
+Rendered captures of the workflows (light + dark; the current set is `r4r5-`) live in
 [`docs/screenshots/`](./docs/screenshots).
 
 ---
@@ -98,7 +100,9 @@ npx expo export --platform ios --platform android # confirm the native bundles b
 
 The design tokens are ported **verbatim** from the source-of-truth system in
 `aira-ui-s3/design-direction.html` (seafoam palette derived from the mascot, Lexend type ramp,
-radius 16 default / 8 xs / 22 lg / pill, elevation md default, motion fast 120 ms).
+radius 16 default / 8 xs / 22 lg / pill, elevation md default, motion fast 120 ms) — except the
+**dark palette**, which was revised turquoise-leaning in prototype round 4 with contrast
+re-measured (source: `aira-ui-screens-s4/revision-4-notes.md`; values in `src/theme/tokens.ts`).
 
 ```
 src/theme/
@@ -111,12 +115,13 @@ src/theme/
 
 - **Colours** are semantic roles (`surface`, `elevated`, `ink`/`ink2`/`ink3`, `brand`,
   `risk`/`riskBg`, severity `band*`, …), each with a light and dark value. The WCAG-measured AA/AAA
-  pairings from the s3 report carry over because the same roles land on the same surfaces.
+  pairings from the s3 report carry over for light; the round-4 dark values were re-measured (every
+  text pairing meets AA/AAA).
 - **Type** is consumed through `<AppText variant="…">`, bound to the ramp
   (`display`/`h1`/`h2`/`body`/`bodyStrong`/`small`/`label`/`numeric`). **Lexend** is loaded via
   `@expo-google-fonts/lexend` in the root layout.
-- **Dark mode** is a full inversion of the palette; the theme toggle (top-right) pins a manual
-  override over the system setting.
+- **Dark mode** is a full parallel palette (turquoise-leaning since round 4); the theme toggle
+  (top-right) pins a manual override over the system setting.
 - Reusable primitives live in `src/components/ui.tsx` (`Card`, `Button`, `Chip`, `Badge`,
   `RiskDot`, `TrustPill`, `Avatar`, …); the mascot, auth surface, highlights, charts, waveform, and
   escalate sheet are their own components.
@@ -207,9 +212,9 @@ src/
       today/           Get ready: dashboard → drawer → prep reminder → ready
       session/         Session summary: capture → recording → analysing → review (SOAP)
       patterns/        Patterns: caseload → client patterns → history → risk review
-  components/          Mascot, auth surface, Highlights, charts, waveform, escalate sheet, ui primitives
+  components/          mascot moods (mascotMoods), auth surface, Highlights, charts, waveform, escalate sheet, ui primitives
   theme/               tokens + ThemeProvider
-  data/                types, fixtures (no PHI), repository interface
+  data/                types, fixtures (no PHI), assessment scales, repository interface
   services/            auth (account/session) + storage (vault) + transcription seams
   strings/             recovery.ts (login + recovery copy, captain-resolved policy)
 docs/screenshots/      rendered captures of every workflow step (light/dark/phone)

@@ -14,7 +14,8 @@ constraints — don't duplicate it here.
 - Verify with `npx tsc --noEmit` and `npx expo export --platform web --platform ios --platform
   android`. `expo export` **overwrites `dist/`** per run — don't expect web HTML to survive a
   later native export.
-- Design tokens are ported verbatim from `aira-ui-s3/design-direction.html`; the prototype spec is
+- Design tokens come from `aira-ui-s3/design-direction.html` (light: verbatim; dark: revised
+  turquoise in round 4 — see `README.md` "Theme / token architecture"); the prototype spec is
   `aira-ui-screens-s4/screens.html`. Treat those as source-of-truth for any UI change.
 
 ## Server infra (`infra/`)
