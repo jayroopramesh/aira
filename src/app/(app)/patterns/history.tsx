@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { BackLink, PageHeader, Screen } from '../../../components/Screen';
+import { ClientNotFound } from '../../../components/ClientNotFound';
 import { HistoryTimeline } from '../../../components/clinical';
 import { useClient } from '../../../data/DataProvider';
 
@@ -9,7 +10,7 @@ export default function SessionHistory() {
   const router = useRouter();
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
   const client = useClient(clientId);
-  if (!client) return null;
+  if (!client) return <ClientNotFound />;
 
   return (
     <Screen maxWidth={820}>

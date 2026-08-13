@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 import { BackLink, Screen } from '../../../components/Screen';
+import { ClientNotFound } from '../../../components/ClientNotFound';
 import { useEscalate } from '../../../components/Escalate';
 import { BandedChart, DotStrip, ScaleChart } from '../../../components/charts';
 import { ArrowRight, PhoneIcon, ShieldIcon } from '../../../components/icons';
@@ -14,7 +15,9 @@ import { useTheme } from '../../../theme/ThemeProvider';
 export default function ClientPatterns() {
   const { clientId, risk } = useLocalSearchParams<{ clientId: string; risk?: string }>();
   const client = useClient(clientId);
-  if (!client) return null;
+  // The client route can outlive its client (e.g. caseload cleared while mounted) — show an honest
+  // not-found with a way back, never a blank page (N2).
+  if (!client) return <ClientNotFound />;
   const showRisk = risk === '1' || client.risk === 'acute';
   return showRisk && client.safety ? <RiskReview clientId={client.id} /> : <PatternsView clientId={client.id} />;
 }
@@ -277,9 +280,11 @@ function RiskReview({ clientId }: { clientId: string }) {
       {/* Acute banner — clay, calm, the literal word "review". Never alarm-red, never modal. */}
       <Card tone="elevated" elevation="none" radius="lg" style={{ marginTop: theme.spacing.lg, backgroundColor: c.riskBg, borderColor: c.riskBg }}>
         <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-          <Row gap={10}>
-            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: c.riskFill }} />
-            <AppText variant="h2" tint={c.risk}>
+          {/* flex + minWidth:0 lets the most safety-critical heading WRAP at phone width instead of
+              being clipped mid-word (N5). The dot stays fixed and aligns to the first line. */}
+          <Row gap={10} style={{ flex: 1, minWidth: 220, alignItems: 'flex-start' }}>
+            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: c.riskFill, marginTop: 7 }} />
+            <AppText variant="h2" tint={c.risk} style={{ flex: 1 }}>
               {safety.headline}
             </AppText>
           </Row>

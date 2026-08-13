@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ClientNotFound } from '../../../components/ClientNotFound';
 import { HistoryTimeline, StatTile } from '../../../components/clinical';
 import { Highlights } from '../../../components/Highlights';
 import { ArrowRight, CheckIcon, CloseIcon, FileUpIcon } from '../../../components/icons';
@@ -23,7 +24,7 @@ export default function ClientDrawer() {
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
   const client = useClient(clientId);
 
-  if (!client) return null;
+  if (!client) return <ClientNotFound />;
 
   const phq = client.measures.find((m) => m.key === 'phq9');
   const gad = client.measures.find((m) => m.key === 'gad7');
