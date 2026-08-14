@@ -88,6 +88,12 @@ const SELF_HARM_CUE = /self[- ]?harm|cutting|hurt (?:my|her|him|them)sel/;
  * value goes on to name the risk itself ("No plan, but active ideation present"), which is a
  * disclosure wearing a denial's opening clause.
  *
+ * A row DISCLOSES unless a denial is recognised, so the realistic ways a clinician writes a benign
+ * answer must all be recognised: a report verb taking a none-object ("Client reports none"), a bare
+ * none-subject with a report verb ("None elicited"), and a bare "Not disclosed" — but NOT "not
+ * disclosed to <someone>", which describes who else knows rather than answering the row, and must not
+ * cancel a disclosure sitting beside it.
+ *
  * Every one of these shapes has been read as a DISCLOSURE by an earlier, narrower predicate, and each
  * time it pinned an ordinary client to acute permanently — nothing lowers a tier. Exact bigrams
  * ('not present') missed every phrasing with a word inserted; requiring the denial word to be the
@@ -103,6 +109,9 @@ function deniesRisk(s: string): boolean {
     /\b(?:no|not|none|without|nil|negative|absent|nothing)\b[\s\w'/,-]{0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|si|hi)\b/.test(s) ||
     /\b(?:no|not|none|without|nil|negative|absent|nothing)\b(?:(?!\b(?:plan|intent|means|method|access)\b)[\s\w'/-]){0,20}?\b(?:present|reported|endorsed|noted|raised|concerns?)\b/.test(s) ||
     /^\s*(?:no|none|nil|negative|absent|denied|denies|nad|n\/?a)\b(?![\s\w'/-]{0,30}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|plan|intent|endorsed|present|active|passive|reported)\b)/.test(s) ||
+    /\b(?:reports?|reported|endorses?|endorsed|elicited|voiced|describes?|described|denies|denied)\s+(?:no|none|nil|nothing)\b/.test(s) ||
+    /\b(?:none|nil)\s+(?:elicited|endorsed|reported|noted|voiced|expressed|disclosed)\b/.test(s) ||
+    /\bnot\s+(?:disclosed|reported|elicited|endorsed)\b(?!\s+to\b)/.test(s) ||
     /\b(?:nil|negative|absent)\b|none reported|not present|no ideation|no concerns|nothing of concern|not endorsed/.test(s)
   );
 }
@@ -124,13 +133,16 @@ function deniesRisk(s: string): boolean {
  * The scrub allows a few words between the negation and the ideation word, because a denial is rarely
  * adjacent to its object. Its gap is word-only, so it cannot cross the ';' or ',' separating a real
  * disclosure from a following denial clause — "Passive ideation reported; denies active ideation" still
- * affirms.
+ * affirms. The gap also cannot cross a plan/intent/means noun or a contrast conjunction, because those
+ * END the negation's scope: in "No plan but active ideation" the 'no' denies the PLAN, and letting the
+ * gap reach past it would delete the very phrase that documents the disclosure and derive 'clear' — the
+ * one direction this floor exists to prevent.
  *
  * Accepted safe residual: a negation separated from the ideation word by punctuation ("denies, on
  * direct questioning, any passive ideation") still reads as an affirmation. Rare, and it errs safe.
  */
 const NEGATED_IDEATION =
-  /\b(?:no|not|none|nil|negative|absent|nothing|without|denies|denied|denying)\s+(?:[\w'-]+\s+){0,3}(?:suicidal\s+)?(?:ideation|si)\b/g;
+  /\b(?:no|not|none|nil|negative|absent|nothing|without|denies|denied|denying)\s+(?:(?!(?:plan|intent|means|but|however|though|aside|apart|otherwise)\b)[\w'-]+\s+){0,3}(?:suicidal\s+)?(?:ideation|si)\b/g;
 const NAMED_IDEATION =
   /\b(?:passive|active|chronic|fleeting|transient|intermittent|recurrent|persistent|endorses?|endorsed|reports?|reported|describes?|described|expresses?|expressed|admits?|admitted|voiced|discloses?|disclosed)\s+(?:suicidal\s+)?(?:ideation|si)\b/;
 const IDEATION_WITH_PLAN = /\b(?:suicidal\s+)?(?:ideation|si)\s+(?:with|and)\s+(?:a\s+)?(?:plan|intent|means)\b/;
@@ -205,8 +217,11 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
   // denial and a named disclosure interleave in ways lexical rules cannot scope may mis-tier at the
   // margin — a value that endorses ideation without naming it while carrying an unrelated bare denial
   // ("Endorsed; denied to spouse"), or a trailing screening-status clause ("Passive ideation reported;
-  // safety plan deferred"). Every realistic model row value is handled, the floor only ever RAISES,
-  // and the clinician reads and signs every note.
+  // safety plan deferred"). The floor also errs toward ACUTE for any UNRECOGNISED phrasing, which is
+  // the deliberate cost of reading a bare "Present"/"Active" as a disclosure: a positive-clearance
+  // wording that names no risk and carries no denial token ("Screened, clear", "Low risk") over-rates.
+  // That is the SAFE direction — the floor only ever RAISES over the model's own structured level, and
+  // the clinician reads and signs every note.
   const isDisclosed = (s: string) => !!s && !isNotAssessed(s) && !deniesRisk(s);
   const ideationDisclosed = !!ideation && !isNotAssessed(ideation) && (affirmsIdeation(ideation) || !deniesRisk(ideation));
   const selfHarmDisclosed = isDisclosed(selfHarm);

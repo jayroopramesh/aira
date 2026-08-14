@@ -75,13 +75,21 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   narrower form ("denies active ideation, plan or intent") or of an unrelated worry ("Active suicidal
   ideation with a plan; no other concerns"). Being anchored ON the ideation word rather than a loose
   substring, it cannot be hijacked across clauses, and negated mentions are scrubbed first so "No
-  suicidal ideation reported" stays clear. A negation denies the row when what it reaches is the topic
+  suicidal ideation reported" stays clear — though that scrub stops at a plan/intent/means noun or a
+  contrast conjunction, since those end the negation's scope ("No plan but active ideation" affirms).
+  A negation denies the row when what it reaches is the topic
   — freely, across plan/intent nouns and commas, so word order cannot decide the tier ("Denies any
   plan, intent, or suicidal ideation" is a full denial) — or its *state*, where the gap must not cross
-  a plan/intent/means noun, so "Present; no current plan or intent" stays a disclosure.
+  a plan/intent/means noun, so "Present; no current plan or intent" stays a disclosure. A row
+  **discloses unless a denial is recognised**, so the ordinary benign answers are recognised too
+  ("Client reports none", "None elicited", a bare "Not disclosed" — but not "not disclosed to family",
+  which says who else knows).
   The floor is a **heuristic backstop** over the model's own structured tier, not a parser: a deeply
   compound value where a denial and a disclosure interleave may mis-tier at the margin, which is
-  acceptable because it only ever raises and the clinician reads and signs every note. Accepted
+  acceptable because it only ever raises and the clinician reads and signs every note. It likewise
+  errs toward acute for any UNRECOGNISED phrasing — a positive-clearance wording naming no risk and
+  carrying no denial token ("Screened, clear", "Low risk") over-rates, the deliberate cost of reading
+  a bare "Present" as a disclosure. Accepted
   residuals: a value that
   endorses ideation *and* carries an unrelated bare denial ("Endorsed; denied to spouse") or a
   trailing screening-status clause ("…; safety plan deferred") can under-rate; a trailing

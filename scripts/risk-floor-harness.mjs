@@ -128,7 +128,21 @@ const cases = [
   { name: 'live: "None this session" stays clear', in: note({ level: 'clear', rows: ideationRow('None this session') }), want: 'clear' },
   { name: 'live: "None disclosed" stays clear', in: note({ level: 'clear', rows: ideationRow('None disclosed') }), want: 'clear' },
   // …but a terse opening denial must not swallow the disclosure that follows it.
+  // A leading plan-denial followed by a NAMED ideation disclosure. The negation's object is the plan,
+  // so it must not reach past it and delete the disclosure. The comma-free forms are the real test —
+  // the comma variant used to pass only because a word-only gap cannot consume 'plan,'.
   { name: 'live: "No plan, but active ideation present" still floors to acute', in: note({ level: 'watch', rows: ideationRow('No plan, but active ideation present') }), want: 'acute' },
+  { name: 'live: "No plan but active ideation" floors to acute', in: note({ level: 'watch', rows: ideationRow('No plan but active ideation') }), want: 'acute' },
+  { name: 'live: "No plan but active ideation present" floors to acute', in: note({ level: 'watch', rows: ideationRow('No plan but active ideation present') }), want: 'acute' },
+  { name: 'live: "No plan but reports ideation" floors to acute', in: note({ level: 'watch', rows: ideationRow('No plan but reports ideation') }), want: 'acute' },
+  { name: 'live: "Denies plan but reports ideation" floors to acute', in: note({ level: 'watch', rows: ideationRow('Denies plan but reports ideation') }), want: 'acute' },
+  { name: 'live: "Denies intent but endorses ideation" floors to acute', in: note({ level: 'watch', rows: ideationRow('Denies intent but endorses ideation') }), want: 'acute' },
+  { name: 'live: "Denies means but describes ideation" floors to acute', in: note({ level: 'watch', rows: ideationRow('Denies means but describes ideation') }), want: 'acute' },
+  // …and with no structured level the derivation must agree (floor == derivation).
+  { name: 'asymmetry: "No plan but active ideation", no level → acute', in: note({ level: undefined, rows: ideationRow('No plan but active ideation') }), want: 'acute' },
+  { name: 'asymmetry: "Denies plan but reports ideation", no level → acute', in: note({ level: undefined, rows: ideationRow('Denies plan but reports ideation') }), want: 'acute' },
+  { name: 'asymmetry: "Denies intent but endorses ideation", no level → acute', in: note({ level: undefined, rows: ideationRow('Denies intent but endorses ideation') }), want: 'acute' },
+  { name: 'asymmetry: "Denies means but describes ideation", no level → acute', in: note({ level: undefined, rows: ideationRow('Denies means but describes ideation') }), want: 'acute' },
   // A denial carrying a trailing clause that happens to contain a positive-sounding word. Judging the
   // value for positive markers read these as disclosures ('noted', and 'present' inside 'presents').
   { name: 'live: "Denied; protective factors noted" stays clear', in: note({ level: 'clear', rows: ideationRow('Denied; protective factors noted') }), want: 'clear' },
@@ -153,6 +167,15 @@ const cases = [
   // ordinary ways to write a benign screening row, and each derived a permanent acute while the
   // concern anchor was leading-only.
   { name: 'live: "Screened; no acute concerns" stays clear', in: note({ level: 'clear', rows: ideationRow('Screened; no acute concerns') }), want: 'clear' },
+  // A row discloses unless a denial is RECOGNISED, so the ordinary ways of writing a benign answer
+  // must each be recognised — otherwise they pin a benign client to acute forever.
+  { name: 'live: "Reports none" stays clear', in: note({ level: 'clear', rows: ideationRow('Reports none') }), want: 'clear' },
+  { name: 'live: "Client reports none" stays clear', in: note({ level: 'clear', rows: ideationRow('Client reports none') }), want: 'clear' },
+  { name: 'live: "None elicited" stays clear', in: note({ level: 'clear', rows: ideationRow('None elicited') }), want: 'clear' },
+  { name: 'live: "None endorsed" stays clear', in: note({ level: 'clear', rows: ideationRow('None endorsed') }), want: 'clear' },
+  { name: 'live: "Not disclosed" stays clear', in: note({ level: 'clear', rows: ideationRow('Not disclosed') }), want: 'clear' },
+  { name: 'live: "Not disclosed this session" stays clear', in: note({ level: 'clear', rows: ideationRow('Not disclosed this session') }), want: 'clear' },
+  { name: 'live: "Not reported" stays clear', in: note({ level: 'clear', rows: ideationRow('Not reported') }), want: 'clear' },
   { name: 'live: "Screened this session, no safety concerns" stays clear', in: note({ level: 'clear', rows: ideationRow('Screened this session, no safety concerns') }), want: 'clear' },
   { name: 'live: "Discussed openly; no immediate concerns" stays clear', in: note({ level: 'clear', rows: ideationRow('Discussed openly; no immediate concerns') }), want: 'clear' },
   { name: 'live: "Asked directly; no further concerns" stays clear', in: note({ level: 'clear', rows: ideationRow('Asked directly; no further concerns') }), want: 'clear' },
