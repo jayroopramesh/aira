@@ -76,9 +76,13 @@ export type DraftNote = {
   signedBy?: string;
   signedAt?: string;
   /**
-   * Structured caseload risk tier the summarizer assigns for this session (F4). The UI maps this
-   * DIRECTLY onto Client.risk — never re-derived by sniffing the free-text rows — so an unseen
-   * phrasing of disclosed ideation can't be under-rated. Absent (mock/older notes) → derived.
+   * Structured caseload risk tier the summarizer assigns for this session (F4). `riskFromNote` TRUSTS
+   * this tier for the ordinary case — it is never re-derived DOWN by sniffing the free-text rows, so an
+   * unseen phrasing of disclosed ideation can't be under-rated. It does apply an UP-ONLY safety floor
+   * derived from the note's own STRUCTURED risk rows (the free-text risk summary does not influence
+   * the tier): a documented ideation (or self-harm) disclosure never lets this tier sit below acute
+   * (or elevated). The floor only ever RAISES, never lowers.
+   * Absent (mock/older notes) → that same derivation IS the tier.
    */
   riskLevel?: RiskLevel;
   /**

@@ -1,6 +1,7 @@
 import { AMARA_DRAFT, CLIENTS, DAY_DASHBOARD } from './fixtures';
 import { CaseloadKpi, Client, DayDashboard, DraftNote } from './types';
 import { vaultStorage, VaultStorage } from '../services/storage';
+import { createWriteQueue } from '../services/writeQueue';
 
 /**
  * The whole device-local caseload, as one persisted snapshot.
@@ -76,6 +77,8 @@ const RECORD_ID = 'caseload/v1';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+const saveQueue = createWriteQueue();
+
 class VaultClientRepository implements ClientRepository {
   constructor(private readonly vault: VaultStorage) {}
 
@@ -107,9 +110,17 @@ class VaultClientRepository implements ClientRepository {
     }
   }
 
+  /**
+   * Serialized on the queue: a caller may save twice in one tick (a flushed note edit, then the
+   * sign-off), and the LAST snapshot handed to `save` must be the last one stored. Enqueueing here
+   * — rather than deeper in the vault — fixes the order synchronously at call time, so it cannot
+   * drift with how `ensureUnlocked` or the vault schedule their awaits.
+   */
   async save(snapshot: CaseloadSnapshot): Promise<void> {
-    await this.ensureUnlocked();
-    await this.vault.write(RECORD_ID, encoder.encode(JSON.stringify(snapshot)));
+    await saveQueue(async () => {
+      await this.ensureUnlocked();
+      await this.vault.write(RECORD_ID, encoder.encode(JSON.stringify(snapshot)));
+    });
   }
 }
 

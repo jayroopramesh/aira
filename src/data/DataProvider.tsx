@@ -7,9 +7,9 @@
  * is persisted through the vault seam (ClientRepository → VaultStorage) and never leaves the device.
  */
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT, MAX_NOTES_PER_CLIENT, PatientDetailsEntry } from './repository';
-import { CaseloadKpi, Client, DayDashboard, DraftNote } from './types';
+import { CaseloadKpi, Client, DayDashboard, DraftNote, NoteSection } from './types';
 import { appendSessionToClient, clientFromSession } from './sessionClient';
 
 const normalizeName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -75,6 +75,17 @@ type DataContextValue = {
   savePatientDetails: (clientId: string, patch: PatientDetailsEntry) => Promise<void>;
   /** Persist a sign-off onto the stored note (F8) so the attestation survives navigation/reload. */
   signNote: (clientId: string, noteIndex: number, signedBy: string, signedAt: string) => Promise<void>;
+  /**
+   * Persist a clinician's inline edit to ONE note section, so the review screen's per-section Edit is a
+   * real edit rather than a throwaway text box (no-dead-promise). Only the section prose moves — the
+   * sign-off (status/signedBy/signedAt) and the structured riskLevel are never touched here.
+   *
+   * It deliberately does NOT re-derive `client.risk`. The caseload tier is a CAPTURE-TIME signal read
+   * from the note's structured risk ROWS (`riskFromNote`), not from the free-text risk narrative, so
+   * editing that narrative neither can nor should move the tier. Lowering a tier stays a deliberate
+   * act elsewhere — never an automatic downgrade.
+   */
+  updateNoteSection: (clientId: string, noteIndex: number, sectionId: string, body: string[], bullets?: string[]) => Promise<void>;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -83,12 +94,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [snapshot, setSnapshot] = useState<CaseloadSnapshot>(EMPTY_SNAPSHOT);
   const [hydrated, setHydrated] = useState(false);
 
+  // Every mutator below rewrites the WHOLE snapshot, so two writes in the same tick would otherwise
+  // race: the second still holds the render's `snapshot` and silently reverts the first. (Signing a
+  // note while a section edit was in flight lost the edit exactly this way.) The ref is advanced
+  // SYNCHRONOUSLY by persist, before React re-renders, so writes compose in whatever order they land.
+  const snapshotRef = useRef(snapshot);
+
   useEffect(() => {
     let alive = true;
     clientRepository
       .load()
       .then((s) => {
-        if (alive) setSnapshot(s);
+        if (alive) {
+          snapshotRef.current = s;
+          setSnapshot(s);
+        }
       })
       .finally(() => {
         if (alive) setHydrated(true);
@@ -99,6 +119,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const persist = useCallback(async (next: CaseloadSnapshot) => {
+    snapshotRef.current = next;
     setSnapshot(next);
     await clientRepository.save(next).catch(() => {
       /* best-effort persistence — the demo keeps working from in-memory state */
@@ -115,6 +136,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const saveSessionNote = useCallback(
     async (note: DraftNote, opts?: { clientId?: string; name?: string }) => {
+      const snapshot = snapshotRef.current;
       const existingId = opts?.clientId;
       const dateLabel = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
       const typedName = opts?.name?.trim() ?? '';
@@ -164,27 +186,49 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       });
       return id;
     },
-    [persist, snapshot],
+    [persist],
   );
 
   const savePatientDetails = useCallback(
     async (clientId: string, patch: PatientDetailsEntry) => {
+      const snapshot = snapshotRef.current;
       await persist({
         ...snapshot,
         patientDetails: { ...snapshot.patientDetails, [clientId]: { ...snapshot.patientDetails[clientId], ...patch } },
       });
     },
-    [persist, snapshot],
+    [persist],
   );
 
   const signNote = useCallback(
     async (clientId: string, noteIndex: number, signedBy: string, signedAt: string) => {
+      const snapshot = snapshotRef.current;
       const list = snapshot.notes[clientId];
       if (!list?.[noteIndex]) return;
       const next = list.map((n, i) => (i === noteIndex ? { ...n, status: 'signed' as const, signedBy, signedAt } : n));
       await persist({ ...snapshot, notes: { ...snapshot.notes, [clientId]: next } });
     },
-    [persist, snapshot],
+    [persist],
+  );
+
+  const updateNoteSection = useCallback(
+    async (clientId: string, noteIndex: number, sectionId: string, body: string[], bullets?: string[]) => {
+      const snapshot = snapshotRef.current;
+      const list = snapshot.notes[clientId];
+      if (!list?.[noteIndex]) return;
+      // Read-only after sign-off is enforced HERE, at the seam, not only by the screen hiding its
+      // editor: a signed note is a legal attestation, so no caller may rewrite its content.
+      if (list[noteIndex].status === 'signed') return;
+      const edit = (s: NoteSection): NoteSection => {
+        if (s.id !== sectionId) return s;
+        // Only a section that already carries bullets keeps them — a plain prose section never grows a
+        // bullets array it never had, so the round-trip can't change how the section renders.
+        return s.bullets === undefined ? { ...s, body } : { ...s, body, bullets: bullets ?? [] };
+      };
+      const next: DraftNote[] = list.map((n, i) => (i === noteIndex ? { ...n, sections: n.sections.map(edit) } : n));
+      await persist({ ...snapshot, notes: { ...snapshot.notes, [clientId]: next } });
+    },
+    [persist],
   );
 
   const value = useMemo<DataContextValue>(() => {
@@ -203,8 +247,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       saveSessionNote,
       savePatientDetails,
       signNote,
+      updateNoteSection,
     };
-  }, [snapshot, hydrated, loadSample, clearAll, saveSessionNote, savePatientDetails, signNote]);
+  }, [snapshot, hydrated, loadSample, clearAll, saveSessionNote, savePatientDetails, signNote, updateNoteSection]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }

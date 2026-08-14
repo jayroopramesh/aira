@@ -19,7 +19,16 @@ export default function ClientPatterns() {
   // not-found with a way back, never a blank page (N2).
   if (!client) return <ClientNotFound />;
   const showRisk = risk === '1' || client.risk === 'acute';
-  return showRisk && client.safety ? <RiskReview clientId={client.id} /> : <PatternsView clientId={client.id} />;
+  // The acute-risk review must be reachable for an app-flagged acute client even when no structured
+  // `safety` object exists (captured sessions never mint one) — otherwise the caseload's `?risk=1`
+  // deep-link lands on the sparse patterns page with no acute affordance and no route to the safety
+  // plan. RiskReview degrades honestly when `safety` is absent; a stray `?risk=1` on a non-acute,
+  // no-safety client still falls through to the patterns view rather than fabricating an acute banner.
+  return showRisk && (client.safety || client.risk === 'acute') ? (
+    <RiskReview clientId={client.id} />
+  ) : (
+    <PatternsView clientId={client.id} />
+  );
 }
 
 /**
@@ -271,11 +280,13 @@ function RiskReview({ clientId }: { clientId: string }) {
   const theme = useTheme();
   const c = theme.colors;
   const router = useRouter();
-  const { width } = useWindowDimensions();
-  const wide = width >= 760;
   const escalate = useEscalate();
   const client = useClient(clientId);
-  if (!client?.safety) return null;
+  const notes = useClientNotes(clientId);
+  if (!client) return null;
+  // `safety` is the structured risk snapshot only sample/fixture clients carry. A captured client the
+  // app rated acute has none — we still render the acute review (banner + escalation + safety-plan
+  // route), degrading honestly to a pointer at the session note rather than fabricating a snapshot.
   const safety = client.safety;
 
   return (
@@ -288,7 +299,10 @@ function RiskReview({ clientId }: { clientId: string }) {
           <AppText variant="h1">{client.name}</AppText>
           <Row gap={8} style={{ marginTop: 4, flexWrap: 'wrap' }}>
             <AppText variant="small" color="ink3">
-              ID {client.tokenId} · {client.age ?? '—'} · Session {client.sessionNumber} · today 1:00
+              {/* Only the fixture snapshot carries a scheduled session time; a captured client's meta
+                  line stays to what's actually known, never a fabricated "today 1:00". */}
+              ID {client.tokenId} · {client.age ?? '—'} · Session {client.sessionNumber}
+              {safety ? ' · today 1:00' : ''}
             </AppText>
             <TrustPill label="Re-identified locally" icon={<ShieldIcon size={12} color={c.brand} />} />
           </Row>
@@ -303,52 +317,72 @@ function RiskReview({ clientId }: { clientId: string }) {
           <Row gap={10} style={{ flex: 1, minWidth: 220, alignItems: 'flex-start' }}>
             <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: c.riskFill, marginTop: 7 }} />
             <AppText variant="h2" tint={c.risk} style={{ flex: 1 }}>
-              {safety.headline}
+              {safety ? safety.headline : 'Flagged acute — review this client’s session and safety plan'}
             </AppText>
           </Row>
-          {safety.item9Positive ? (
+          {safety?.item9Positive ? (
             <AppText variant="small" tint={c.risk}>
               PHQ-9 item 9 positive
             </AppText>
           ) : null}
         </Row>
         <AppText variant="body" color="ink" style={{ marginTop: 12, lineHeight: 23 }}>
-          {safety.detail}
+          {safety
+            ? safety.detail
+            : 'Aira rated this client acute from a documented session. Open the session note below to see exactly what was disclosed, review or start a safety plan, and use the escalation options as needed. This tier is never lowered automatically.'}
         </AppText>
       </Card>
 
-      {/* Safety snapshot */}
-      <Card style={{ marginTop: theme.spacing.lg }}>
-        <Eyebrow>Safety snapshot</Eyebrow>
-        <Row gap={12} wrap style={{ marginTop: 12 }}>
-          {safety.snapshot.map((s) => (
-            <Card key={s.label} tone="elevated" elevation="none" radius="md" style={{ flex: 1, minWidth: 150, borderColor: c.line }}>
-              <AppText variant="small" color="ink3">
-                {s.label}
-              </AppText>
-              <AppText variant="display" tint={s.tone === 'risk' ? c.risk : c.ink} style={{ fontSize: 26, lineHeight: 28, marginTop: 6 }}>
-                {s.value}
-              </AppText>
-              <AppText variant="small" tint={s.tone === 'positive' ? c.positive : s.tone === 'risk' ? c.risk : c.ink3} style={{ marginTop: 4 }}>
-                {s.sub}
-              </AppText>
-            </Card>
-          ))}
-        </Row>
-      </Card>
+      {safety ? (
+        <>
+          {/* Safety snapshot */}
+          <Card style={{ marginTop: theme.spacing.lg }}>
+            <Eyebrow>Safety snapshot</Eyebrow>
+            <Row gap={12} wrap style={{ marginTop: 12 }}>
+              {safety.snapshot.map((s) => (
+                <Card key={s.label} tone="elevated" elevation="none" radius="md" style={{ flex: 1, minWidth: 150, borderColor: c.line }}>
+                  <AppText variant="small" color="ink3">
+                    {s.label}
+                  </AppText>
+                  <AppText variant="display" tint={s.tone === 'risk' ? c.risk : c.ink} style={{ fontSize: 26, lineHeight: 28, marginTop: 6 }}>
+                    {s.value}
+                  </AppText>
+                  <AppText variant="small" tint={s.tone === 'positive' ? c.positive : s.tone === 'risk' ? c.risk : c.ink3} style={{ marginTop: 4 }}>
+                    {s.sub}
+                  </AppText>
+                </Card>
+              ))}
+            </Row>
+          </Card>
 
-      {/* Last risk note */}
-      <Card style={{ marginTop: theme.spacing.lg }}>
-        <Eyebrow>Last risk note · {safety.lastRiskNoteDate}, signed</Eyebrow>
-        <AppText variant="body" color="ink" style={{ marginTop: 10, lineHeight: 23 }}>
-          {safety.lastRiskNote}
-        </AppText>
-      </Card>
+          {/* Last risk note */}
+          <Card style={{ marginTop: theme.spacing.lg }}>
+            <Eyebrow>Last risk note · {safety.lastRiskNoteDate}, signed</Eyebrow>
+            <AppText variant="body" color="ink" style={{ marginTop: 10, lineHeight: 23 }}>
+              {safety.lastRiskNote}
+            </AppText>
+          </Card>
+        </>
+      ) : (
+        // No structured snapshot on file for a captured acute client — say so plainly and point at the
+        // real evidence (the session note) rather than inventing a snapshot or last-risk-note.
+        <Card style={{ marginTop: theme.spacing.lg }}>
+          <Eyebrow>Safety snapshot</Eyebrow>
+          <AppText variant="body" color="ink2" style={{ marginTop: 10, lineHeight: 23 }}>
+            No structured risk snapshot is on file for this client yet — the risk lives in the session note
+            Aira drafted. Open the note to review what was documented, then complete a safety plan to record
+            coping steps and a trusted contact.
+          </AppText>
+        </Card>
+      )}
 
       <View style={{ height: theme.spacing.lg }} />
       <Row gap={12} wrap>
         <Button title="Open escalation options" variant="danger" leftIcon={<PhoneIcon size={18} color={c.risk} />} onPress={() => escalate.open({ clientId: client.id, clientToken: client.tokenId })} />
         <Button title="Review safety plan" variant="secondary" onPress={() => router.push(`/(app)/patterns/safety-plan?clientId=${client.id}`)} />
+        {notes.length ? (
+          <Button title="Open session note" variant="secondary" onPress={() => router.push(`/(app)/session/review?clientId=${encodeURIComponent(client.id)}`)} />
+        ) : null}
         <Button title="See history" variant="secondary" onPress={() => router.push(`/(app)/patterns/history?clientId=${client.id}`)} />
       </Row>
       <AppText variant="small" color="ink3" style={{ marginTop: 14 }}>

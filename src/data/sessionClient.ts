@@ -5,7 +5,7 @@
  * dot-strip. The clinician fills the rest over time.
  */
 
-import { Client, DraftNote, PrepItem, RiskLevel } from './types';
+import type { Client, DraftNote, PrepItem, RiskLevel } from './types';
 
 /** Severity ordering for the caseload risk tiers — used to compare, never to render. */
 const RISK_ORDER: Record<RiskLevel, number> = { clear: 0, watch: 1, elevated: 2, acute: 3 };
@@ -22,57 +22,216 @@ function initialsOf(name: string): string {
  * scans to decide who needs attention, so it must reflect what the note documents — never a hardcoded
  * "clear", and never UNDER-rated on an unseen phrasing.
  *
- * PRIMARY: the summarizer emits a structured `riskLevel` and we map it straight through — no
- * keyword-sniffing of free prose for a suicide-risk tier (that kept under-rating "transient"/"fleeting"
- * ideation). FALLBACK (mock/older notes with no structured level): a deliberately conservative reading
- * where ANY disclosed suicidal ideation — passive, transient, fleeting, "better off not here", with or
- * without a plan — is ACUTE unless it is explicitly denied. This matches the app's own convention
- * (Leah, whose last session had passive ideation, is "Acute · review") and only ever errs toward
- * over-, never under-, rating.
+ * The summarizer emits a structured `riskLevel`; we trust it for the ordinary case (no prose-sniffing
+ * to RE-derive a lower tier). But the model may contradict itself — disclose ideation in the risk
+ * ROWS while returning a `watch`/`clear` `level`. So we apply an UP-ONLY safety floor: derive what
+ * those rows disclose (`scanNoteRisk`) and never let the structured tier fall BELOW an
+ * acute/elevated disclosure. This makes the "any disclosed ideation ⇒ acute, never auto-downgrade"
+ * invariant hold on the live path exactly as it does in the mock — the floor only ever RAISES the
+ * tier, so it cannot reintroduce the under-rating that motivated trusting the structured field, and a
+ * "watch"/"clear" derivation (no rows, or explicitly denied) never overrides the model.
+ *
+ * The floor is the positive-tier restriction of the SAME derivation used when there is no structured
+ * level, so a leveled note and an unleveled note with identical risk text can never disagree about
+ * what that text discloses — the live/mock asymmetry has nowhere to hide.
  */
 export function riskFromNote(note: DraftNote): RiskLevel {
-  // Primary: trust the structured tier the summarizer assigned.
-  if (note.riskLevel) return note.riskLevel;
+  const derived = scanNoteRisk(note);
+  // No structured level (mock/older notes): the conservative derivation IS the tier.
+  if (!note.riskLevel) return derived;
+  // Structured level present: trust it for the ordinary case, but never let it fall BELOW what the
+  // note's own risk text discloses (up-only floor). A neutral / denied / not-assessed note derives
+  // "watch"/"clear", which yields NO floor, so "trust the structured tier" still holds — the floor
+  // only ever raises, never lowers, keeping the never-auto-downgrade rule intact on the live path.
+  const floor = derived === 'acute' || derived === 'elevated' ? derived : null;
+  return floor && RISK_ORDER[floor] > RISK_ORDER[note.riskLevel] ? floor : note.riskLevel;
+}
 
-  // Fallback: derive conservatively from the risk rows.
+const IDEATION_LABEL = /ideation|suicid/;
+const SELF_HARM_LABEL = /self[- ]?harm/;
+
+/** Ideation cues, used to find the ideation ROW when the model labelled it something unexpected. */
+const IDEATION_CUE =
+  /suicid|ideation|thoughts of (?:dying|death|suicide|not being here|being better off)|kill (?:my|her|him|them)sel|end (?:my|her|his|their) life|better off (?:dead|gone|not here)|\bsi\b|\bsi\/hi\b/;
+const SELF_HARM_CUE = /self[- ]?harm|cutting|hurt (?:my|her|him|them)sel/;
+
+/**
+ * Does this risk-row VALUE deny the risk it describes? Five readings, any of which is a denial:
+ * a denial VERB that isn't denying the plan/means ("Denied", "Denies thoughts of suicide" — but NOT
+ * the "denies plan or intent" that follows a disclosure); a negation BOUND to an ideation/self-harm
+ * TOPIC word ("no SI/HI", "no current ideation"); a negation bound to a STATE or concern word ("not
+ * currently present", "none currently reported", "Screened; no acute concerns"); a LEADING terse
+ * denial ("None", "No", "None this session"); or a fixed denial word ("Nil for this session",
+ * "Screening negative", "Absent this session").
+ *
+ * A negation only denies the ROW when its object is the row's own topic or state. What the clinician
+ * denied is decided by what the negation REACHES, so the bound-negation gap to a STATE word cannot
+ * cross a plan/intent/means noun: "Present; no current plan or intent" and "Endorsed; no means noted"
+ * deny the plan, not the ideation, and reading them as row denials silently drops the acute floor on a
+ * documented disclosure — the one direction this floor exists to prevent.
+ *
+ * Reaching the TOPIC itself needs no such guard: whatever else a negation lists, if it arrives at
+ * "ideation" it denied the ideation. So the topic branches cross plan/intent nouns and commas freely —
+ * "Denies any plan, intent, or suicidal ideation" and "No plan, intent, or ideation" are ordinary full
+ * denials, and reading them as disclosures pinned a benign client to acute forever purely because of
+ * the order the model happened to list the objects in.
+ *
+ * "Concerns" is a genuine denial anchor wherever it sits, because "Screened; no acute concerns" is an
+ * ordinary way to answer the row and reading it as a disclosure pins a benign client to acute forever.
+ * The cost is that a trailing concern-denial cannot be told apart from that: "Present; nothing further
+ * of concern" has the identical shape and now reads as denied. Separating them would need a
+ * positive-marker test on the leading clause — the unscoped-substring approach that produced false
+ * acutes for six rounds. An under-rate leaves the model's own structured tier standing; a false acute
+ * can never be lowered, so the tie breaks toward the denial.
+ *
+ * The leading-denial branch answers the row, so it holds however the phrase is finished — UNLESS the
+ * value goes on to name the risk itself ("No plan, but active ideation present"), which is a
+ * disclosure wearing a denial's opening clause.
+ *
+ * A row DISCLOSES unless a denial is recognised, so the realistic ways a clinician writes a benign
+ * answer must all be recognised: a report verb taking a none-object ("Client reports none"), a bare
+ * none-subject with a report verb ("None elicited"), and a bare "Not disclosed" — but NOT "not
+ * disclosed to <someone>", which describes who else knows rather than answering the row, and must not
+ * cancel a disclosure sitting beside it.
+ *
+ * Every one of these shapes has been read as a DISCLOSURE by an earlier, narrower predicate, and each
+ * time it pinned an ordinary client to acute permanently — nothing lowers a tier. Exact bigrams
+ * ('not present') missed every phrasing with a word inserted; requiring the denial word to be the
+ * WHOLE value missed every phrasing with a word appended; requiring an anchor missed the bare "None"
+ * that is the canonical terse answer to a screening row. Tightness fails the other way too: generic
+ * anchors ('risk', 'factors') would let "Active with a plan; no other risk factors" read as a denial
+ * of the ideation itself and cancel the floor on the most severe row there is.
+ */
+function deniesRisk(s: string): boolean {
+  return (
+    /\b(?:denied|denies|denying)\b(?!\s+(?:to\s+\w+\s+)?(?:a\s+|any\s+|the\s+)?(?:plan|intent|means|access|method|specific)\b)/.test(s) ||
+    /\b(?:denied|denies|denying)\b[\s\w'/,-]{0,40}?\b(?:ideation|suicid\w*|self[- ]?harm|si|hi|thoughts of)\b/.test(s) ||
+    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b[\s\w'/,-]{0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|si|hi)\b/.test(s) ||
+    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b(?:(?!\b(?:plan|intent|means|method|access)\b)[\s\w'/-]){0,20}?\b(?:present|reported|endorsed|noted|raised|concerns?)\b/.test(s) ||
+    /^\s*(?:no|none|nil|negative|absent|denied|denies|nad|n\/?a)\b(?![\s\w'/-]{0,30}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|plan|intent|endorsed|present|active|passive|reported)\b)/.test(s) ||
+    /\b(?:reports?|reported|endorses?|endorsed|elicited|voiced|describes?|described|denies|denied)\s+(?:no|none|nil|nothing)\b(?!\s+(?:of\s+)?(?:a\s+|any\s+)?(?:plan|intent|means))/.test(s) ||
+    /\b(?:none|nil)\s+(?:elicited|endorsed|reported|noted|voiced|expressed|disclosed)\b/.test(s) ||
+    /\bnot\s+(?:disclosed|reported|elicited|endorsed)\b(?!\s+to\b)/.test(s) ||
+    /\b(?:nil|negative|absent)\b|none reported|not present|no ideation|no concerns|nothing of concern|not endorsed/.test(s)
+  );
+}
+
+/**
+ * Ideation NAMED and stated positively — a severity qualifier or a report verb bound to the word
+ * "ideation"/"SI", or ideation carrying a plan/intent/means. This is how a real disclosure is written
+ * ("Passive ideation reported; denies active ideation, plan or intent", "Active suicidal ideation with
+ * a plan; no other concerns"), and it must outrank a denial elsewhere in the value: the denial there is
+ * of a NARROWER form or of an unrelated worry, and letting it cancel the row drops the acute floor on a
+ * documented disclosure.
+ *
+ * Every test is anchored ON the ideation word rather than being a loose substring, so — unlike the
+ * marker list this replaced — a word sitting in an unrelated clause cannot trigger it. Negated
+ * mentions of ideation are scrubbed FIRST, which is what keeps "No suicidal ideation reported" and
+ * "Denies any passive ideation" clear. Written as a scrub rather than a lookbehind, which Hermes does
+ * not support.
+ *
+ * The scrub allows a few words between the negation and the ideation word, because a denial is rarely
+ * adjacent to its object. Its gap is word-only, so it cannot cross the ';' or ',' separating a real
+ * disclosure from a following denial clause — "Passive ideation reported; denies active ideation" still
+ * affirms. The gap also cannot cross a plan/intent/means noun or a contrast conjunction, because those
+ * END the negation's scope: in "No plan but active ideation" the 'no' denies the PLAN, and letting the
+ * gap reach past it would delete the very phrase that documents the disclosure and derive 'clear' — the
+ * one direction this floor exists to prevent.
+ *
+ * Accepted safe residual: a negation separated from the ideation word by punctuation ("denies, on
+ * direct questioning, any passive ideation") still reads as an affirmation. Rare, and it errs safe.
+ */
+const NEGATED_IDEATION =
+  /\b(?:no|not|none|nil|negative|absent|nothing|without|denies|denied|denying)\s+(?:(?!(?:plan|intent|means|but|however|though|aside|apart|otherwise)\b)[\w'-]+\s+){0,3}(?:suicidal\s+)?(?:ideation|si)\b/g;
+const NAMED_IDEATION =
+  /\b(?:passive|active|chronic|fleeting|transient|intermittent|recurrent|persistent|endorses?|endorsed|reports?|reported|describes?|described|expresses?|expressed|admits?|admitted|voiced|discloses?|disclosed)\s+(?:suicidal\s+)?(?:ideation|si)\b/;
+const IDEATION_WITH_PLAN = /\b(?:suicidal\s+)?(?:ideation|si)\s+(?:with|and)\s+(?:a\s+)?(?:plan|intent|means)\b/;
+
+function affirmsIdeation(s: string): boolean {
+  const scrubbed = s.replace(NEGATED_IDEATION, ' ');
+  return NAMED_IDEATION.test(scrubbed) || IDEATION_WITH_PLAN.test(scrubbed);
+}
+
+/**
+ * Derive, from a note's STRUCTURED risk rows, the tier the note documents: disclosed suicidal ideation
+ * is ACUTE, disclosed self-harm is ELEVATED, un-assessed risk is WATCH (never a false "clear"). Errs
+ * toward over-, never under-, rating. This matches the app's own convention (Leah, whose last session
+ * had passive ideation, is "Acute · review").
+ *
+ * ROWS ONLY — the free-text risk summary deliberately does NOT influence the tier. Judging a whole
+ * sentence cost four rounds of false acutes: a disclosure marker belonging to one clause ("Client
+ * reported improved mood; … screened and denied") kept overriding a correct denial, and a benign
+ * sentence the system prompt itself invites ("nothing of concern was raised") matched no denial
+ * pattern at all — each one pinning an ordinary client to acute permanently, since no path lowers a
+ * tier. A row value is already scoped to its topic, so the same predicates are sound there.
+ *
+ * There is deliberately ONE derivation: it is both the tier when no structured level exists and the
+ * source of the up-only floor when one does. Two separate ladders drifted apart before — the strict
+ * floor missed the plainest disclosures ("Suicidal ideation: Present") that the derivation caught.
+ */
+function scanNoteRisk(note: DraftNote): RiskLevel {
   const risk = note.sections.find((s) => s.isRisk);
   const rows = risk?.rows ?? [];
 
-  // No risk rows at all means nothing was assessed — that is "watch", never a false "clear".
-  if (!rows.length) return 'watch';
-
-  const valueFor = (kw: string) => rows.find((r) => r.label.toLowerCase().includes(kw))?.value?.toLowerCase() ?? '';
   const has = (s: string, ...kws: string[]) => kws.some((k) => s.includes(k));
+  // A correctly LABELLED row always wins. The value-cue fallback exists so a row the model labelled
+  // 'Risk' or 'SI/HI' can't hide a disclosure — but it must never outrank the row actually about the
+  // topic, or a row that merely mentions the other topic ("Ideation: denied; no self-harm reported")
+  // shadows the real one ("Self-harm: endorsed cutting this week") and swallows its tier. The fallback
+  // therefore also skips rows labelled for the OTHER topic.
+  const valueFor = (labelRe: RegExp, valueRe: RegExp, otherLabelRe: RegExp) =>
+    (
+      rows.find((r) => labelRe.test(r.label.toLowerCase())) ??
+      rows.find((r) => valueRe.test(r.value.toLowerCase()) && !otherLabelRe.test(r.label.toLowerCase()))
+    )?.value?.toLowerCase() ?? '';
 
-  const ideation = valueFor('ideation') || valueFor('suicid');
-  const selfHarm = valueFor('self-harm') || valueFor('self harm');
+  const ideation = valueFor(IDEATION_LABEL, IDEATION_CUE, SELF_HARM_LABEL);
+  const selfHarm = valueFor(SELF_HARM_LABEL, SELF_HARM_CUE, IDEATION_LABEL);
   const allText = rows.map((r) => `${r.label} ${r.value}`.toLowerCase()).join(' | ');
 
-  const isDenial = (s: string) =>
-    has(s, 'denied', 'denies', 'none reported', 'not present', 'no ideation', 'nil', 'negative', 'no concerns', 'absent');
+  // "Not raised / not addressed / deferred" are NEUTRAL: the topic simply didn't come up. They are
+  // neither a disclosure nor a clinical denial, so they must land on "watch" — without them the
+  // not-denied branch below would read a benign mock row ("Not raised this session", or the
+  // "Not explicitly addressed" the mock emits on its self-harm branch) as disclosed ideation.
+  // These describe the STATUS OF THE SCREENING, not what a client did: 'not disclosed'/'not reported'
+  // were dropped because they equally describe ordinary content ("not disclosed to family").
+  // 'Not applicable' / 'N/A' are the same non-answer written two ways; both must land on the same
+  // tier rather than three apart. 'n/a' is matched on word boundaries, not as a substring, so an
+  // ordinary "clinician/assessor" cannot read as a non-answer.
   const isNotAssessed = (s: string) =>
-    has(s, 'not assessed', 'not captured', 'unable to assess', 'not evaluated', 'review required', 'deferred');
-  // A row like "Passive ideation reported; denies plan or intent" DISCLOSES even though it also
-  // contains a denial token — a positive-disclosure marker outranks the denial of a plan/means.
-  // Negated forms ("none reported", "not present") are scrubbed first so they never read as disclosure.
-  const discloses = (s: string) => {
-    const scrubbed = s.replace(/\b(?:none|not|no|nothing|denies|denied|without)\s+(?:[\w-]+\s+){0,2}(?:reported|endorsed|present|noted)\b/g, '');
-    return (
-      has(scrubbed, 'passive', 'transient', 'fleeting', 'intermittent', 'endorsed', 'reported', 'noted', 'thoughts of', 'better off', 'not wanting to be') ||
-      /(?:ideation|thoughts?|urges?)\s+present/.test(scrubbed)
-    );
-  };
+    has(s, 'not assessed', 'not captured', 'unable to assess', 'not evaluated', 'review required', 'deferred', 'not raised', 'not explicitly addressed', 'not addressed', 'not discussed', 'not applicable') ||
+    /\bn\/a\b/.test(s);
+  // A disclosure is simply a PRESENT row that is neither not-assessed nor denied. There is
+  // deliberately NO positive-substring marker test: a marker cannot be scoped to the clause it belongs
+  // to inside a multi-clause value, so it structurally produces false acutes — "Denied; protective
+  // factors noted" and "Client denied; presents as future-oriented" both read as disclosures and, under
+  // never-downgrade, pin a clear client to acute forever. `deniesRisk` carries the whole burden, and
+  // its plan/intent lookahead is what keeps "Passive ideation reported; denies plan or intent" a
+  // disclosure. The one exception is `affirmsIdeation`, which is anchored ON the ideation word rather
+  // than being a marker substring, so it can outrank a denial of a NARROWER form or of an unrelated
+  // worry without the clause-scoping problem that made the old marker list unusable. Ideation only —
+  // self-harm has no equivalent naming vocabulary, so it stays purely denial-driven.
+  //
+  // This floor is a HEURISTIC BACKSTOP over the model's own structured riskLevel, not a parser.
+  // ACCEPTED RESIDUAL CLASS (captain decision, not chased further): a deeply compound value where a
+  // denial and a named disclosure interleave in ways lexical rules cannot scope may mis-tier at the
+  // margin — a value that endorses ideation without naming it while carrying an unrelated bare denial
+  // ("Endorsed; denied to spouse"), or a trailing screening-status clause ("Passive ideation reported;
+  // safety plan deferred"). The floor also errs toward ACUTE for any UNRECOGNISED phrasing, which is
+  // the deliberate cost of reading a bare "Present"/"Active" as a disclosure: a positive-clearance
+  // wording that names no risk and carries no denial token ("Screened, clear", "Low risk") over-rates.
+  // That is the SAFE direction — the floor only ever RAISES over the model's own structured level, and
+  // the clinician reads and signs every note.
+  const isDisclosed = (s: string) => !!s && !isNotAssessed(s) && !deniesRisk(s);
+  const ideationDisclosed = !!ideation && !isNotAssessed(ideation) && (affirmsIdeation(ideation) || !deniesRisk(ideation));
+  const selfHarmDisclosed = isDisclosed(selfHarm);
 
-  // ANY disclosed (non-denied, actually-assessed) suicidal ideation → acute. Documented ideation is
-  // the highest-priority caseload signal; we do not require the word "passive" or a stated plan.
-  if (ideation && !isNotAssessed(ideation) && (discloses(ideation) || !isDenial(ideation))) return 'acute';
-
-  // Self-harm currently endorsed → elevated.
-  if (selfHarm && !isNotAssessed(selfHarm) && (discloses(selfHarm) || !isDenial(selfHarm))) return 'elevated';
-
-  // Risk simply not assessed (silence/failed capture, or model omission) → watch, never a false "clear".
-  if ((ideation && isNotAssessed(ideation)) || isNotAssessed(allText)) return 'watch';
-
+  if (ideationDisclosed) return 'acute';
+  if (selfHarmDisclosed) return 'elevated';
+  // Nothing assessed at all, or a row that says so outright (including buildDraft's "Not captured in
+  // this draft — review required" stand-in) → watch, never a false "clear".
+  if (!rows.length) return 'watch';
+  if ((ideation && isNotAssessed(ideation)) || (selfHarm && isNotAssessed(selfHarm)) || isNotAssessed(allText)) return 'watch';
   // Explicit denial / nothing of concern raised → clear.
   return 'clear';
 }

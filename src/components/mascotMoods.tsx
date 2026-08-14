@@ -54,17 +54,23 @@ export function MascotMood({
   useEffect(() => {
     if (!float) return;
     let cancelled = false;
+    // Retain the loop handle so cleanup can .stop() it: the started loop outlives the hero on unmount,
+    // and a float toggle re-runs this effect, so without an explicit stop the prior loop keeps running
+    // (and a second would stack on top of it).
+    let loop: Animated.CompositeAnimation | null = null;
     AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
       if (cancelled || reduced) return; // respect reduced-motion (design-direction lock)
-      Animated.loop(
+      loop = Animated.loop(
         Animated.sequence([
           Animated.timing(bob, { toValue: 1, duration: motion.mascotFloat / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
           Animated.timing(bob, { toValue: 0, duration: motion.mascotFloat / 2, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
         ]),
-      ).start();
+      );
+      loop.start();
     });
     return () => {
       cancelled = true;
+      if (loop) loop.stop();
     };
   }, [float, bob]);
 

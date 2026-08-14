@@ -94,6 +94,10 @@ export function AuthField({
         {label}
       </AppText>
       <TextInput
+        // Tie the visible label to the field so screen readers announce a name (WCAG 3.3.2/4.1.2) —
+        // RN doesn't infer one from the sibling AppText. Placed before the spread so a caller can still
+        // override with its own accessibilityLabel.
+        accessibilityLabel={label}
         placeholderTextColor="rgba(234,247,243,0.5)"
         {...input}
         onFocus={(e) => {
@@ -147,6 +151,8 @@ export function AuthPasswordField({
       </AppText>
       <View style={{ justifyContent: 'center' }}>
         <TextInput
+          // Tie the visible label to the field so screen readers announce a name (WCAG 3.3.2/4.1.2).
+          accessibilityLabel={label}
           value={value}
           onChangeText={onChangeText}
           secureTextEntry={hidden}

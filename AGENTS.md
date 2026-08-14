@@ -60,9 +60,51 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   they can't (contacts come from `EXPO_PUBLIC_CRISIS_LINE` / `EXPO_PUBLIC_ONCALL_EMAIL`; an unset
   crisis line falls back to local emergency services and never invents a mental-health number).
 - A note's risk reaches the caseload as a structured tier: the summarizer emits `riskLevel` and it is
-  mapped straight onto `Client.risk` — never re-derived by sniffing note prose. Any disclosed
-  ideation rates acute, and a client's tier is never auto-downgraded (`riskFromNote` /
-  `appendSessionToClient` in `src/data/sessionClient.ts`).
+  trusted for the ordinary case — never re-derived *down* by sniffing note prose. But `riskFromNote`
+  applies an **up-only safety floor**: if the note's own structured risk **rows** disclose ideation (or
+  self-harm) it never lets the model's tier fall below acute (or elevated), so the "any disclosed
+  ideation → acute, never auto-downgrade" rule holds on the live path exactly as in the mock. The
+  floor only ever raises. The floor is **row-based** — the free-text risk *summary* does not drive the
+  tier: judging a whole sentence repeatedly produced false acutes (a disclosure marker from one clause
+  overriding a denial in another), and nothing can lower a tier once set. Within a row the test is
+  `deniesRisk`-only — a row discloses when it is present, neither not-assessed nor denied — with **no**
+  positive-marker override, for the same reason: a marker substring can't be scoped to its clause
+  ("Denied; protective factors noted" read as a disclosure). The one exception is **ideation NAMED
+  positively** (`affirmsIdeation`): a severity qualifier or report verb bound to the word
+  "ideation"/"SI", or ideation carrying a plan — it floors to acute even alongside a denial of a
+  narrower form ("denies active ideation, plan or intent") or of an unrelated worry ("Active suicidal
+  ideation with a plan; no other concerns"). Being anchored ON the ideation word rather than a loose
+  substring, it cannot be hijacked across clauses, and negated mentions are scrubbed first so "No
+  suicidal ideation reported" stays clear — though that scrub stops at a plan/intent/means noun or a
+  contrast conjunction, since those end the negation's scope ("No plan but active ideation" affirms).
+  A negation denies the row when what it reaches is the topic
+  — freely, across plan/intent nouns and commas, so word order cannot decide the tier ("Denies any
+  plan, intent, or suicidal ideation" is a full denial) — or its *state*, where the gap must not cross
+  a plan/intent/means noun, so "Present; no current plan or intent" stays a disclosure. A row
+  **discloses unless a denial is recognised**, so the ordinary benign answers are recognised too
+  ("Client reports none", "None elicited", a bare "Not disclosed" — but not "not disclosed to family",
+  which says who else knows).
+  The floor is a **heuristic backstop** over the model's own structured tier, not a parser: a deeply
+  compound value where a denial and a disclosure interleave may mis-tier at the margin, which is
+  acceptable because it only ever raises and the clinician reads and signs every note. It likewise
+  errs toward acute for any UNRECOGNISED phrasing — a positive-clearance wording naming no risk and
+  carrying no denial token ("Screened, clear", "Low risk") over-rates, the deliberate cost of reading
+  a bare "Present" as a disclosure. Accepted
+  residuals: a value that
+  endorses ideation *and* carries an unrelated bare denial ("Endorsed; denied to spouse") or a
+  trailing screening-status clause ("…; safety plan deferred") can under-rate; a trailing
+  concern-denial reads as a row denial ("Present; nothing further of concern"), since it is
+  indistinguishable from the benign "Screened; no acute concerns" without the positive-marker test
+  that caused the false acutes; and a negation separated from its phrase by punctuation ("denies, on
+  direct questioning, any passive ideation") over-rates. All rare, and far cheaper than a permanent false acute. `client.risk` is likewise a
+  capture-time signal: it is NOT re-derived from later manual edits to a note's risk narrative (see
+  `updateNoteSection`). See `scanNoteRisk` / `riskFromNote` / `appendSessionToClient` in
+  `src/data/sessionClient.ts`, proved by `scripts/risk-floor-harness.mjs`.
+- Snapshot writes are **serialized** (`createWriteQueue` in `src/services/writeQueue.ts`, applied at
+  `ClientRepository.save`): signing persists twice in one tick (pending section edit, then the
+  sign-off) and on native each save is an independent file write, so without an ordered queue the
+  stale snapshot can land last and drop the signature. Proved by `scripts/persist-race-harness.mjs`.
+  Read-only-after-sign is enforced at the seam too — `updateNoteSection` refuses a signed note.
 - Sparse series (≤ 2 readings) render as a dot-strip with no trend line.
 - Login + recovery copy is isolated in `src/strings/recovery.ts`; the recovery-key policy is
   captain-resolved (`decision-recovery-key-policy`): account creation + one-time recovery code,
