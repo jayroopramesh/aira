@@ -98,6 +98,14 @@ export type DraftNote = {
    * prove is never claimed.
    */
   transcribedInCloud?: boolean;
+  /**
+   * True iff THIS note was drafted by the cloud summarizer (Groq) rather than the on-device mock — the
+   * hop that sends the transcript TEXT away, independent of where the audio was transcribed. Recorded
+   * at draft time so a note viewed later, under a build configured differently, still reports what
+   * actually happened to it. Absent for sample fixtures and older notes — then nothing is claimed
+   * either way, because a cloud hop we can't prove is never claimed and neither is its absence.
+   */
+  draftedInCloud?: boolean;
   sections: NoteSection[];
   measures: { measure: string; today: string; prev: string; band: string }[];
   reviewCodes: ReviewCode[];

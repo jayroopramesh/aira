@@ -526,6 +526,9 @@ function Analysing({
   // what the note may later claim about where the audio went — the two can't drift apart.
   const isMockCapture = capture.uri.startsWith('mock://');
   const transcribedInCloud = hasGroq && !isMockCapture;
+  // The drafting hop is separate: the summarizer is Groq-backed exactly when keys are configured, with
+  // no per-capture override, so a capture kept on-device can still have its text drafted in the cloud.
+  const draftedInCloud = hasGroq;
 
   useEffect(() => {
     const ctrl = controller.current;
@@ -574,8 +577,9 @@ function Analysing({
       // Persist the real transcript alongside the note (the exact text the clinician reviewed and drafted
       // from) so the review screen's Transcript tab can show the actual session — not placeholder prose —
       // and a clinician can later check the note against it. Rides on the note through the vault seam,
-      // together with how this capture was actually transcribed so the tab's provenance line is true.
-      onDrafted({ ...note, transcript: trimmed, transcribedInCloud });
+      // together with how this capture was actually transcribed and drafted, so every provenance line
+      // on the review screen stays true for this note however the app is configured when it is read.
+      onDrafted({ ...note, transcript: trimmed, transcribedInCloud, draftedInCloud });
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
       setError('Drafting failed — nothing was drafted. Check your connection, review the transcript below, and try again.');
