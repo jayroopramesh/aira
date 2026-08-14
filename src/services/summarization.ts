@@ -6,10 +6,10 @@
  * produces SOAP sections + a routine risk & safety check + plan items (which feed the Prescriptions
  * rail). This is a CLOUD hop over the transcript text — disclosed by the demo-mode banner. It reaches
  * Groq through the server-side groq-proxy Edge Function (the Groq key is a Supabase secret, not a
- * client var). With no proxy configured the app-wide handle is a deterministic on-device mock so the
- * flow still demos; with a proxy configured but nobody signed in, the cloud service REJECTS rather
- * than quietly mocking, so a real transcript is never drafted into stub sections behind the
- * clinician's back.
+ * client var). With no proxy configured — or with one configured but nobody signed in — drafting
+ * degrades to a deterministic on-device mock over the same text, and the note records that it was
+ * drafted on this device. Drafting the clinician's own words on-device is honest degradation;
+ * inventing a transcript is not, which is why transcription refuses where drafting falls back.
  *
  * The transcript (plus a bare session number) is the only thing sent — never the client's name,
  * never audio, never stored records. The prompt instructs
@@ -17,7 +17,6 @@
  */
 
 import { env, hasGroq } from '../config/env';
-import { CloudSessionRequiredError } from './cloudSession';
 import { getAccessToken } from './supabase';
 import { DraftNote, NoteSection, PrepItem, ReviewCode, RiskLevel } from '../data/types';
 
@@ -87,12 +86,17 @@ Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY this shape
  * Function, NOT Groq directly: the Groq key is a Supabase secret and never ships in the bundle. The
  * transcript text is POSTed to the proxy with the counselor's Supabase session token; only the
  * transcript + a bare session number are sent — never the client's name (the proxy also rejects any
- * payload that carries a client identifier). Not signed in (no token) REJECTS with a
- * CloudSessionRequiredError — never a silent mock draft, which would attach stub clinical sections to
- * a real transcript while the note still claimed the cloud drafting hop. Because this is the only way
- * the configured path can succeed, a returned draft always means the cloud draft really ran.
+ * payload that carries a client identifier). Not signed in (no token) DELEGATES to the on-device
+ * MockSummarizationService over the same text. That is not fabrication: the transcript it drafts from
+ * is the clinician's own typed/pasted words (or the `mock://` sample transcript), never invented
+ * clinical content — the app only refuses to invent, and inventing a transcript is transcription's
+ * job to refuse (see `GroqTranscriptionService`, which still rejects). Because the fallback runs
+ * `buildDraft` with `draftedInCloud: false`, a note drafted this way says so; a note can never claim
+ * a cloud draft that did not happen.
  */
 export class GroqSummarizationService implements SummarizationService {
+  private readonly mock = new MockSummarizationService();
+
   constructor(
     private readonly proxyUrl: string,
     private readonly getToken: () => Promise<string | null>,
@@ -101,10 +105,11 @@ export class GroqSummarizationService implements SummarizationService {
 
   async summarize(input: SummaryInput, opts?: { signal?: AbortSignal }): Promise<DraftNote> {
     const token = await this.getToken();
-    // No signed-in session → no server-side cloud path. Reject rather than fabricate a draft.
-    if (!token) {
-      throw new CloudSessionRequiredError('Sign in to use cloud drafting — there is no active session.');
-    }
+    // No signed-in session → no server-side cloud path. Draft the text we were given on-device
+    // instead: it is the clinician's own transcript, so nothing is invented, and the fallback stamps
+    // the note drafted-on-device. Refusing here would leave the paste-the-transcript recovery with
+    // nowhere to go.
+    if (!token) return this.mock.summarize(input);
 
     const userPrompt = [
       input.sessionNumber ? `Session number: ${input.sessionNumber}.` : '',

@@ -10,7 +10,7 @@ import { useClient, useData } from '../../../data/DataProvider';
 import { DraftNote } from '../../../data/types';
 import { ActiveRecording, isRecordingSupported, isUploadSupported, pickAudioFile, startRecording } from '../../../services/audioCapture';
 import { hasGroq } from '../../../config/env';
-import { isCloudSessionRequiredError } from '../../../services/cloudSession';
+import { cloudSessionReady, isCloudSessionRequiredError } from '../../../services/cloudSession';
 import { summarizationService } from '../../../services/summarization';
 import { CaptureRef, MockTranscriptionService, transcriptionService } from '../../../services/transcription';
 import { useTheme } from '../../../theme/ThemeProvider';
@@ -20,6 +20,30 @@ type Phase = 'precapture' | 'recording' | 'analysing';
 /** A local mock audio clip (silence) so the flow demos end-to-end with no mic and no upload. */
 function mockCaptureRef(): CaptureRef {
   return { uri: 'mock://session', durationMs: 47 * 60 * 1000 };
+}
+
+/**
+ * The one route to a Supabase session token: the unlock screen's email/password sign-in. `next`
+ * brings the counselor back here afterwards (validated there by `safeNext`).
+ */
+function SignInToCloud({ label, returnTo }: { label: string; returnTo: string }) {
+  const theme = useTheme();
+  const router = useRouter();
+  return (
+    <Pressable
+      onPress={() => router.push(`/unlock?next=${encodeURIComponent(returnTo)}`)}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+    >
+      <Row gap={7}>
+        <ShieldIcon size={14} color={theme.colors.brand} />
+        <AppText variant="bodyStrong" tint={theme.colors.brand} style={{ fontSize: 13 }}>
+          {label}
+        </AppText>
+      </Row>
+    </Pressable>
+  );
 }
 
 export default function SessionCapture() {
@@ -75,6 +99,8 @@ export default function SessionCapture() {
     router.replace(`/(app)/session/review?clientId=${id}`);
   };
 
+  const returnTo = client ? `/(app)/session?clientId=${client.id}` : '/(app)/session';
+
   return (
     <Screen maxWidth={720}>
       {phase === 'precapture' && (
@@ -85,6 +111,7 @@ export default function SessionCapture() {
           onRecord={beginRecording}
           onUpload={onUpload}
           onUseSample={() => goAnalyse(mockCaptureRef())}
+          returnTo={returnTo}
         />
       )}
       {phase === 'recording' && (
@@ -102,7 +129,7 @@ export default function SessionCapture() {
           client={client ?? undefined}
           name={name}
           onDrafted={onDrafted}
-          returnTo={client ? `/(app)/session?clientId=${client.id}` : '/(app)/session'}
+          returnTo={returnTo}
         />
       )}
     </Screen>
@@ -118,6 +145,7 @@ function PreCapture({
   onRecord,
   onUpload,
   onUseSample,
+  returnTo,
 }: {
   client: ReturnType<typeof useClient>;
   name: string;
@@ -125,11 +153,25 @@ function PreCapture({
   onRecord: () => void;
   onUpload: () => void;
   onUseSample: () => void;
+  returnTo: string;
 }) {
   const theme = useTheme();
   const c = theme.colors;
   const canRecord = isRecordingSupported();
   const canUpload = isUploadSupported();
+  // Say BEFORE the mic opens that the cloud isn't reachable, so the choice is informed rather than
+  // discovered after a session has been recorded. Never a gate — recording stays available either way.
+  const [cloudReady, setCloudReady] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    cloudSessionReady().then((ready) => {
+      if (alive) setCloudReady(ready);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const cloudSignedOut = hasGroq && cloudReady === false;
 
   return (
     <View style={{ alignItems: 'center', paddingTop: theme.spacing.lg }}>
@@ -144,6 +186,36 @@ function PreCapture({
           ? 'In demo mode Airava transcribes and drafts in the cloud (Groq). You review and sign every note; the draft and transcript stay on this device.'
           : 'Airava transcribes then drafts a note. You review and sign every note. (Demo services aren’t configured — this runs on a sample transcript.)'}
       </AppText>
+
+      {cloudSignedOut ? (
+        <Row
+          gap={10}
+          style={{
+            alignItems: 'flex-start',
+            marginTop: theme.spacing.lg,
+            maxWidth: 460,
+            backgroundColor: c.sunken,
+            borderColor: c.line,
+            borderWidth: 1,
+            borderRadius: theme.radii.md,
+            padding: theme.spacing.md,
+          }}
+        >
+          <View style={{ marginTop: 1 }}>
+            <ShieldIcon size={15} color={c.ink3} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <AppText variant="small" color="ink2" style={{ lineHeight: 17 }}>
+              Cloud transcription needs a live sign-in, and this device doesn’t have one right now. You can
+              record anyway — you’ll type or paste the transcript afterwards and Airava will draft the note
+              on this device, with nothing sent anywhere. Or sign in first to transcribe this session in the
+              cloud.
+            </AppText>
+            <View style={{ height: 10 }} />
+            <SignInToCloud label="Sign in to use cloud transcription" returnTo={returnTo} />
+          </View>
+        </Row>
+      ) : null}
 
       {client ? (
         <Card style={{ width: '100%', marginTop: theme.spacing.xl }}>
@@ -526,7 +598,6 @@ function Analysing({
 }) {
   const theme = useTheme();
   const c = theme.colors;
-  const router = useRouter();
   const [stage, setStage] = useState<Stage>('preparing');
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -534,12 +605,25 @@ function Analysing({
   // to DO — a generic transcription/drafting failure gets the message alone.
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [clinicalWarnDismissed, setClinicalWarnDismissed] = useState(false);
+  // Whether a cloud draft is actually reachable, so the in-flight label can name the drafting hop
+  // truthfully — the summarizer drafts on-device when there is no session token.
+  const [cloudReady, setCloudReady] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    cloudSessionReady().then((ready) => {
+      if (alive) setCloudReady(ready);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const controller = useRef(new AbortController());
   const isMockCapture = capture.uri.startsWith('mock://');
   // What the note may claim about where the audio went is recorded from what ACTUALLY happened, never
-  // from build-time config: it only turns true once a token-backed cloud transcription has returned.
-  // A mock capture, a failed cloud call (including "no session"), or a hand-pasted transcript all
-  // leave it false, so routing and the note's claim can never drift apart.
+  // from build-time config. The threshold is the UPLOAD BEING ATTEMPTED, not the call succeeding: the
+  // cloud transcriber POSTs the audio and only then sees a 429/5xx, so a failure after that point
+  // still means the recording left this device and the note must say so. A `mock://` capture uploads
+  // nothing, and a rejected no-session call sends nothing, so both correctly stay false.
   const [transcribedInCloud, setTranscribedInCloud] = useState(false);
 
   useEffect(() => {
@@ -552,7 +636,14 @@ function Analysing({
       setTranscribedInCloud(false);
       setNeedsSignIn(false);
       try {
-        const result = await service.transcribe(capture, { onStage: setStage, signal: ctrl.signal });
+        const result = await service.transcribe(capture, {
+          onStage: (s) => {
+            // `transcribing` is the cloud transcriber's hand-off to the network (see its doc).
+            if (s === 'transcribing' && wentToCloud) setTranscribedInCloud(true);
+            setStage(s);
+          },
+          signal: ctrl.signal,
+        });
         setTranscript(result.text || '');
         setTranscribedInCloud(wentToCloud);
         setStage('ready');
@@ -562,7 +653,7 @@ function Analysing({
         setNeedsSignIn(noSession);
         setError(
           noSession
-            ? 'Cloud transcription needs a signed-in session — this capture stayed on this device and nothing was sent. Sign in with your email and password to enable it, or type or paste the transcript below and draft on this device.'
+            ? 'Cloud transcription needs a live sign-in — nothing was sent and this recording stayed on this device. Type or paste the transcript below and Airava will draft the note on this device. Signing in enables cloud transcription for your next capture; it can’t transcribe the recording you just made, and leaving this screen discards it.'
             : 'Transcription failed — type or paste the transcript below, then draft the note.',
         );
         setStage('ready');
@@ -607,13 +698,9 @@ function Analysing({
       onDrafted({ ...note, transcript: trimmed, transcribedInCloud });
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
-      const noSession = isCloudSessionRequiredError(e);
-      setNeedsSignIn(noSession);
-      setError(
-        noSession
-          ? 'Drafting failed — cloud drafting needs a signed-in session, so nothing was drafted and nothing was sent. Sign in with your email and password, then draft again. The transcript below is kept until you leave this screen.'
-          : 'Drafting failed — nothing was drafted. Check your connection, review the transcript below, and try again.',
-      );
+      // Drafting has no no-session failure mode: with no token the summarizer drafts on-device over
+      // this same text. Anything reaching here is a real failure (network, proxy, malformed reply).
+      setError('Drafting failed — nothing was drafted. Check your connection, review the transcript below, and try again.');
       setStage('ready');
     }
   };
@@ -635,10 +722,11 @@ function Analysing({
 
   // The sublabel names the hop the CURRENT stage is running, because the two hops route
   // independently: a `mock://` capture is transcribed on-device yet its transcript text is still
-  // drafted in the cloud whenever the proxy is configured. Claiming "on-device mock" while the
-  // transcript is in flight to Groq would under-disclose a real cloud hop.
+  // drafted in the cloud when the proxy is configured AND a session token exists. Claiming
+  // "on-device mock" while the transcript is in flight to Groq would under-disclose a real cloud hop;
+  // while the check is still in flight we assume the cloud, which errs toward disclosure.
   const cloudHop =
-    stage === 'drafting' ? hasGroq : stage === 'ready' ? transcribedInCloud : hasGroq && !isMockCapture;
+    stage === 'drafting' ? cloudReady ?? hasGroq : stage === 'ready' ? transcribedInCloud : hasGroq && !isMockCapture;
 
   const working = stage === 'preparing' || stage === 'transcribing' || stage === 'deidentifying' || stage === 'drafting';
   const transcriptEmpty = transcript.trim().length === 0;
@@ -676,19 +764,9 @@ function Analysing({
             </AppText>
           </Row>
           {needsSignIn ? (
-            <Pressable
-              onPress={() => router.push(`/unlock?next=${encodeURIComponent(returnTo)}`)}
-              accessibilityRole="button"
-              accessibilityLabel="Sign in to enable cloud transcription"
-              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, marginTop: 10, marginLeft: 24 })}
-            >
-              <Row gap={7}>
-                <ShieldIcon size={14} color={c.brand} />
-                <AppText variant="bodyStrong" tint={c.brand} style={{ fontSize: 13 }}>
-                  Sign in to enable cloud transcription
-                </AppText>
-              </Row>
-            </Pressable>
+            <View style={{ marginTop: 10, marginLeft: 24 }}>
+              <SignInToCloud label="Sign in for cloud transcription on the next capture" returnTo={returnTo} />
+            </View>
           ) : null}
         </View>
       ) : null}

@@ -138,7 +138,13 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
  * the mock. The proxy requires a signed-in counselor, so with no token there is no cloud path to
  * take; substituting the mock's canned transcript for a real recording would attach fabricated
  * clinical content to the session and leave the note claiming a cloud hop that never ran. The
- * capture screen catches this and offers the calm "sign in, or paste the transcript" recovery.
+ * capture screen catches this and offers the calm "paste the transcript" recovery. (Drafting is the
+ * opposite: it falls back on-device, because drafting the clinician's own words invents nothing.)
+ *
+ * The `transcribing` stage marks the moment the audio is HANDED TO THE NETWORK — `onStage` fires
+ * immediately before the POST. Everything after it means the recording left the device, whether the
+ * call then succeeds, 429s, 5xxes or drops, so the capture screen keys its "audio left the device"
+ * provenance off that stage rather than off a successful return.
  *
  * There is NO on-device de-identification hop in demo mode (that needs the native OpenMed model),
  * so `deidentified` is false; the summarizer's clinical prompt is instructed to avoid echoing

@@ -237,15 +237,21 @@ whisper-large-v3) and `POST /groq-proxy/chat/completions` (JSON messages → lla
 - **Passes upstream Groq errors through faithfully** (status code + body preserved, plus `Retry-After`
   and `x-ratelimit-*` so a caller can actually back off — those are CORS-exposed for browser callers).
 
-**Honest degradation.** With no proxy URL configured the app runs the on-device mocks with the calm
-"demo services not configured" notice. With the proxy configured but **nobody signed in**, the cloud
-services **fail loudly** instead of quietly mocking: a missing session token rejects, and the capture
-screen shows a calm recovery — a "Sign in to enable cloud transcription" action alongside the
-paste-the-transcript path. It never crashes, and it never substitutes canned clinical prose for a real
-recording — a mocked transcript would attach fabricated findings to a real session and the note would
-still claim a cloud hop that never ran. Provenance is recorded from what actually happened (the
-transcription hop from a successful token-backed call, the drafting hop from the summarizer that
-really produced the draft), never from build-time config. Because the proxy authenticates with the
+**Honest degradation — the line it draws.** *Fabrication* is the app **inventing clinical text**:
+standing a canned transcript in for a session that was actually recorded. That is never acceptable.
+*Drafting the clinician's own typed or pasted words on-device* invents nothing, and is the accepted
+no-keys degradation. The two seams therefore behave differently on purpose:
+
+| | no proxy configured | proxy configured, **no live session** |
+|---|---|---|
+| **Transcription** | on-device mock (nothing was recorded to misrepresent) | **rejects** — never a canned transcript for a real recording |
+| **Drafting** | on-device mock over the given text | on-device mock over the given text, stamped `draftedInCloud: false` |
+
+So the paste-the-transcript recovery is a **real, working route to a note**: type or paste the
+session text and Airava drafts it on this device, with nothing sent anywhere. It never crashes.
+Provenance is recorded from what actually happened, never from build-time config — and it records the
+audio hop from the **upload being attempted**, not from the call succeeding, because a 429 or 5xx
+arrives *after* the recording has already left the device. Because the proxy authenticates with the
 Supabase session, Groq features require Supabase accounts to be configured too
 (`hasGroq = hasSupabase && proxy URL set`).
 
@@ -256,10 +262,15 @@ and that token is what the proxy verifies. **Recovery-code unlock opens the loca
 cloud**: it holds no Supabase credentials and cannot mint a session by design — the whole point of
 the recovery code is that it never carries the account password. The same applies after a native app
 reload, where the session is kept in memory only (`persistSession` is web-only in
-`src/services/supabase.ts`). On those paths capture does not fail silently: it says plainly that a
-signed-in session is needed, offers the sign-in action (which returns to the capture screen via the
-unlock screen's `next` route param), and keeps the paste-the-transcript fallback so a note can still
-be written entirely on-device.
+`src/services/supabase.ts`).
+
+The capture screen handles that **before** the mic opens: on entering it checks for a live session
+(`cloudSessionReady`) and, when there isn't one, says so plainly and offers to sign in first — an
+informed choice, never a gate on recording. If a session is recorded anyway, the transcription
+rejection explains the position honestly, including the part that is easy to over-promise: signing in
+enables cloud transcription for the **next** capture and **cannot** transcribe the recording already
+made (leaving the screen discards it). The working path for the capture in hand is to paste the
+transcript and draft on-device.
 
 **Residency.** Supabase Edge Functions run on Supabase's **global edge** (Deno Deploy), not
 necessarily in-region; this project is **ap-south-1 (Mumbai)**. For production the **same proxy

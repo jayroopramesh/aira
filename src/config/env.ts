@@ -56,8 +56,12 @@ export const hasSupabase = isRealValue(raw.supabaseUrl) && isRealValue(raw.supab
  */
 export const hasGroq = hasSupabase && isRealValue(raw.groqProxyUrl);
 
-/** Any cloud service is wired — drives the demo-mode banner. */
-export const demoServicesConfigured = hasSupabase || hasGroq;
+/**
+ * Any cloud service is wired — drives the demo-mode banner. Equal to `hasSupabase` because `hasGroq`
+ * implies it: the proxy authenticates with a Supabase session, so a Groq-only configuration does not
+ * exist.
+ */
+export const demoServicesConfigured = hasSupabase;
 
 /**
  * The crisis line the Escalate + safety surfaces dial (F6/F7). A deployment sets its regional 24/7

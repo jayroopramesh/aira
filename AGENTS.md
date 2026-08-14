@@ -49,15 +49,24 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   **summarization — Groq llama-3.3-70b** (`src/services/summarization.ts` → a `DraftNote`), both via
   the proxy above with the session token. Web audio via `src/services/audioCapture.ts` (MediaRecorder
   + file-picker fallback; native falls back to the mock). The `mock://` sample-audio path always uses
-  the mock transcriber. No proxy configured → the on-device mock. Proxy configured but NOT signed in →
-  the cloud services **throw** `CloudSessionRequiredError` (`src/services/cloudSession.ts`); they never
-  silently swap in the mock, because canned prose standing in for a real recording is fabricated
-  clinical content. The capture screen catches it into a calm "sign in, or paste the transcript"
-  recovery — never a crash.
+  the mock transcriber. No proxy configured → the on-device mock for both.
+- **The fabrication line (why the two seams degrade differently)**: fabrication is the app INVENTING
+  clinical text — a canned transcript standing in for a real recording. Drafting the clinician's own
+  typed/pasted words on-device invents nothing. So with the proxy configured but NOT signed in,
+  **transcription throws** `CloudSessionRequiredError` (`src/services/cloudSession.ts`) while
+  **drafting falls back** to `MockSummarizationService` over the same text, stamped
+  `draftedInCloud: false`. That keeps the capture screen's paste-the-transcript recovery a real route
+  to a note instead of a dead end. Never make transcription fall back, never make drafting throw.
 - **Provenance is observed, never configured**: `transcribedInCloud` is state in
-  `src/app/(app)/session/index.tsx` set only after a token-backed cloud transcribe returns, and
-  `draftedInCloud` is stamped by `buildDraft` from the summarizer that actually produced the draft.
-  Neither is derived from `hasGroq`, so a note can never claim a hop that did not happen.
+  `src/app/(app)/session/index.tsx` set when the cloud upload is ATTEMPTED (the cloud transcriber's
+  `transcribing` stage fires immediately before the POST) — not when it succeeds, because a 429/5xx
+  arrives after the audio has already left the device. `draftedInCloud` is stamped by `buildDraft`
+  from the summarizer that actually produced the draft. Neither is derived from `hasGroq`, so a note
+  can never claim — or deny — a hop that did not match reality.
+- **Cloud reachability is a runtime question**: `cloudSessionReady()` (`cloudSession.ts`) = proxy
+  configured AND a live token. The capture screen asks it before the mic opens and says plainly when
+  the cloud is unreachable; it never gates recording. Signing in cannot rescue a capture already
+  recorded, and the copy says so.
 - **Blank boot + device-local data**: a fresh install starts EMPTY. Caseload state is a reactive
   context (`src/data/DataProvider.tsx`, hooks `useClients`/`useClient`/`useDayDashboard`/etc.) persisted
   through `ClientRepository` → `VaultStorage` (`LocalVaultStorage` → `deviceStore`: localStorage on web,
