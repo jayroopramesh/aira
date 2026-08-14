@@ -26,3 +26,15 @@ export function getSupabase(): SupabaseClient | null {
   });
   return client;
 }
+
+/**
+ * The signed-in counselor's Supabase access token (a short-lived JWT), or null when Supabase isn't
+ * configured or no one is signed in. This is the bearer the groq-proxy Edge Function verifies before
+ * spending Groq quota — the transcription/summarization services attach it to every proxy call.
+ */
+export async function getAccessToken(): Promise<string | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}

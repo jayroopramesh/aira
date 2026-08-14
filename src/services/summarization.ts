@@ -4,8 +4,10 @@
  *
  * DEMO mode uses Groq chat completions (llama-3.3-70b-versatile) with a clinical system prompt that
  * produces SOAP sections + a routine risk & safety check + plan items (which feed the Prescriptions
- * rail). This is a CLOUD hop over the transcript text — disclosed by the demo-mode banner. With no
- * key configured it degrades to a deterministic on-device mock so the flow still demos.
+ * rail). This is a CLOUD hop over the transcript text — disclosed by the demo-mode banner. It reaches
+ * Groq through the server-side groq-proxy Edge Function (the Groq key is a Supabase secret, not a
+ * client var). With no proxy configured, or no one signed in, it degrades to a deterministic
+ * on-device mock so the flow still demos.
  *
  * The transcript (plus a bare session number) is the only thing sent — never the client's name,
  * never audio, never stored records. The prompt instructs
@@ -13,6 +15,7 @@
  */
 
 import { env, hasGroq } from '../config/env';
+import { getAccessToken } from './supabase';
 import { DraftNote, NoteSection, PrepItem, ReviewCode, RiskLevel } from '../data/types';
 
 export type SummaryInput = {
@@ -76,14 +79,28 @@ Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY this shape
   "reviewCodes": [ { "code": "e.g. F41.1", "label": "human-readable label", "relevance": "high|med|low" } ]
 }`;
 
+/**
+ * GroqSummarizationService — DEMO-mode drafting (llama-3.3-70b) via the server-side groq-proxy Edge
+ * Function, NOT Groq directly: the Groq key is a Supabase secret and never ships in the bundle. The
+ * transcript text is POSTed to the proxy with the counselor's Supabase session token; only the
+ * transcript + a bare session number are sent — never the client's name (the proxy also rejects any
+ * payload that carries a client identifier). Not signed in (no token) degrades to the on-device mock
+ * rather than crashing, since the proxy requires a signed-in counselor.
+ */
 export class GroqSummarizationService implements SummarizationService {
+  private readonly mock = new MockSummarizationService();
+
   constructor(
-    private readonly apiKey: string,
-    private readonly baseUrl: string,
+    private readonly proxyUrl: string,
+    private readonly getToken: () => Promise<string | null>,
     private readonly model: string,
   ) {}
 
   async summarize(input: SummaryInput, opts?: { signal?: AbortSignal }): Promise<DraftNote> {
+    const token = await this.getToken();
+    // No signed-in session → no server-side cloud path. Degrade to the mock, never crash.
+    if (!token) return this.mock.summarize(input);
+
     const userPrompt = [
       input.sessionNumber ? `Session number: ${input.sessionNumber}.` : '',
       'Transcript:',
@@ -94,9 +111,9 @@ export class GroqSummarizationService implements SummarizationService {
       .filter(Boolean)
       .join('\n');
 
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
+    const res = await fetch(`${this.proxyUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         model: this.model,
         temperature: 0.2,
@@ -376,5 +393,5 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
  * The app-wide summarization handle. Groq-backed when configured, otherwise the on-device mock.
  */
 export const summarizationService: SummarizationService = hasGroq
-  ? new GroqSummarizationService(env.groq.apiKey, env.groq.baseUrl, env.groq.summaryModel)
+  ? new GroqSummarizationService(env.groq.proxyUrl, getAccessToken, env.groq.summaryModel)
   : new MockSummarizationService();

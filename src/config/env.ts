@@ -7,7 +7,14 @@
  *     demo mode to turn a session recording into a SOAP draft. See DemoBanner for the honest
  *     "this leaves the device" disclosure.
  *
- * Keys come from `.env.local` (gitignored) as EXPO_PUBLIC_* vars, inlined at build time. When a
+ * The Groq API key is NO LONGER a client var: it moved server-side behind a Supabase Edge Function
+ * (`supabase/functions/groq-proxy`) so it never ships in the app bundle and only a signed-in
+ * counselor can spend the quota. The app now points at that proxy's URL (EXPO_PUBLIC_GROQ_PROXY_URL,
+ * client-safe — it's just a public function endpoint) and calls it with the user's Supabase session
+ * token. Because the proxy authenticates with the Supabase session, Groq features require Supabase
+ * accounts to be configured too.
+ *
+ * Vars come from `.env.local` (gitignored) as EXPO_PUBLIC_* vars, inlined at build time. When a
  * block is absent (e.g. CI, or a fresh clone with no secrets), the matching service degrades to
  * its on-device MOCK and the UI shows a calm "demo services not configured" notice — never a crash.
  */
@@ -15,8 +22,7 @@
 const raw = {
   supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() ?? '',
   supabaseKey: process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ?? '',
-  groqKey: process.env.EXPO_PUBLIC_GROQ_API_KEY?.trim() ?? '',
-  groqBaseUrl: (process.env.EXPO_PUBLIC_GROQ_BASE_URL?.trim() || 'https://api.groq.com/openai/v1').replace(/\/$/, ''),
+  groqProxyUrl: (process.env.EXPO_PUBLIC_GROQ_PROXY_URL?.trim() ?? '').replace(/\/$/, ''),
   crisisLine: process.env.EXPO_PUBLIC_CRISIS_LINE?.trim() ?? '',
   onCallEmail: process.env.EXPO_PUBLIC_ONCALL_EMAIL?.trim() ?? '',
 };
@@ -33,8 +39,8 @@ export const env = {
     publishableKey: raw.supabaseKey,
   },
   groq: {
-    apiKey: raw.groqKey,
-    baseUrl: raw.groqBaseUrl,
+    /** The Supabase Edge Function base URL that proxies Groq (server holds the key). */
+    proxyUrl: raw.groqProxyUrl,
     transcriptionModel: 'whisper-large-v3',
     summaryModel: 'llama-3.3-70b-versatile',
   },
@@ -43,8 +49,12 @@ export const env = {
 /** Supabase-backed accounts are available (real create-account + login). */
 export const hasSupabase = isRealValue(raw.supabaseUrl) && isRealValue(raw.supabaseKey);
 
-/** Groq-backed transcription + summarization are available. */
-export const hasGroq = isRealValue(raw.groqKey);
+/**
+ * Groq-backed transcription + summarization are available — i.e. the server-side proxy is configured.
+ * It needs BOTH the proxy URL and Supabase accounts (the proxy authenticates the caller with the
+ * user's Supabase session token), so a proxy URL without Supabase is treated as not configured.
+ */
+export const hasGroq = hasSupabase && isRealValue(raw.groqProxyUrl);
 
 /** Any cloud service is wired — drives the demo-mode banner. */
 export const demoServicesConfigured = hasSupabase || hasGroq;

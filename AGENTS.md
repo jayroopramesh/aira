@@ -22,14 +22,28 @@ constraints — don't duplicate it here.
 The seams are wired to real cloud services for the demo, degrading to mocks when keys are absent:
 - **Config**: `src/config/env.ts` reads `EXPO_PUBLIC_*` from `.env.local` (gitignored; `.env.example`
   is the committed template). `hasSupabase` / `hasGroq` pick live vs mock per service — the app never
-  crashes without keys. Secrets source: `firstmate/data/aira-secrets/{supabase,groq}.env`.
+  crashes without keys. `hasGroq = hasSupabase && EXPO_PUBLIC_GROQ_PROXY_URL set` (the proxy
+  authenticates with the Supabase session). Secrets source:
+  `firstmate/data/aira-secrets/{supabase,groq}.env`.
 - **Accounts — Supabase** (`src/services/supabase.ts`, `SupabaseAuthService` in `auth.ts`): real
   signup/login (email confirmation OFF; identity fields → user metadata). The one-time recovery-code
-  moment stays app-side (local vault key path).
+  moment stays app-side (local vault key path). `getAccessToken()` (supabase.ts) yields the signed-in
+  session JWT the Groq proxy verifies.
+- **Groq is server-side** — the Groq API key is NO LONGER a client var. It lives as a Supabase secret
+  behind the `groq-proxy` Edge Function (`supabase/functions/groq-proxy/index.ts`), which proxies both
+  Groq calls (`/transcriptions` whisper-large-v3 multipart, `/chat/completions` llama-3.3-70b JSON).
+  The function verifies the caller's Supabase user JWT (anon key / anonymous → 401), reads
+  `GROQ_API_KEY` from its own env, rate-limits per user (best-effort in-memory, documented), rejects
+  payloads carrying a client identifier/name (400), and relays upstream errors faithfully.
+  `verify_jwt=false` in `supabase/config.toml` on purpose — we verify in-code so the anon key (a valid
+  JWT) is rejected. Deploy + the honest residency note (Supabase global edge; project ap-south-1;
+  Azure in-region for prod) are in `README.md` → "Groq proxy (Edge Function)". Never reintroduce
+  `EXPO_PUBLIC_GROQ_API_KEY`.
 - **Transcription — Groq whisper-large-v3** (`GroqTranscriptionService` in `transcription.ts`) and
-  **summarization — Groq llama-3.3-70b** (`src/services/summarization.ts` → a `DraftNote`). Web audio
-  via `src/services/audioCapture.ts` (MediaRecorder + file-picker fallback; native falls back to the
-  mock). The `mock://` sample-audio path always uses the mock transcriber.
+  **summarization — Groq llama-3.3-70b** (`src/services/summarization.ts` → a `DraftNote`), both via
+  the proxy above with the session token. Web audio via `src/services/audioCapture.ts` (MediaRecorder
+  + file-picker fallback; native falls back to the mock). The `mock://` sample-audio path always uses
+  the mock transcriber. No proxy configured or not signed in → the on-device mock (never a crash).
 - **Blank boot + device-local data**: a fresh install starts EMPTY. Caseload state is a reactive
   context (`src/data/DataProvider.tsx`, hooks `useClients`/`useClient`/`useDayDashboard`/etc.) persisted
   through `ClientRepository` → `VaultStorage` (`LocalVaultStorage` → `deviceStore`: localStorage on web,

@@ -24,6 +24,7 @@
  */
 
 import { env, hasGroq } from '../config/env';
+import { getAccessToken } from './supabase';
 
 export type WhisperModelId = 'small.en' | 'base.en' | 'large-v3-turbo-q5_0' | 'whisper-large-v3';
 
@@ -125,11 +126,16 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * GroqTranscriptionService — DEMO-mode transcription against Groq's OpenAI-compatible audio
- * endpoint (whisper-large-v3). This is a CLOUD hop: the recorded (or uploaded) audio is sent to
- * Groq to be transcribed. That's an honest departure from the on-device story, disclosed by the
- * app's demo-mode banner. No model is downloaded — the model runs server-side — so `ensureModel`
- * is a no-op and `requiresDevBuild` is false (it works on web).
+ * GroqTranscriptionService — DEMO-mode transcription (whisper-large-v3) via the server-side
+ * groq-proxy Edge Function, NOT Groq directly: the Groq key lives as a Supabase secret and never
+ * ships in the bundle. This is a CLOUD hop: the recorded (or uploaded) audio is POSTed to the proxy
+ * (which forwards it to Groq) with the counselor's Supabase session token. That's an honest
+ * departure from the on-device story, disclosed by the app's demo-mode banner. No model is
+ * downloaded — it runs server-side — so `ensureModel` is a no-op and `requiresDevBuild` is false.
+ *
+ * Not signed in (no session token) degrades to the on-device mock rather than crashing — the proxy
+ * requires a signed-in counselor, so with no token there is no cloud path to take. In practice a
+ * configured deployment reaches the capture screen only after a real Supabase sign-in.
  *
  * There is NO on-device de-identification hop in demo mode (that needs the native OpenMed model),
  * so `deidentified` is false; the summarizer's clinical prompt is instructed to avoid echoing
@@ -139,9 +145,11 @@ export class GroqTranscriptionService implements TranscriptionService {
   readonly defaultModel: WhisperModelId = 'whisper-large-v3';
   readonly requiresDevBuild = false;
 
+  private readonly mock = new MockTranscriptionService(1);
+
   constructor(
-    private readonly apiKey: string,
-    private readonly baseUrl: string,
+    private readonly proxyUrl: string,
+    private readonly getToken: () => Promise<string | null>,
     private readonly model = 'whisper-large-v3',
   ) {}
 
@@ -158,6 +166,10 @@ export class GroqTranscriptionService implements TranscriptionService {
     audio: CaptureRef,
     opts?: { model?: WhisperModelId; onStage?: (stage: 'preparing' | 'transcribing' | 'deidentifying') => void; signal?: AbortSignal },
   ): Promise<Transcript> {
+    const token = await this.getToken();
+    // No signed-in session → no server-side cloud path. Degrade to the mock, never crash.
+    if (!token) return this.mock.transcribe(audio, opts);
+
     opts?.onStage?.('preparing');
 
     // Pull the captured audio into a Blob. On web this is a blob:/File URI from MediaRecorder or
@@ -174,9 +186,9 @@ export class GroqTranscriptionService implements TranscriptionService {
     form.append('temperature', '0');
 
     opts?.onStage?.('transcribing');
-    const res = await fetch(`${this.baseUrl}/audio/transcriptions`, {
+    const res = await fetch(`${this.proxyUrl}/transcriptions`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${this.apiKey}` },
+      headers: { Authorization: `Bearer ${token}` },
       body: form,
       signal: opts?.signal,
     });
@@ -221,5 +233,5 @@ function guessFilename(mime: string): string {
  * otherwise the mock so the recording/analysing flow still demos with no keys.
  */
 export const transcriptionService: TranscriptionService = hasGroq
-  ? new GroqTranscriptionService(env.groq.apiKey, env.groq.baseUrl, env.groq.transcriptionModel)
+  ? new GroqTranscriptionService(env.groq.proxyUrl, getAccessToken, env.groq.transcriptionModel)
   : new MockTranscriptionService(1);
