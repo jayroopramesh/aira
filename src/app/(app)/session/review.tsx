@@ -26,9 +26,16 @@ function formatSignedAt(d: Date): string {
  * Serialize the full note to plain text for the clipboard — the exact SOAP content the clinician
  * reviewed, in reading order, so it can be pasted into an EHR. Sections, risk rows, plan bullets, the
  * subjective quote, and the measures table are all included; nothing is invented.
+ *
+ * The text carries its OWN status, because pasting strips every on-screen cue: a signed note ends with
+ * its attestation line, and an unsigned one LEADS with a draft marker, so nothing can land in a
+ * patient record looking authoritative when it hasn't been signed.
  */
 function noteToPlainText(draft: DraftNote): string {
-  const lines: string[] = [draft.sessionLabel, ''];
+  const isSigned = draft.status === 'signed';
+  const lines: string[] = isSigned
+    ? [draft.sessionLabel, '']
+    : ['DRAFT — not signed; review before entering into the record.', '', draft.sessionLabel, ''];
   for (const s of draft.sections) {
     lines.push(s.isRisk ? s.title : `${s.marker} — ${s.title}`);
     for (const p of s.body) lines.push(p);
@@ -41,6 +48,10 @@ function noteToPlainText(draft: DraftNote): string {
     lines.push('Measures');
     for (const m of draft.measures) lines.push(`- ${m.measure}: today ${m.today} · prev ${m.prev} · band ${m.band}`);
     lines.push('');
+  }
+  if (isSigned) {
+    const attestation = [draft.signedBy ? `Signed by ${draft.signedBy}` : 'Signed', draft.signedAt].filter(Boolean).join(' · ');
+    lines.push(`— ${attestation}`);
   }
   return `${lines.join('\n').trim()}\n`;
 }

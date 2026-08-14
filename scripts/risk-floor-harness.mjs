@@ -49,9 +49,13 @@ const cases = [
   { name: 'no level: disclosed ideation row → acute', in: note({ level: undefined, rows: ideationRow('Passive ideation reported') }), want: 'acute' },
   { name: 'no level: no rows, no summary → watch (never false clear)', in: note({ level: undefined, rows: [], summary: '' }), want: 'watch' },
 
-  // --- The summarizer's OWN "clear" phrasing must not read as a disclosure (post-positional denial) --
+  // --- A benign risk summary must not read as a disclosure, whichever side the denial falls on -------
   { name: 'live: "screened and denied" summary, level=clear stays clear', in: note({ level: 'clear', rows: [], summary: 'Suicidal ideation and self-harm were both screened and denied.' }), want: 'clear' },
-  { name: 'live: summary discloses passive ideation while denying a plan → acute', in: note({ level: 'clear', rows: [], summary: 'Client discloses passive ideation but denies a plan.' }), want: 'acute' },
+  { name: 'live: denial verb BEFORE the topic ("denied suicidal ideation") stays clear', in: note({ level: 'clear', rows: [], summary: 'The client denied suicidal ideation and self-harm this session.' }), want: 'clear' },
+  { name: 'live: present-tense denial before the topic ("denies current …") stays clear', in: note({ level: 'clear', rows: [], summary: 'The client denies current suicidal ideation and any self-harm.' }), want: 'clear' },
+  { name: 'live: unrelated "reports" elsewhere never overrides the denial', in: note({ level: 'clear', rows: [], summary: 'Client reports improved mood; suicidal ideation and self-harm were both screened and denied.' }), want: 'clear' },
+  { name: 'live: "none reported" summary stays clear (negated marker is not a disclosure)', in: note({ level: 'clear', rows: [], summary: 'Suicidal ideation: none reported this session.' }), want: 'clear' },
+  { name: 'live: summary discloses passive ideation while denying a plan → acute', in: note({ level: 'watch', rows: [], summary: 'Client discloses passive ideation but denies a plan.' }), want: 'acute' },
 
   // --- Plainest row phrasings floor too (not just hand-listed disclosure markers) ------------------
   { name: 'live: bare "Present" ideation row, level=watch → acute', in: note({ level: 'watch', rows: ideationRow('Present') }), want: 'acute' },
@@ -60,6 +64,20 @@ const cases = [
   // --- Asymmetry guard: identical risk text must derive the same tier with and without a level -----
   { name: 'asymmetry: bare "Present" ideation row, no level → acute (floor == derivation)', in: note({ level: undefined, rows: ideationRow('Present') }), want: 'acute' },
   { name: 'asymmetry: "Active, with a plan" ideation row, no level → acute (floor == derivation)', in: note({ level: undefined, rows: ideationRow('Active, with a plan') }), want: 'acute' },
+
+  // --- The mock's own ELEVATED shape (self-harm branch) must stay reachable, not be floored to acute --
+  {
+    name: 'mock: self-harm branch ("Not explicitly addressed" ideation) stays elevated',
+    in: note({
+      level: 'elevated',
+      rows: [
+        { label: 'Suicidal ideation', value: 'Not explicitly addressed' },
+        { label: 'Self-harm', value: 'Possible reference in transcript — clinician to review and confirm' },
+      ],
+      summary: 'A possible reference to self-harm was picked up in the transcript — review and confirm with the client.',
+    }),
+    want: 'elevated',
+  },
 ];
 
 let failed = 0;

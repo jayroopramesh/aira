@@ -71,13 +71,19 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
   const selfHarm = valueFor('self-harm') || valueFor('self harm');
   const allText = rows.map((r) => `${r.label} ${r.value}`.toLowerCase()).join(' | ');
 
+  // A denial is either a denial token, or a negation BINDING a risk topic ("no suicidal ideation",
+  // "without any thoughts of self-harm"). The bound form matters: a fixed 'no ideation' token misses
+  // every ordinary phrasing that puts a word between the negation and the topic — including the mock
+  // summarizer's own benign sentence — which then reads as a disclosure and pins the client to acute.
   const isDenial = (s: string) =>
-    has(s, 'denied', 'denies', 'none reported', 'not present', 'no ideation', 'nil', 'negative', 'no concerns', 'absent');
-  // "Not raised / not disclosed / not reported" are NEUTRAL: the topic simply didn't come up. They are
+    has(s, 'denied', 'denies', 'none reported', 'not present', 'no ideation', 'nil', 'negative', 'no concerns', 'absent') ||
+    /\b(?:no|not|without)\s+(?:[\w'-]+\s+){0,3}(?:ideation|suicid\w*|self[- ]?harm|thoughts of|concerns|risk)\b/.test(s);
+  // "Not raised / not disclosed / not addressed" are NEUTRAL: the topic simply didn't come up. They are
   // neither a disclosure nor a clinical denial, so they must land on "watch" — without them the
-  // not-denied branch below would read a benign mock row ("Not raised this session") as ideation.
+  // not-denied branch below would read a benign mock row ("Not raised this session", or the
+  // "Not explicitly addressed" the mock emits on its self-harm branch) as disclosed ideation.
   const isNotAssessed = (s: string) =>
-    has(s, 'not assessed', 'not captured', 'unable to assess', 'not evaluated', 'review required', 'deferred', 'not raised', 'not disclosed', 'not reported');
+    has(s, 'not assessed', 'not captured', 'unable to assess', 'not evaluated', 'review required', 'deferred', 'not raised', 'not disclosed', 'not reported', 'not explicitly addressed', 'not addressed', 'not discussed');
   // A row like "Passive ideation reported; denies plan or intent" DISCLOSES even though it also
   // contains a denial token — a positive-disclosure marker outranks the denial of a plan/means.
   // Negated forms ("none reported", "not present") are scrubbed first so they never read as disclosure.
@@ -96,22 +102,13 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
     'better off gone', "don't want to be here", 'do not want to be here', "don't want to be alive",
     'not want to be alive', 'not worth living', 'thoughts of dying', 'thoughts of death',
   ];
-  // Denial detection is POSITION-INDEPENDENT and ideation-ANCHORED: the negation must bind an ideation
-  // word, either before it ("no suicidal ideation was raised") or after it within the same clause
-  // ("suicidal ideation and self-harm were both screened and denied" — the phrasing the app's own
-  // system prompt teaches the model to use for a `clear` rating, so the earlier before-only check
-  // floored every ordinary benign session to acute). Anchoring is what keeps a bare "not" belonging to
-  // a disclosure ("better off not here") — or a plan/intent denial next to a real disclosure — from
-  // reading as a denial of ideation itself.
-  const summaryDenies =
-    /\b(?:no|not|without(?: any)?)\s+(?:[\w'-]+\s+){0,2}(?:suicid\w*|ideation|thoughts of|wanting to die)\b/.test(summary) ||
-    /(?:suicid\w*|ideation|thoughts of|wanting to die)[^.?!]{0,60}?\b(?:denied|denies)\b/.test(summary);
-  // A positive-disclosure marker OUTRANKS the denial, mirroring the row path: "discloses passive
-  // ideation but denies a plan" is a disclosure, not a denial.
-  const summaryDiscloses =
-    summaryIdeationCues.some((k) => summary.includes(k)) &&
-    (has(summary, 'reports', 'reported', 'describes', 'passive', 'fleeting', 'intermittent', 'thoughts of', 'better off', 'endorsed', 'disclos', 'voiced', 'experiencing') ||
-      !summaryDenies);
+  // Once an ideation cue is present the summary is judged as ONE MORE ideation row value, through the
+  // very same helpers the rows use. Position-dependent denial regexes kept getting a half of the
+  // sentence wrong (a denial verb before the topic, or after it, or a stray "reports" elsewhere in the
+  // sentence overriding a real denial); reusing the row predicates means there is a single definition
+  // of "denied", "not assessed" and "discloses" that the rows and the summary cannot disagree about.
+  const hasIdeationCue = summaryIdeationCues.some((k) => summary.includes(k));
+  const summaryDiscloses = hasIdeationCue && !isNotAssessed(summary) && (discloses(summary) || !isDenial(summary));
 
   // No risk rows AND no summary means nothing was assessed — "watch", never a false "clear".
   if (!rows.length && !summary.trim()) return 'watch';
