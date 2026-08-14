@@ -10,9 +10,14 @@ export function Waveform({ bars = 13, color }: { bars?: number; color?: string }
 
   useEffect(() => {
     let cancelled = false;
+    // Retain the started loop handles so cleanup can .stop() them. `Animated.loop` drives its values
+    // independently of mount state, so flipping a flag isn't enough — the reduce-motion check resolves
+    // within a frame, so by unmount the loops are already running and must be explicitly stopped, or
+    // they orphan on the JS thread and accumulate across captures.
+    let loops: Animated.CompositeAnimation[] = [];
     AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
       if (cancelled || reduced) return;
-      const loops = values.map((v, i) => {
+      loops = values.map((v, i) => {
         const peak = 0.5 + ((i * 7) % 5) / 10; // deterministic per-bar peak (no Math.random)
         const dur = 380 + ((i * 53) % 260);
         return Animated.loop(
@@ -26,6 +31,7 @@ export function Waveform({ bars = 13, color }: { bars?: number; color?: string }
     });
     return () => {
       cancelled = true;
+      loops.forEach((l) => l.stop());
     };
   }, [values]);
 

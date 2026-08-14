@@ -5,7 +5,7 @@
  * dot-strip. The clinician fills the rest over time.
  */
 
-import { Client, DraftNote, PrepItem, RiskLevel } from './types';
+import type { Client, DraftNote, PrepItem, RiskLevel } from './types';
 
 /** Severity ordering for the caseload risk tiers — used to compare, never to render. */
 const RISK_ORDER: Record<RiskLevel, number> = { clear: 0, watch: 1, elevated: 2, acute: 3 };
@@ -22,24 +22,45 @@ function initialsOf(name: string): string {
  * scans to decide who needs attention, so it must reflect what the note documents — never a hardcoded
  * "clear", and never UNDER-rated on an unseen phrasing.
  *
- * PRIMARY: the summarizer emits a structured `riskLevel` and we map it straight through — no
- * keyword-sniffing of free prose for a suicide-risk tier (that kept under-rating "transient"/"fleeting"
- * ideation). FALLBACK (mock/older notes with no structured level): a deliberately conservative reading
- * where ANY disclosed suicidal ideation — passive, transient, fleeting, "better off not here", with or
- * without a plan — is ACUTE unless it is explicitly denied. This matches the app's own convention
- * (Leah, whose last session had passive ideation, is "Acute · review") and only ever errs toward
- * over-, never under-, rating.
+ * The summarizer emits a structured `riskLevel`; we trust it for the ordinary case (no prose-sniffing
+ * to RE-derive a lower tier). But the model may contradict itself — disclose ideation in the rows or
+ * summary while returning a `watch`/`clear` `level`. So we apply an UP-ONLY safety floor: derive what
+ * the note's own risk TEXT discloses (`riskFromRows`) and never let the structured tier fall BELOW an
+ * acute/elevated disclosure. This makes the "any disclosed ideation ⇒ acute, never auto-downgrade"
+ * invariant hold on the live path exactly as it does in the mock — the floor only ever RAISES the
+ * tier, so it cannot reintroduce the under-rating that motivated trusting the structured field, and a
+ * "watch"/"clear" derivation (no rows, or explicitly denied) never overrides the model.
+ *
+ * When there is no structured level (mock/older notes) the row-derivation IS the tier.
  */
 export function riskFromNote(note: DraftNote): RiskLevel {
-  // Primary: trust the structured tier the summarizer assigned.
-  if (note.riskLevel) return note.riskLevel;
+  const { tier, floor } = scanNoteRisk(note);
+  // No structured level (mock/older notes): the conservative derivation IS the tier.
+  if (!note.riskLevel) return tier;
+  // Structured level present: trust it for the ordinary case, but never let it fall BELOW a genuine
+  // positive disclosure the note's own risk text documents (up-only floor). A neutral / denied /
+  // not-assessed note yields NO floor, so "trust the structured tier" still holds — the floor only
+  // ever raises, never lowers, keeping the never-auto-downgrade rule intact on the live path.
+  return floor && RISK_ORDER[floor] > RISK_ORDER[note.riskLevel] ? floor : note.riskLevel;
+}
 
-  // Fallback: derive conservatively from the risk rows.
+/**
+ * Read a note's own risk TEXT (structured rows + the risk-summary sentence) two ways:
+ *  - `tier`: the conservative full derivation used when there is NO structured level — ANY suicidal
+ *    ideation that isn't explicitly denied/​not-assessed is ACUTE, endorsed self-harm is ELEVATED,
+ *    un-assessed risk is WATCH (never a false "clear"). Errs toward over-, never under-, rating.
+ *  - `floor`: the STRICT up-only safety floor applied when a structured level IS present — acute/
+ *    elevated only on a genuine POSITIVE disclosure marker (not merely "not denied"), so it raises the
+ *    model's tier on a real disclosure it under-rated, yet a neutral row like "Not raised this session"
+ *    never floors a benign tier up.
+ * This matches the app's own convention (Leah, whose last session had passive ideation, is
+ * "Acute · review").
+ */
+function scanNoteRisk(note: DraftNote): { tier: RiskLevel; floor: 'acute' | 'elevated' | null } {
   const risk = note.sections.find((s) => s.isRisk);
   const rows = risk?.rows ?? [];
-
-  // No risk rows at all means nothing was assessed — that is "watch", never a false "clear".
-  if (!rows.length) return 'watch';
+  // The model can disclose ideation only in the summary sentence, not as a labeled row, so scan it too.
+  const summary = (risk?.body ?? []).join(' ').toLowerCase();
 
   const valueFor = (kw: string) => rows.find((r) => r.label.toLowerCase().includes(kw))?.value?.toLowerCase() ?? '';
   const has = (s: string, ...kws: string[]) => kws.some((k) => s.includes(k));
@@ -63,18 +84,43 @@ export function riskFromNote(note: DraftNote): RiskLevel {
     );
   };
 
-  // ANY disclosed (non-denied, actually-assessed) suicidal ideation → acute. Documented ideation is
-  // the highest-priority caseload signal; we do not require the word "passive" or a stated plan.
-  if (ideation && !isNotAssessed(ideation) && (discloses(ideation) || !isDenial(ideation))) return 'acute';
+  // A summary sentence can disclose ideation even when it wasn't structured as a row. Reuse the mock
+  // summarizer's proven ideation-cue + denial detection (see `scanTranscriptRisk` in summarization.ts)
+  // so a summary-only disclosure floors to acute WITHOUT false-positiving on a benign "no suicidal
+  // ideation was raised" sentence (the cue anchors are specific, and the negation check catches
+  // "no/denied … suicidal ideation" without swallowing "better off not here").
+  const summaryIdeationCues = [
+    'suicid', 'kill myself', 'end my life', 'end it all', 'better off dead', 'better off not here',
+    'better off gone', "don't want to be here", 'do not want to be here', "don't want to be alive",
+    'not want to be alive', 'not worth living', 'thoughts of dying', 'thoughts of death',
+  ];
+  const summaryDisclosesIdeation =
+    summaryIdeationCues.some((k) => summary.includes(k)) &&
+    !/\b(?:denied|denies)\b[^.?!]{0,40}?(?:suicid|ideation|thoughts of|wanting to die|kill (?:myself|herself|himself))|\b(?:no|not|without(?: any)?)\s+(?:[\w'-]+\s+){0,2}(?:suicid|ideation|wanting to die)/.test(
+      summary,
+    );
 
-  // Self-harm currently endorsed → elevated.
-  if (selfHarm && !isNotAssessed(selfHarm) && (discloses(selfHarm) || !isDenial(selfHarm))) return 'elevated';
+  // Genuine POSITIVE disclosures (used by the strict floor).
+  const ideationDisclosed = (!!ideation && !isNotAssessed(ideation) && discloses(ideation)) || summaryDisclosesIdeation;
+  const selfHarmDisclosed = !!selfHarm && !isNotAssessed(selfHarm) && discloses(selfHarm);
+  const floor: 'acute' | 'elevated' | null = ideationDisclosed ? 'acute' : selfHarmDisclosed ? 'elevated' : null;
 
-  // Risk simply not assessed (silence/failed capture, or model omission) → watch, never a false "clear".
-  if ((ideation && isNotAssessed(ideation)) || isNotAssessed(allText)) return 'watch';
+  // Aggressive full derivation (used only when there is no structured level).
+  const tier: RiskLevel = (() => {
+    // No risk rows AND no summary means nothing was assessed — "watch", never a false "clear".
+    if (!rows.length && !summary.trim()) return 'watch';
+    // ANY disclosed (non-denied, actually-assessed) suicidal ideation → acute.
+    if (ideation && !isNotAssessed(ideation) && (discloses(ideation) || !isDenial(ideation))) return 'acute';
+    if (summaryDisclosesIdeation) return 'acute';
+    // Self-harm currently endorsed → elevated.
+    if (selfHarm && !isNotAssessed(selfHarm) && (discloses(selfHarm) || !isDenial(selfHarm))) return 'elevated';
+    // Risk simply not assessed (silence/failed capture, or model omission) → watch, never false "clear".
+    if ((ideation && isNotAssessed(ideation)) || isNotAssessed(allText)) return 'watch';
+    // Explicit denial / nothing of concern raised → clear.
+    return 'clear';
+  })();
 
-  // Explicit denial / nothing of concern raised → clear.
-  return 'clear';
+  return { tier, floor };
 }
 
 function planFromNote(note: DraftNote, dateLabel: string): PrepItem[] {

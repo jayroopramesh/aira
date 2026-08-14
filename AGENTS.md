@@ -60,9 +60,12 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   they can't (contacts come from `EXPO_PUBLIC_CRISIS_LINE` / `EXPO_PUBLIC_ONCALL_EMAIL`; an unset
   crisis line falls back to local emergency services and never invents a mental-health number).
 - A note's risk reaches the caseload as a structured tier: the summarizer emits `riskLevel` and it is
-  mapped straight onto `Client.risk` — never re-derived by sniffing note prose. Any disclosed
-  ideation rates acute, and a client's tier is never auto-downgraded (`riskFromNote` /
-  `appendSessionToClient` in `src/data/sessionClient.ts`).
+  trusted for the ordinary case — never re-derived *down* by sniffing note prose. But `riskFromNote`
+  applies an **up-only safety floor**: if the note's own risk rows/summary disclose ideation (or
+  self-harm) it never lets the model's tier fall below acute (or elevated), so the "any disclosed
+  ideation → acute, never auto-downgrade" rule holds on the live path exactly as in the mock. The
+  floor only ever raises. See `scanNoteRisk` / `riskFromNote` / `appendSessionToClient` in
+  `src/data/sessionClient.ts`, proved by `scripts/risk-floor-harness.mjs`.
 - Sparse series (≤ 2 readings) render as a dot-strip with no trend line.
 - Login + recovery copy is isolated in `src/strings/recovery.ts`; the recovery-key policy is
   captain-resolved (`decision-recovery-key-policy`): account creation + one-time recovery code,

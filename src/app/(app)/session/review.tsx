@@ -1,8 +1,8 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useRef, useState } from 'react';
-import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Platform, Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowRight, CheckIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
+import { ArrowRight, CheckIcon, CopyIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
 import { BackLink, PageHeader, Screen } from '../../../components/Screen';
 import { AppText, Badge, Button, Card, Divider, Eyebrow, Row, TrustPill } from '../../../components/ui';
 import { ZeroState } from '../../../components/ZeroState';
@@ -20,6 +20,75 @@ function formatSignedAt(d: Date): string {
   const date = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
   return `${date} ${time}`;
+}
+
+/**
+ * Serialize the full note to plain text for the clipboard — the exact SOAP content the clinician
+ * reviewed, in reading order, so it can be pasted into an EHR. Sections, risk rows, plan bullets, the
+ * subjective quote, and the measures table are all included; nothing is invented.
+ */
+function noteToPlainText(draft: DraftNote): string {
+  const lines: string[] = [draft.sessionLabel, ''];
+  for (const s of draft.sections) {
+    lines.push(s.isRisk ? s.title : `${s.marker} — ${s.title}`);
+    for (const p of s.body) lines.push(p);
+    if (s.quote) lines.push(`"${s.quote}"`);
+    for (const b of s.bullets ?? []) lines.push(`• ${b}`);
+    for (const r of s.rows ?? []) lines.push(`- ${r.label}: ${r.value}`);
+    lines.push('');
+  }
+  if (draft.measures.length) {
+    lines.push('Measures');
+    for (const m of draft.measures) lines.push(`- ${m.measure}: today ${m.today} · prev ${m.prev} · band ${m.band}`);
+    lines.push('');
+  }
+  return `${lines.join('\n').trim()}\n`;
+}
+
+/**
+ * Copy the whole note to the clipboard, with a truthful confirmation (F12 / no-dead-promise): the
+ * "Copied" state flips ONLY after a real successful clipboard write. There is no clipboard on native
+ * (no `navigator.clipboard`), so the control is disabled there with honest guidance rather than a
+ * silent no-op — mirroring the recovery screen's Copy affordance.
+ */
+function CopyNoteButton({ draft }: { draft: DraftNote }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const canCopy = Platform.OS === 'web';
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  const copy = () => {
+    const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    if (!clip) return; // only ever confirm after a real write
+    clip
+      .writeText(noteToPlainText(draft))
+      .then(() => {
+        setCopied(true);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => setCopied(false));
+  };
+
+  return (
+    <View>
+      <Button
+        title={copied ? 'Copied ✓' : 'Copy note'}
+        variant="ghost"
+        leftIcon={copied ? <CheckIcon size={15} color={c.positive} /> : <CopyIcon size={15} color={c.brand} />}
+        onPress={copy}
+        disabled={!canCopy}
+        accessibilityLabel="Copy the full note to the clipboard"
+      />
+      {!canCopy ? (
+        <AppText variant="small" color="ink3" style={{ marginTop: 4, fontSize: 11, maxWidth: 260, lineHeight: 15 }}>
+          Copy isn’t available on this device — open the note on web to copy it into your record.
+        </AppText>
+      ) : null}
+    </View>
+  );
 }
 
 export default function ReviewNote() {
@@ -188,27 +257,28 @@ export default function ReviewNote() {
             paddingHorizontal: theme.spacing.lg,
           }}
         >
+          {/* Copy is the clinician's most common real action (note → EHR) and now does a real clipboard
+              write. Per-section Edit / Regenerate live inline on each section (they actually work), so
+              the former dead "Regenerate / Add / Replace / Edit note" bar controls were removed rather
+              than left as no-ops — the product's no-dead-promise rule. */}
           <Row style={{ justifyContent: 'space-between', maxWidth: 1320, width: '100%', alignSelf: 'center', flexWrap: 'wrap', gap: 10 }}>
-            <Row gap={8} style={{ flexWrap: 'wrap' }}>
-              <Button title="Regenerate" variant="ghost" onPress={() => {}} />
-              <Button title="Add" variant="ghost" onPress={() => {}} />
-              <Button title="Replace" variant="ghost" onPress={() => {}} />
-              <Button title="Copy" variant="ghost" onPress={() => {}} />
-            </Row>
-            <Row gap={10}>
-              <Button title="Edit note" variant="secondary" onPress={() => {}} />
-              <Button title="Sign off" variant="primary" onPress={sign} />
-            </Row>
+            <CopyNoteButton draft={draft} />
+            <Button title="Sign off" variant="primary" onPress={sign} />
           </Row>
         </View>
       ) : (
         <View style={{ paddingHorizontal: theme.spacing.lg, paddingBottom: insets.bottom + 16, maxWidth: 1320, width: '100%', alignSelf: 'center' }}>
-          <Button
-            title="Back to today"
-            variant="secondary"
-            rightIcon={<ArrowRight size={18} color={c.ink} />}
-            onPress={() => router.replace('/(app)/today')}
-          />
+          {/* A signed note is most often the one a clinician needs to paste into an EHR, so Copy stays
+              available here too, alongside the way back. */}
+          <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+            <CopyNoteButton draft={draft} />
+            <Button
+              title="Back to today"
+              variant="secondary"
+              rightIcon={<ArrowRight size={18} color={c.ink} />}
+              onPress={() => router.replace('/(app)/today')}
+            />
+          </Row>
         </View>
       )}
     </View>
@@ -855,7 +925,8 @@ function SignOff({ signed, onSign, clinician, signedAt }: { signed: boolean; onS
       </AppText>
       <View style={{ height: 14 }} />
       <Row gap={10}>
-        <Button title="Edit first" variant="secondary" onPress={() => {}} />
+        {/* Editing happens inline per section (each section has a working Edit toggle), so the former
+            dead "Edit first" no-op was removed rather than left as a broken promise. */}
         <Button title="Sign off" variant="primary" leftIcon={<CheckIcon size={16} color={c.onBrand} />} onPress={onSign} />
       </Row>
     </Card>
