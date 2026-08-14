@@ -90,6 +90,14 @@ export type DraftNote = {
    * session.
    */
   transcript?: string;
+  /**
+   * True iff THIS note's transcript was produced by the cloud transcription hop (Groq) rather than the
+   * on-device mock transcriber. Drives the honest provenance caption in the review screen's Transcript
+   * tab, so the caption reports what actually happened to this capture instead of the app-wide config.
+   * Absent for sample fixtures and older notes — treated as on-device, because a cloud hop we can't
+   * prove is never claimed.
+   */
+  transcribedInCloud?: boolean;
   sections: NoteSection[];
   measures: { measure: string; today: string; prev: string; band: string }[];
   reviewCodes: ReviewCode[];

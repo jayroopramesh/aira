@@ -1,7 +1,8 @@
 # Aira — rendered workflow captures
 
-Real renders of the running **web** app (headless Chrome, 2× scale). The `r4r5-` prefix is the
-**current** set (captain-approved rounds 4 + 5 + final mascot system); the `r2r3-` set below it is
+Real renders of the running **web** app (headless Chrome, 2× scale). The `mobile/` folder is the
+**current** set (phone-dimension signature screens, light + dark); the `r4r5-` prefix below it is the
+prior desktop-width rounds 4 + 5 set (captain-approved, final mascot system), and the `r2r3-` set is
 the superseded round-2/3 refresh, kept as history.
 
 Regenerate after UI changes: `npx expo export --platform web && npx expo serve`, then drive the

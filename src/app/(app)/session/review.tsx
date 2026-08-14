@@ -135,7 +135,11 @@ export default function ReviewNote() {
             {tab === 'Note' ? (
               <NotePane key={noteKey} draft={draft} signed={signed} />
             ) : tab === 'Transcript' ? (
-              <TranscriptPane transcript={draft.transcript} />
+              <TranscriptPane
+                transcript={draft.transcript}
+                transcribedInCloud={draft.transcribedInCloud}
+                signed={signed}
+              />
             ) : (
               <OtherPane tab={tab} />
             )}
@@ -500,11 +504,19 @@ function MeasureTable({ measures }: { measures: DraftNote['measures'] }) {
  * the vault seam) — the exact text the clinician reviewed and drafted from, so they can check the note
  * against it later. HONESTY INVARIANT: when a note has no stored transcript (sample fixtures, or notes
  * captured before transcripts were saved) it says so plainly and never renders placeholder prose as if
- * it were the session.
+ * it were the session. The provenance line comes from how THIS note was transcribed (recorded on the
+ * note at capture time), never from the app-wide config — an unrecorded provenance is read as
+ * on-device, so a cloud hop is only ever claimed when it demonstrably happened.
  */
-function TranscriptPane({ transcript }: { transcript?: string }) {
-  const theme = useTheme();
-  const c = theme.colors;
+function TranscriptPane({
+  transcript,
+  transcribedInCloud,
+  signed,
+}: {
+  transcript?: string;
+  transcribedInCloud?: boolean;
+  signed: boolean;
+}) {
   const text = transcript?.trim();
 
   if (!text) {
@@ -522,9 +534,10 @@ function TranscriptPane({ transcript }: { transcript?: string }) {
   return (
     <View>
       <AppText variant="small" color="ink3" style={{ marginBottom: 10 }}>
-        {hasGroq
-          ? 'The transcript of this session, kept on this device. In demo mode the audio was sent to the cloud (Groq) to transcribe, then deleted — only this text remains. There is no on-device de-identification hop in demo mode. Check the note against it before signing.'
-          : 'The transcript of this session, kept on this device — the demo services aren’t configured, so nothing was sent anywhere and no de-identification step runs. Check the note against it before signing.'}
+        {(transcribedInCloud
+          ? 'The transcript of this session, kept on this device. The audio was sent to the cloud (Groq) to transcribe, then deleted — only this text remains. There is no on-device de-identification hop in demo mode.'
+          : 'The transcript of this session, kept on this device — it was transcribed on-device, so nothing was sent anywhere and no de-identification step runs.') +
+          (signed ? '' : ' Check the note against it before signing.')}
       </AppText>
       <Card tone="sunken" elevation="none" radius="md">
         <AppText variant="body" color="ink2" selectable style={{ lineHeight: 22 }}>
