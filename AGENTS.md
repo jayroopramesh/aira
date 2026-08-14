@@ -73,11 +73,13 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   severity-qualified ideation phrase** ("passive/chronic/fleeting … ideation|SI", `affirmsQualifiedIdeation`):
   it floors to acute even alongside a denial of a narrower form ("denies active ideation, plan or
   intent") — the standard way passive ideation is documented — and being one phrase rather than a
-  loose substring, it cannot be hijacked across clauses. Accepted residuals: a value that endorses
-  ideation *and* carries an unrelated bare denial ("Endorsed; denied to spouse") or a trailing
-  screening-status clause ("…; safety plan deferred") can under-rate; and "no history of passive
-  ideation" reads as an affirmation and over-rates. All rare, and far cheaper than a permanent false
-  acute. `client.risk` is likewise a
+  loose substring, it cannot be hijacked across clauses. A negation only denies the row when what it
+  reaches is the topic or its state — the bound-negation gap never crosses a plan/intent/means noun,
+  so "Present; no current plan or intent" stays a disclosure. Accepted residuals: a value that
+  endorses ideation *and* carries an unrelated bare denial ("Endorsed; denied to spouse") or a
+  trailing screening-status clause ("…; safety plan deferred") can under-rate; and a negation
+  separated from its phrase by punctuation ("denies, on direct questioning, any passive ideation")
+  over-rates. All rare, and far cheaper than a permanent false acute. `client.risk` is likewise a
   capture-time signal: it is NOT re-derived from later manual edits to a note's risk narrative (see
   `updateNoteSection`). See `scanNoteRisk` / `riskFromNote` / `appendSessionToClient` in
   `src/data/sessionClient.ts`, proved by `scripts/risk-floor-harness.mjs`.

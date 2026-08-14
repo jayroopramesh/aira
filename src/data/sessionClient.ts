@@ -56,12 +56,21 @@ const IDEATION_CUE =
 const SELF_HARM_CUE = /self[- ]?harm|cutting|hurt (?:my|her|him|them)sel/;
 
 /**
- * Does this risk-row VALUE deny the risk it describes? Four readings, any of which is a denial:
+ * Does this risk-row VALUE deny the risk it describes? Five readings, any of which is a denial:
  * a denial VERB that isn't denying the plan/means ("Denied", "Denies thoughts of suicide" — but NOT
- * the "denies plan or intent" that follows a disclosure); a negation BOUND to an ideation/self-harm/
- * state/concern anchor within a few tokens ("no SI/HI", "not currently present", "no acute concerns");
- * a LEADING terse denial ("None", "No", "None this session", "None disclosed"); or a fixed denial
- * word ("Nil for this session", "Screening negative", "Absent this session").
+ * the "denies plan or intent" that follows a disclosure); a negation BOUND to an ideation/self-harm
+ * TOPIC word ("no SI/HI", "no current ideation"); a negation bound to a STATE word ("not currently
+ * present", "none currently reported"); a LEADING denial of concerns ("No acute concerns", "Nothing
+ * of concern"); a LEADING terse denial ("None", "No", "None this session"); or a fixed denial word
+ * ("Nil for this session", "Screening negative", "Absent this session").
+ *
+ * A negation only denies the ROW when its object is the row's own topic or state. What the clinician
+ * denied is decided by what the negation REACHES, so the bound-negation gap cannot cross a
+ * plan/intent/means noun: "Present; no current plan or intent" and "Endorsed; no means noted" deny
+ * the plan, not the ideation, and reading them as row denials silently drops the acute floor on a
+ * documented disclosure — the one direction this floor exists to prevent. The denial-verb branch
+ * carries the same scoping as a lookahead, and "concerns" is generic enough that it only counts when
+ * it LEADS the value (as the row's answer), never as a trailing "…; nothing further of concern".
  *
  * The leading-denial branch answers the row, so it holds however the phrase is finished — UNLESS the
  * value goes on to name the risk itself ("No plan, but active ideation present"), which is a
@@ -78,7 +87,9 @@ const SELF_HARM_CUE = /self[- ]?harm|cutting|hurt (?:my|her|him|them)sel/;
 function deniesRisk(s: string): boolean {
   return (
     /\b(?:denied|denies|denying)\b(?!\s+(?:to\s+\w+\s+)?(?:a\s+|any\s+|the\s+)?(?:plan|intent|means|access|method|specific)\b)/.test(s) ||
-    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b[\s\w'/-]{0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|present|reported|endorsed|noted|raised|current|concerns?|si|hi)\b/.test(s) ||
+    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b(?:(?!\b(?:plan|intent|means|method|access)\b)[\s\w'/-]){0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|si|hi)\b/.test(s) ||
+    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b(?:(?!\b(?:plan|intent|means|method|access)\b)[\s\w'/-]){0,20}?\b(?:present|reported|endorsed|noted|raised)\b/.test(s) ||
+    /^\s*(?:no|not|none|without|nil|negative|absent|nothing)\b[\s\w'/-]{0,20}?\bconcerns?\b/.test(s) ||
     /^\s*(?:no|none|nil|negative|absent|denied|denies|nad|n\/?a)\b(?![\s\w'/-]{0,30}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|plan|intent|endorsed|present|active|passive|reported)\b)/.test(s) ||
     /\b(?:nil|negative|absent)\b|none reported|not present|no ideation|no concerns|nothing of concern|not endorsed/.test(s)
   );
@@ -93,15 +104,22 @@ function deniesRisk(s: string): boolean {
  *
  * It is a single CONTIGUOUS clinical phrase, not a loose substring, so — unlike the marker list this
  * replaced — it cannot be hijacked by a word sitting in an unrelated clause. Negated forms of the
- * same phrase ("denies passive ideation") are scrubbed before the test. Written as a scrub rather
- * than a lookbehind, which Hermes does not support.
+ * same phrase are scrubbed before the test. Written as a scrub rather than a lookbehind, which Hermes
+ * does not support.
  *
- * Accepted safe residual: "no history of passive ideation" reads as an affirmation and floors to
- * acute. Rare, and it errs in the safe direction.
+ * The scrub allows a few words between the negation and the phrase, because a denial is rarely
+ * adjacent to its object: "Denies any passive ideation", "Denies active or passive ideation",
+ * "Not endorsing passive ideation" are ordinary phrasings, and reading any of them as an affirmation
+ * pins a benign client to acute forever. The gap is word-only, so it cannot cross the ';' or ',' that
+ * separates a real disclosure from a following denial clause — "Passive ideation reported; denies
+ * active ideation, plan or intent" still affirms.
+ *
+ * Accepted safe residual: a negation separated from the phrase by punctuation ("denies, on direct
+ * questioning, any passive ideation") still reads as an affirmation. Rare, and it errs safe.
  */
 const QUALIFIED_IDEATION = /\b(?:passive|chronic|fleeting|transient|intermittent|recurrent|persistent)\s+(?:suicidal\s+)?(?:ideation|si)\b/;
 const NEGATED_QUALIFIED_IDEATION =
-  /\b(?:no|not|denies|denied|denying|without|nil)\s+(?:passive|chronic|fleeting|transient|intermittent|recurrent|persistent)\s+(?:suicidal\s+)?(?:ideation|si)\b/g;
+  /\b(?:no|not|none|nil|negative|absent|nothing|without|denies|denied|denying)\s+(?:[\w'-]+\s+){0,3}(?:passive|chronic|fleeting|transient|intermittent|recurrent|persistent)\s+(?:suicidal\s+)?(?:ideation|si)\b/g;
 
 function affirmsQualifiedIdeation(s: string): boolean {
   return QUALIFIED_IDEATION.test(s.replace(NEGATED_QUALIFIED_IDEATION, ' '));

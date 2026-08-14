@@ -49,6 +49,16 @@ const cases = [
   // clinical fact in plainer words must not silently lose the floor.
   { name: 'live: "Present; denies plan or intent" floors to acute', in: note({ level: 'watch', rows: ideationRow('Present; denies plan or intent') }), want: 'acute' },
   { name: 'live: "Active thoughts, denies intent" floors to acute', in: note({ level: 'watch', rows: ideationRow('Active thoughts, denies intent') }), want: 'acute' },
+  // The SAME clinical fact written with "no …" instead of "denies …". A negation whose object is the
+  // plan/means denies the plan, not the row, so it must not cancel the floor on a disclosure.
+  { name: 'live: "Present; no current plan or intent" floors to acute', in: note({ level: 'watch', rows: ideationRow('Present; no current plan or intent') }), want: 'acute' },
+  { name: 'live: "Endorsed ideation; no plan reported" floors to acute', in: note({ level: 'watch', rows: ideationRow('Endorsed ideation; no plan reported') }), want: 'acute' },
+  { name: 'live: "Active thoughts; no intent reported" floors to acute', in: note({ level: 'watch', rows: ideationRow('Active thoughts; no intent reported') }), want: 'acute' },
+  { name: 'live: "Endorsed; no means noted" floors to acute', in: note({ level: 'watch', rows: ideationRow('Endorsed; no means noted') }), want: 'acute' },
+  { name: 'live: "Present; nothing further of concern" floors to acute', in: note({ level: 'watch', rows: ideationRow('Present; nothing further of concern') }), want: 'acute' },
+  // …and with no structured level the derivation must agree (floor == derivation).
+  { name: 'asymmetry: "Present; no current plan or intent", no level → acute', in: note({ level: undefined, rows: ideationRow('Present; no current plan or intent') }), want: 'acute' },
+  { name: 'asymmetry: "Endorsed; no means noted", no level → acute', in: note({ level: undefined, rows: ideationRow('Endorsed; no means noted') }), want: 'acute' },
   // An incidental phrase about who else knows must not cancel a real disclosure — 'not disclosed' /
   // 'not reported' describe ordinary content, not the status of the screening, so they are not in
   // `isNotAssessed`.
@@ -66,8 +76,16 @@ const cases = [
   { name: 'asymmetry: "Endorsed passive ideation; no plan, means absent", no level → acute', in: note({ level: undefined, rows: ideationRow('Endorsed passive ideation; no plan, means absent') }), want: 'acute' },
   // The negated form of the SAME phrase is still a denial.
   { name: 'live: "Denies passive ideation" stays clear (negated qualified phrase)', in: note({ level: undefined, rows: ideationRow('Denies passive ideation') }), want: 'clear' },
-  // Documented ACCEPTED RESIDUAL: a historical negation reads as an affirmation. Rare, errs safe.
-  { name: 'residual: "No history of passive ideation" floors to acute (accepted, errs safe)', in: note({ level: 'watch', rows: ideationRow('No history of passive ideation') }), want: 'acute' },
+  // A denial is rarely adjacent to its object. Each of these read as an AFFIRMATION while the scrub
+  // required adjacency, pinning a benign client to acute permanently.
+  { name: 'live: "Denies any passive ideation" stays clear', in: note({ level: undefined, rows: ideationRow('Denies any passive ideation') }), want: 'clear' },
+  { name: 'live: "No current passive ideation" stays clear', in: note({ level: undefined, rows: ideationRow('No current passive ideation') }), want: 'clear' },
+  { name: 'live: "Denies active or passive ideation" stays clear', in: note({ level: 'clear', rows: ideationRow('Denies active or passive ideation') }), want: 'clear' },
+  { name: 'live: "Denies recurrent or persistent ideation" stays clear', in: note({ level: 'clear', rows: ideationRow('Denies recurrent or persistent ideation') }), want: 'clear' },
+  { name: 'live: "Not endorsing passive ideation" stays clear', in: note({ level: 'clear', rows: ideationRow('Not endorsing passive ideation') }), want: 'clear' },
+  { name: 'live: "Negative for passive ideation" stays clear', in: note({ level: 'clear', rows: ideationRow('Negative for passive ideation') }), want: 'clear' },
+  { name: 'live: "Client denies experiencing passive ideation" stays clear', in: note({ level: 'clear', rows: ideationRow('Client denies experiencing passive ideation') }), want: 'clear' },
+  { name: 'live: "No history of passive ideation" stays clear', in: note({ level: 'clear', rows: ideationRow('No history of passive ideation') }), want: 'clear' },
 
   // A row mentioning the OTHER topic must not shadow the row actually about it.
   {
