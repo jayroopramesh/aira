@@ -26,13 +26,17 @@ export type SummaryInput = {
   sessionNumber?: number;
   durationMs?: number;
   /**
-   * How THIS capture was transcribed: true iff the audio went to the cloud (Groq) for ASR, false when
-   * the on-device mock transcriber produced it (the `mock://` sample-audio and no-live-mic paths are
-   * on-device even with keys configured). Absent → treated as on-device, because a cloud hop we can't
-   * prove is never claimed. Feeds the note's `sourceLine`, which reports the transcription and the
-   * drafting hop separately rather than collapsing both onto the app-wide config.
+   * Did this capture's audio leave the device? True from the moment the upload is issued, so a cloud
+   * call that fails afterwards is still disclosed. Absent → nothing was sent.
    */
-  transcribedInCloud?: boolean;
+  audioLeftDevice?: boolean;
+  /**
+   * Is the `transcript` above what the cloud transcriber returned? True only on a successful cloud
+   * transcription; false for the on-device mock and for anything the clinician typed or pasted. These
+   * are two different facts — an upload can succeed and the transcription still fail — and the note's
+   * `sourceLine` reports each one from its own truth rather than collapsing them.
+   */
+  transcriptFromCloud?: boolean;
 };
 
 export interface SummarizationService {
@@ -87,15 +91,15 @@ Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY this shape
  * transcript text is POSTed to the proxy with the counselor's Supabase session token; only the
  * transcript + a bare session number are sent — never the client's name (the proxy also rejects any
  * payload that carries a client identifier). Not signed in (no token) DELEGATES to the on-device
- * MockSummarizationService over the same text. That is not fabrication: the transcript it drafts from
- * is the clinician's own typed/pasted words (or the `mock://` sample transcript), never invented
- * clinical content — the app only refuses to invent, and inventing a transcript is transcription's
- * job to refuse (see `GroqTranscriptionService`, which still rejects). Because the fallback runs
- * `buildDraft` with `draftedInCloud: false`, a note drafted this way says so; a note can never claim
- * a cloud draft that did not happen.
+ * MockSummarizationService in its `deriveOnly` mode over the same text. That is not fabrication: it
+ * restates the clinician's own typed/pasted words and leaves every section it cannot derive — the
+ * assessment, the plan, the prescriptions, the diagnosis chips — as "review required" rather than
+ * inventing them. Inventing a transcript is transcription's job to refuse (see
+ * `GroqTranscriptionService`, which still rejects). Because the fallback runs `buildDraft` with
+ * `draftedInCloud: false`, a note drafted this way says so, and says a keyword stub wrote it.
  */
 export class GroqSummarizationService implements SummarizationService {
-  private readonly mock = new MockSummarizationService();
+  private readonly mock = new MockSummarizationService(true);
 
   constructor(
     private readonly proxyUrl: string,
@@ -149,28 +153,52 @@ export class GroqSummarizationService implements SummarizationService {
     }
     // Reaching here means the proxy call succeeded with a real session token, so the cloud drafting
     // hop demonstrably happened — that, not the build-time config, is what the note records.
-    return buildDraft(parsed, input, true);
+    return buildDraft(parsed, input, { draftedInCloud: true });
   }
 }
 
 /**
- * Deterministic on-device fallback so the flow demos with no Groq key. The mock is a stub — it does
- * not run a clinical model — so it must NEVER fabricate a "Denied / clear" risk finding it did not
- * assess (F4-mock-clear). It derives its risk row + structured level from a lightweight scan of the
- * transcript: disclosed ideation → acute, self-harm → elevated, otherwise clear only when nothing was
- * raised. This way a real dictated transcript that discloses ideation is never rated "clear" in
- * no-keys mode (and the live Groq path is unaffected).
+ * Deterministic on-device drafting. It is a STUB — no clinical model runs — so it must never fabricate
+ * a "Denied / clear" risk finding it did not assess (F4-mock-clear); it derives the risk row + tier
+ * from a lightweight scan of the transcript (disclosed ideation → acute, self-harm → elevated, clear
+ * only when nothing was raised), so a real dictated transcript that discloses ideation is never rated
+ * "clear" here.
+ *
+ * TWO MODES, because the same stub now serves two very different situations:
+ *  • `deriveOnly: false` (default) — the no-keys DEMO. Nothing is configured, the transcript is the
+ *    canned `mock://` sample, and nobody is documenting a real client, so it fills a complete
+ *    walkthrough note: a placeholder assessment, plan bullets and a working code chip. That content is
+ *    scaffolding for a demo, not a finding about anyone.
+ *  • `deriveOnly: true` — the CONFIGURED-but-signed-out fallback, which runs over a REAL session the
+ *    clinician typed or pasted. Here the same scaffolding would be invented clinical content attached
+ *    to a real client — an anxiety code and prescriptions nobody derived from the session — so this
+ *    mode emits ONLY what the transcript supports (subjective, objective, the risk scan) and leaves
+ *    assessment, plan, prescriptions and codes to `NOT_CAPTURED` for the clinician to complete. The
+ *    note's source line says a keyword stub wrote it, so "drafted on this device" is never mistaken
+ *    for an on-device model.
  */
 export class MockSummarizationService implements SummarizationService {
+  constructor(private readonly deriveOnly = false) {}
+
   async summarize(input: SummaryInput): Promise<DraftNote> {
     const t = input.transcript.replace(/\s+/g, ' ').trim();
     const sentences = t ? t.split(/(?<=[.!?])\s+/).slice(0, 8) : [];
-    const first = sentences.slice(0, 3).join(' ') || 'The client reported on the week since the last session.';
-    const rest = sentences.slice(3, 6).join(' ') || 'Engaged and reflective throughout; no acute distress observed.';
+    const first = sentences.slice(0, 3).join(' ');
+    const rest = sentences.slice(3, 6).join(' ');
     const riskSafety = scanTranscriptRisk(t);
+
+    if (this.deriveOnly) {
+      const draft: LlmDraft = {
+        subjective: { body: first ? [first] : [], quote: '' },
+        objective: { body: rest ? [rest] : [] },
+        riskSafety,
+      };
+      return buildDraft(draft, input, { draftedInCloud: false, keywordStub: true });
+    }
+
     const draft: LlmDraft = {
-      subjective: { body: [first], quote: '' },
-      objective: { body: [rest] },
+      subjective: { body: [first || 'The client reported on the week since the last session.'], quote: '' },
+      objective: { body: [rest || 'Engaged and reflective throughout; no acute distress observed.'] },
       riskSafety,
       assessment: { body: ['Draft impression pending clinician review. Progress consistent with the working plan.'] },
       plan: {
@@ -178,7 +206,7 @@ export class MockSummarizationService implements SummarizationService {
       },
       reviewCodes: [{ code: 'F41.1', label: 'Generalized anxiety (working)', relevance: 'med' }],
     };
-    return buildDraft(draft, input, false);
+    return buildDraft(draft, input, { draftedInCloud: false });
   }
 }
 
@@ -306,9 +334,10 @@ function toPrep(bullets: string[]): PrepItem[] {
 }
 
 /**
- * Shown when the model omitted a section. Never backfill omitted sections with plausible clinical
- * content — a synthesized "Denied" or invented prose would attach fabricated findings to a real
- * transcript. The mock service supplies complete sections, so only live-path gaps surface this.
+ * Shown when a section has no content the draft can honestly stand behind. Never backfill it with
+ * plausible clinical content — a synthesized "Denied" or invented prose would attach fabricated
+ * findings to a real transcript. Two things surface it: a gap in the live model's reply, and every
+ * section the `deriveOnly` stub cannot read out of the clinician's own words.
  */
 const NOT_CAPTURED = 'Not captured in this draft — review required';
 
@@ -317,7 +346,12 @@ function nonEmpty(items?: string[]): string[] | null {
   return filtered.length ? filtered : null;
 }
 
-function buildDraft(d: LlmDraft, input: SummaryInput, draftedInCloud: boolean): DraftNote {
+function buildDraft(
+  d: LlmDraft,
+  input: SummaryInput,
+  origin: { draftedInCloud: boolean; keywordStub?: boolean },
+): DraftNote {
+  const { draftedInCloud, keywordStub = false } = origin;
   const sections: NoteSection[] = [];
 
   sections.push({
@@ -374,18 +408,28 @@ function buildDraft(d: LlmDraft, input: SummaryInput, draftedInCloud: boolean): 
   const durMin = input.durationMs ? Math.max(1, Math.round(input.durationMs / 60000)) : null;
   const sessionLabel = input.sessionNumber ? `Session ${input.sessionNumber}` : 'New session';
 
-  // Transcription and drafting are independent hops: the audio can stay on-device (sample audio, no
-  // live mic) while the transcript text is still drafted in the cloud. Report each from what ACTUALLY
-  // ran for this note — per-note capture provenance for transcription, and which summarizer produced
-  // this very draft for drafting, never the build-time config, which can claim a hop that never
-  // happened. Only promise "nothing was sent anywhere" when both stayed here.
-  const cloudTranscribed = input.transcribedInCloud === true;
+  // THREE independent facts, never collapsed into one: whether the audio left the device, whether the
+  // text below is machine-transcribed, and where this draft was written. They come apart in practice —
+  // a `mock://` capture is transcribed here yet drafted in the cloud, and an upload that 429s means the
+  // audio left the device while the transcript is the clinician's own typing. Each is reported from
+  // what ACTUALLY ran for this note, never from the build-time config.
+  const cloudTranscript = input.transcriptFromCloud === true;
+  const audioLeft = input.audioLeftDevice === true || cloudTranscript;
   const where = (cloud: boolean) => (cloud ? 'in demo mode (cloud)' : 'on this device');
+
+  const transcriptHop = cloudTranscript
+    ? 'transcribed in demo mode (cloud)'
+    : audioLeft
+      ? 'audio sent to the cloud to transcribe but no transcript came back, so the text was entered by hand'
+      : 'transcribed on this device';
+  const draftHop = keywordStub
+    ? 'drafted on this device by a keyword stub, not a clinical model — assessment, plan and codes are left for you'
+    : `drafted ${where(draftedInCloud)}`;
   const hops =
-    cloudTranscribed === draftedInCloud
+    !keywordStub && audioLeft === cloudTranscript && cloudTranscript === draftedInCloud
       ? `transcribed and drafted ${where(draftedInCloud)}`
-      : `transcribed ${where(cloudTranscribed)}, drafted ${where(draftedInCloud)}`;
-  const tail = !cloudTranscribed && !draftedInCloud ? 'nothing was sent anywhere' : 'for your review';
+      : `${transcriptHop}, ${draftHop}`;
+  const tail = !audioLeft && !draftedInCloud ? 'nothing was sent anywhere' : 'for your review';
   const provenance = `${hops} · ${tail}`;
 
   return {
@@ -394,7 +438,8 @@ function buildDraft(d: LlmDraft, input: SummaryInput, draftedInCloud: boolean): 
       ? `From a ${durMin}-min voice note · ${provenance}`
       : provenance.charAt(0).toUpperCase() + provenance.slice(1),
     status: 'draft',
-    transcribedInCloud: cloudTranscribed,
+    audioLeftDevice: audioLeft,
+    transcriptFromCloud: cloudTranscript,
     draftedInCloud,
     riskLevel: toRiskLevel(d.riskSafety?.level),
     sections,

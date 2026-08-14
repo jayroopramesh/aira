@@ -619,12 +619,15 @@ function Analysing({
   }, []);
   const controller = useRef(new AbortController());
   const isMockCapture = capture.uri.startsWith('mock://');
-  // What the note may claim about where the audio went is recorded from what ACTUALLY happened, never
-  // from build-time config. The threshold is the UPLOAD BEING ATTEMPTED, not the call succeeding: the
-  // cloud transcriber POSTs the audio and only then sees a 429/5xx, so a failure after that point
-  // still means the recording left this device and the note must say so. A `mock://` capture uploads
-  // nothing, and a rejected no-session call sends nothing, so both correctly stay false.
-  const [transcribedInCloud, setTranscribedInCloud] = useState(false);
+  // TWO separate facts, both observed rather than configured, because they come apart. The upload is
+  // disclosed from the moment it is ISSUED — the cloud transcriber POSTs the audio and only then sees
+  // a 429/5xx, so a failure after that point still means the recording left this device. The
+  // transcript is only CLAIMED as machine-produced when a cloud transcription actually returned one:
+  // after a failed upload the clinician types the text themselves, and the note must not call that
+  // whisper output. A `mock://` capture uploads nothing and a rejected no-session call sends nothing,
+  // so both stay false there.
+  const [audioLeftDevice, setAudioLeftDevice] = useState(false);
+  const [transcriptFromCloud, setTranscriptFromCloud] = useState(false);
 
   useEffect(() => {
     const ctrl = controller.current;
@@ -633,19 +636,21 @@ function Analysing({
     const wentToCloud = hasGroq && !isMockCapture;
     const service = isMockCapture ? new MockTranscriptionService(1) : transcriptionService;
     (async () => {
-      setTranscribedInCloud(false);
+      setAudioLeftDevice(false);
+      setTranscriptFromCloud(false);
       setNeedsSignIn(false);
       try {
         const result = await service.transcribe(capture, {
           onStage: (s) => {
             // `transcribing` is the cloud transcriber's hand-off to the network (see its doc).
-            if (s === 'transcribing' && wentToCloud) setTranscribedInCloud(true);
+            if (s === 'transcribing' && wentToCloud) setAudioLeftDevice(true);
             setStage(s);
           },
           signal: ctrl.signal,
         });
         setTranscript(result.text || '');
-        setTranscribedInCloud(wentToCloud);
+        setAudioLeftDevice(wentToCloud);
+        setTranscriptFromCloud(wentToCloud);
         setStage('ready');
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
@@ -685,17 +690,19 @@ function Analysing({
       clientName: client?.name ?? name,
       sessionNumber: client?.sessionNumber ?? 1,
       durationMs: capture.durationMs,
-      transcribedInCloud,
+      audioLeftDevice,
+      transcriptFromCloud,
     };
     try {
       const note = await summarizationService.summarize(input, { signal: controller.current.signal });
       // Persist the real transcript alongside the note (the exact text the clinician reviewed and drafted
       // from) so the review screen's Transcript tab can show the actual session — not placeholder prose —
       // and a clinician can later check the note against it. Rides on the note through the vault seam,
-      // together with how this capture was actually transcribed and drafted (the summarizer stamps the
-      // drafting hop itself, from the service that really produced this draft), so every provenance line
-      // on the review screen stays true for this note however the app is configured when it is read.
-      onDrafted({ ...note, transcript: trimmed, transcribedInCloud });
+      // together with how this capture was actually transcribed and drafted (the summarizer stamps
+      // every provenance field itself, from the input it was given and the service that really
+      // produced this draft), so every provenance line on the review screen stays true for this note
+      // however the app is configured when it is read.
+      onDrafted({ ...note, transcript: trimmed });
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
       // Drafting has no no-session failure mode: with no token the summarizer drafts on-device over
@@ -726,7 +733,7 @@ function Analysing({
   // "on-device mock" while the transcript is in flight to Groq would under-disclose a real cloud hop;
   // while the check is still in flight we assume the cloud, which errs toward disclosure.
   const cloudHop =
-    stage === 'drafting' ? cloudReady ?? hasGroq : stage === 'ready' ? transcribedInCloud : hasGroq && !isMockCapture;
+    stage === 'drafting' ? cloudReady ?? hasGroq : stage === 'ready' ? audioLeftDevice : hasGroq && !isMockCapture;
 
   const working = stage === 'preparing' || stage === 'transcribing' || stage === 'deidentifying' || stage === 'drafting';
   const transcriptEmpty = transcript.trim().length === 0;

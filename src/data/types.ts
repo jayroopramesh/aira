@@ -95,13 +95,20 @@ export type DraftNote = {
    */
   transcript?: string;
   /**
-   * True iff THIS note's transcript was produced by the cloud transcription hop (Groq) rather than the
-   * on-device mock transcriber. Drives the honest provenance caption in the review screen's Transcript
-   * tab, so the caption reports what actually happened to this capture instead of the app-wide config.
-   * Absent for sample fixtures and older notes — treated as on-device, because a cloud hop we can't
-   * prove is never claimed.
+   * DISCLOSURE: true iff this capture's audio was UPLOADED to the cloud transcriber — from the moment
+   * the POST is issued, not from a successful reply, because a 429/5xx arrives after the recording has
+   * already left the device. Never under-disclose this; it is what the audio-trust card speaks about.
+   * Absent for sample fixtures and older notes.
    */
-  transcribedInCloud?: boolean;
+  audioLeftDevice?: boolean;
+  /**
+   * CLAIM: true iff the transcript text stored on this note is what the cloud transcriber (whisper)
+   * returned. False when the clinician typed or pasted it — including after an upload that failed, so
+   * `audioLeftDevice` can be true while this is false. Kept separate because a clinician auditing
+   * "could the model have misheard this?" must not be told machine transcription produced their own
+   * typing. Absent for sample fixtures and older notes — no claim is made either way.
+   */
+  transcriptFromCloud?: boolean;
   /**
    * True iff THIS note was drafted by the cloud summarizer (Groq) rather than the on-device mock — the
    * hop that sends the transcript TEXT away, independent of where the audio was transcribed. Recorded

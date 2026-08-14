@@ -236,7 +236,8 @@ export default function ReviewNote() {
             ) : tab === 'Transcript' ? (
               <TranscriptPane
                 transcript={draft.transcript}
-                transcribedInCloud={draft.transcribedInCloud}
+                audioLeftDevice={draft.audioLeftDevice}
+                transcriptFromCloud={draft.transcriptFromCloud}
                 draftedInCloud={draft.draftedInCloud}
                 signed={signed}
               />
@@ -696,18 +697,24 @@ function MeasureTable({ measures }: { measures: DraftNote['measures'] }) {
  * captured before transcripts were saved) it says so plainly and never renders placeholder prose as if
  * it were the session. The caption reports the two cloud hops separately, each from the value recorded
  * on THIS note when it was drafted — never from the app-wide config, which can differ by the time the
- * note is read back. Only the both-recorded-on-device branch may say nothing was sent anywhere: with
+ * note is read back. Only the everything-stayed-here branch may say nothing was sent anywhere: with
  * keys configured the transcript text goes to Groq to draft even when the audio never left the device.
  * When a hop wasn't recorded (older notes) nothing is claimed about it in either direction.
+ *
+ * The audio hop and the text's ORIGIN are reported separately, because an upload can be made and the
+ * transcription still fail: this caption must disclose that the recording was sent while saying
+ * plainly that the text below is the clinician's own, so nobody later audits it as a mishearing.
  */
 function TranscriptPane({
   transcript,
-  transcribedInCloud,
+  audioLeftDevice,
+  transcriptFromCloud,
   draftedInCloud,
   signed,
 }: {
   transcript?: string;
-  transcribedInCloud?: boolean;
+  audioLeftDevice?: boolean;
+  transcriptFromCloud?: boolean;
   draftedInCloud?: boolean;
   signed: boolean;
 }) {
@@ -728,13 +735,18 @@ function TranscriptPane({
   return (
     <View>
       <AppText variant="small" color="ink3" style={{ marginBottom: 10 }}>
-        {(transcribedInCloud === true
+        {(transcriptFromCloud === true
           ? 'The transcript of this session, kept on this device. The audio was sent to the cloud (Groq) to transcribe, then deleted — only this text remains. There is no on-device de-identification hop in demo mode.'
-          : transcribedInCloud === false && draftedInCloud === true
-            ? 'The transcript of this session, produced and kept on this device — the audio was never sent for transcription. The note was drafted in the cloud, so this text was sent to Groq to draft from (see the demo banner). There is no on-device de-identification hop in demo mode.'
-            : transcribedInCloud === false && draftedInCloud === false
-              ? 'The transcript of this session, produced and kept on this device — nothing was sent anywhere, and no de-identification step runs.'
-              : 'The transcript of this session, kept on this device. This note doesn’t record where it was transcribed or drafted, so nothing is claimed either way.') +
+          : transcriptFromCloud === false && audioLeftDevice === true
+            ? 'This text was entered by the clinician, not produced by transcription — the audio was sent to the cloud (Groq) to transcribe, but no transcript came back. The recording has since been deleted, so this typed text is the only record of the session.' +
+              (draftedInCloud === true
+                ? ' The note was drafted in the cloud, so this text was sent to Groq to draft from (see the demo banner).'
+                : '')
+            : transcriptFromCloud === false && draftedInCloud === true
+              ? 'The transcript of this session, produced and kept on this device — the audio was never sent for transcription. The note was drafted in the cloud, so this text was sent to Groq to draft from (see the demo banner). There is no on-device de-identification hop in demo mode.'
+              : transcriptFromCloud === false && draftedInCloud === false
+                ? 'The transcript of this session, produced and kept on this device — nothing was sent anywhere, and no de-identification step runs.'
+                : 'The transcript of this session, kept on this device. This note doesn’t record where it was transcribed or drafted, so nothing is claimed either way.') +
           (signed ? '' : ' Check the note against it before signing.')}
       </AppText>
       <Card tone="sunken" elevation="none" radius="md">
@@ -784,7 +796,7 @@ function ReviewRail({
       <Divider />
       <ReviewCodes draft={draft} />
       <Divider />
-      {signed ? <AudioTrust transcribedInCloud={draft.transcribedInCloud} /> : null}
+      {signed ? <AudioTrust audioLeftDevice={draft.audioLeftDevice} /> : null}
       <SignOff signed={signed} onSign={onSign} clinician={clinician} signedAt={signedAt} />
     </View>
   );
@@ -943,15 +955,17 @@ function ReviewCodes({ draft }: { draft: DraftNote }) {
  * recording is already gone. A visible "Keep the audio" toggle lets the clinician retain it;
  * kept, the copy is equally honest and notes that replay-with-notes becomes available.
  *
- * This card speaks about the AUDIO, so it reads the same recorded transcription provenance the
- * Transcript tab does — the two can never disagree about the same note. Legacy signed notes drafted
- * before provenance was recorded carry no value; those fall back to the build's configuration.
+ * This card speaks about the AUDIO, so it reads the note's recorded upload disclosure — not whether
+ * the transcription actually returned anything, which is a separate fact the Transcript tab reports.
+ * A recording that was uploaded and then 429'd still left this device, and this card must say so.
+ * Legacy signed notes drafted before provenance was recorded carry no value; those fall back to the
+ * build's configuration.
  */
-function AudioTrust({ transcribedInCloud }: { transcribedInCloud?: boolean }) {
+function AudioTrust({ audioLeftDevice }: { audioLeftDevice?: boolean }) {
   const theme = useTheme();
   const c = theme.colors;
   const [kept, setKept] = useState(false);
-  const audioWentToCloud = transcribedInCloud ?? hasGroq;
+  const audioWentToCloud = audioLeftDevice ?? hasGroq;
 
   const tint = kept ? c.brand : c.positive;
   const bg = kept ? c.brandBg : c.positiveBg;

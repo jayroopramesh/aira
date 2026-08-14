@@ -57,12 +57,19 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   **drafting falls back** to `MockSummarizationService` over the same text, stamped
   `draftedInCloud: false`. That keeps the capture screen's paste-the-transcript recovery a real route
   to a note instead of a dead end. Never make transcription fall back, never make drafting throw.
-- **Provenance is observed, never configured**: `transcribedInCloud` is state in
-  `src/app/(app)/session/index.tsx` set when the cloud upload is ATTEMPTED (the cloud transcriber's
-  `transcribing` stage fires immediately before the POST) — not when it succeeds, because a 429/5xx
-  arrives after the audio has already left the device. `draftedInCloud` is stamped by `buildDraft`
-  from the summarizer that actually produced the draft. Neither is derived from `hasGroq`, so a note
-  can never claim — or deny — a hop that did not match reality.
+  That fallback uses the stub's **`deriveOnly` mode**, because it runs over a REAL session: it emits
+  only what the clinician's words support (subjective/objective/risk scan) and leaves assessment,
+  plan, prescriptions and codes at `NOT_CAPTURED`. The full walkthrough note — canned assessment,
+  plan bullets, the `F41.1` chip — is for the UNCONFIGURED demo over the `mock://` sample only; never
+  let it reach a real client's note.
+- **Provenance is observed, never configured — and it is THREE facts, never one**:
+  `audioLeftDevice` (the upload was ISSUED; set on the cloud transcriber's `transcribing` stage, which
+  fires immediately before the POST, because a 429/5xx arrives after the audio has already left),
+  `transcriptFromCloud` (the stored text IS whisper's output — only on a successful transcription, so
+  text typed after a failed upload is never presented as machine-transcribed), and `draftedInCloud`
+  (stamped by `buildDraft` from the summarizer that actually ran). Collapsing the first two back into
+  one boolean is how a note came to claim whisper produced the clinician's own typing. None derive
+  from `hasGroq`, so a note can never claim — or deny — a hop that did not match reality.
 - **Cloud reachability is a runtime question**: `cloudSessionReady()` (`cloudSession.ts`) = proxy
   configured AND a live token. The capture screen asks it before the mic opens and says plainly when
   the cloud is unreachable; it never gates recording. Signing in cannot rescue a capture already

@@ -245,15 +245,31 @@ no-keys degradation. The two seams therefore behave differently on purpose:
 | | no proxy configured | proxy configured, **no live session** |
 |---|---|---|
 | **Transcription** | on-device mock (nothing was recorded to misrepresent) | **rejects** — never a canned transcript for a real recording |
-| **Drafting** | on-device mock over the given text | on-device mock over the given text, stamped `draftedInCloud: false` |
+| **Drafting** | on-device mock, full demo note | on-device mock in **`deriveOnly`** mode, stamped `draftedInCloud: false` |
 
 So the paste-the-transcript recovery is a **real, working route to a note**: type or paste the
 session text and Airava drafts it on this device, with nothing sent anywhere. It never crashes.
-Provenance is recorded from what actually happened, never from build-time config — and it records the
-audio hop from the **upload being attempted**, not from the call succeeding, because a 429 or 5xx
-arrives *after* the recording has already left the device. Because the proxy authenticates with the
-Supabase session, Groq features require Supabase accounts to be configured too
-(`hasGroq = hasSupabase && proxy URL set`).
+
+`deriveOnly` matters because that fallback runs over a **real** session. The stub restates only what
+the clinician's own words support — subjective, objective, and the conservative risk scan — and leaves
+the assessment, plan, prescriptions and diagnosis codes as *"review required"*. It never attaches a
+working diagnosis or prescriptions nobody derived from the session, and the note's source line says a
+**keyword stub** wrote it so "drafted on this device" is not mistaken for an on-device model. The
+unconfigured no-keys demo, which runs over the canned sample and documents nobody, keeps its complete
+walkthrough note.
+
+**Provenance records three separate facts**, each from what actually happened rather than from
+build-time config, because they come apart:
+
+- `audioLeftDevice` — the recording was **uploaded**. True from the moment the POST is issued, since a
+  429 or 5xx arrives *after* the audio has left. Never under-disclosed.
+- `transcriptFromCloud` — the stored text **is** what whisper returned. True only on a successful
+  cloud transcription, so text the clinician typed after a failed upload is never presented as a
+  machine transcript a reader might later audit for mishearings.
+- `draftedInCloud` — stamped by the summarizer that actually produced the draft.
+
+Because the proxy authenticates with the Supabase session, Groq features require Supabase accounts to
+be configured too (`hasGroq = hasSupabase && proxy URL set`).
 
 **A live email/password session is what unlocks the cloud — recovery-code unlock is not.** This is a
 deliberate consequence of the recovery-key model, not a bug. Signing in with email + password
