@@ -55,7 +55,14 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   `appBarMood` map); heroes are wired per screen. The app icon derives from `Mascot Designz/logo2.png`
   via `app.json`. (The earlier hand-drawn inline-SVG mascot has been retired.)
 - Risk is clay, never alarm-red; colour is never the only signal (always paired with a word).
-- Escalate is a standing, dismissible sheet — never modal, never alarm.
+- Escalate is a standing, dismissible sheet — never modal, never alarm. No safety control may be a
+  dead promise: the crisis line, warm handoff and safety plan each do a real thing or say plainly why
+  they can't (contacts come from `EXPO_PUBLIC_CRISIS_LINE` / `EXPO_PUBLIC_ONCALL_EMAIL`; an unset
+  crisis line falls back to local emergency services and never invents a mental-health number).
+- A note's risk reaches the caseload as a structured tier: the summarizer emits `riskLevel` and it is
+  mapped straight onto `Client.risk` — never re-derived by sniffing note prose. Any disclosed
+  ideation rates acute, and a client's tier is never auto-downgraded (`riskFromNote` /
+  `appendSessionToClient` in `src/data/sessionClient.ts`).
 - Sparse series (≤ 2 readings) render as a dot-strip with no trend line.
 - Login + recovery copy is isolated in `src/strings/recovery.ts`; the recovery-key policy is
   captain-resolved (`decision-recovery-key-policy`): account creation + one-time recovery code,

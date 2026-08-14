@@ -148,7 +148,7 @@ function PreCapture({
                   {client.name}
                 </AppText>
                 <AppText variant="small" color="ink3">
-                  Session {client.sessionNumber} · latest PHQ-9 {client.latestScore}
+                  Session {client.sessionNumber} · latest PHQ-9 {client.latestScore ?? '—'}
                 </AppText>
               </View>
             </Row>
@@ -458,6 +458,52 @@ function TimePill({ label, live }: { label: string; live?: boolean }) {
 
 type Stage = 'preparing' | 'transcribing' | 'deidentifying' | 'ready' | 'drafting' | 'error';
 
+/**
+ * Guard against drafting a confident clinical note from a failed/empty/near-silent recording (F11).
+ * A dead mic, a muted input or a failed upload yields transcripts like "you you you you" or a few
+ * stray words; those must NOT be written up as clinical findings about the patient. The clinician can
+ * still fix the transcript by hand and retry — this only blocks auto-drafting from noise.
+ */
+function transcriptQuality(text: string): 'ok' | 'too-short' | 'low-signal' {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length < 12) return 'too-short';
+  const norm = words.map((w) => w.toLowerCase().replace(/[^\p{L}]/gu, '')).filter(Boolean);
+  const unique = new Set(norm);
+  if (norm.length && unique.size / norm.length < 0.3) return 'low-signal';
+  const counts = new Map<string, number>();
+  norm.forEach((w) => counts.set(w, (counts.get(w) ?? 0) + 1));
+  const dominant = Math.max(0, ...counts.values());
+  if (norm.length && dominant / norm.length > 0.5) return 'low-signal';
+  return 'ok';
+}
+
+/**
+ * A lightweight, NON-blocking check (C3): does the transcript read like clinical/session content, or
+ * like passive room noise / a phone call / off-topic chatter? Uses length, clinical-keyword variety,
+ * and first-person self-report shape. It only drives a dismissible banner — it never blocks drafting.
+ */
+function looksLikeClinicalText(text: string): boolean {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length < 20) return true; // too short to judge — emptiness/noise is F11's job, don't nag
+  const lower = ` ${text.toLowerCase()} `;
+  const CLINICAL = [
+    'session', 'feel', 'anxi', 'depress', 'sleep', 'mood', 'therap', 'counsel', 'stress', 'worry',
+    'worried', 'cope', 'coping', 'support', 'exam', 'panic', 'medication', 'safety', 'symptom',
+    'emotion', 'relationship', 'family', 'school', 'overwhelm', 'breathing', 'plan', 'week',
+    // Clinician-voice (third-person) framing: a real note-taking transcript is often written ABOUT
+    // the client rather than in their own first-person words, so the vocabulary must cover both.
+    'client', 'patient', 'report', 'present', 'attend', 'screen', 'ideation', 'self-harm',
+    'cognitive', 'reframe', 'fortnight', 'academic', 'pressure', 'engag', 'affect', 'discuss',
+    'denie', 'denied', 'agreed', 'goal', 'homework', 'referral', 'follow-up', 'intake',
+  ];
+  const keywordHits = CLINICAL.filter((k) => lower.includes(k)).length;
+  const firstPerson = (lower.match(/\b(i|i'm|im|my|me|myself|we)\b/g) ?? []).length;
+  // Clinical if it has a spread of clinical vocabulary, or reads as first-person self-report that
+  // is at least ON a clinical topic — first-person density alone is ordinary conversational shape
+  // (a phone call about an invoice scores the same as a client describing their week).
+  return keywordHits >= 3 || (keywordHits >= 1 && firstPerson >= words.length * 0.04);
+}
+
 function Analysing({
   capture,
   client,
@@ -474,6 +520,7 @@ function Analysing({
   const [stage, setStage] = useState<Stage>('preparing');
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [clinicalWarnDismissed, setClinicalWarnDismissed] = useState(false);
   const controller = useRef(new AbortController());
 
   useEffect(() => {
@@ -498,6 +545,17 @@ function Analysing({
   const draftAndContinue = async () => {
     const trimmed = transcript.trim();
     if (!trimmed) return;
+    // Don't draft a clinical note from silence/noise — surface why and let the clinician fix the
+    // transcript first (F11). Editing the text below to real content clears this.
+    const quality = transcriptQuality(trimmed);
+    if (quality !== 'ok') {
+      setError(
+        quality === 'too-short'
+          ? 'This capture is too short to draft a reliable note. Check the recording or upload, or paste the session transcript below, then draft.'
+          : 'This capture didn’t contain enough clear speech to draft from (a dead mic, muted input, or failed upload can cause this). Re-capture or paste the real transcript below — Aira won’t write up a note from an unclear recording.',
+      );
+      return;
+    }
     setError(null);
     setStage('drafting');
     const input = {
@@ -518,7 +576,11 @@ function Analysing({
 
   const label =
     stage === 'deidentifying'
-      ? 'De-identifying…'
+      ? // F9: in demo mode the audio goes to the cloud and nothing is de-identified on the way —
+        // only the no-keys on-device path may claim that step.
+        hasGroq
+        ? 'Finalising…'
+        : 'De-identifying…'
       : stage === 'transcribing'
         ? 'Transcribing…'
         : stage === 'drafting'
@@ -529,6 +591,8 @@ function Analysing({
 
   const working = stage === 'preparing' || stage === 'transcribing' || stage === 'deidentifying' || stage === 'drafting';
   const transcriptEmpty = transcript.trim().length === 0;
+  // C3: a non-blocking nudge when the transcript doesn't read like clinical/session content.
+  const showClinicalWarn = !working && !transcriptEmpty && !clinicalWarnDismissed && !looksLikeClinicalText(transcript);
 
   return (
     <View style={{ paddingTop: theme.spacing.lg }}>
@@ -571,6 +635,46 @@ function Analysing({
             />
           ))}
         </>
+      ) : null}
+
+      {/* C3: dismissible "doesn't look like clinical text" banner ABOVE the transcript — never blocks. */}
+      {showClinicalWarn ? (
+        <Row
+          gap={10}
+          style={{
+            marginTop: theme.spacing.md,
+            alignItems: 'flex-start',
+            backgroundColor: c.cautionBg,
+            borderRadius: theme.radii.md,
+            borderWidth: 1,
+            borderColor: c.cautionBg,
+            padding: theme.spacing.md,
+          }}
+        >
+          <View style={{ marginTop: 1 }}>
+            <AlertTriangleIcon size={15} color={c.caution} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <AppText variant="bodyStrong" tint={c.caution} style={{ fontSize: 13 }}>
+              This doesn’t look like clinical text
+            </AppText>
+            <AppText variant="small" color="ink2" style={{ marginTop: 2, lineHeight: 17 }}>
+              It may be room noise, a phone call, or off-topic. Review the transcript below before drafting —
+              you can still proceed.
+            </AppText>
+          </View>
+          <Pressable
+            onPress={() => setClinicalWarnDismissed(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss"
+            hitSlop={8}
+            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, paddingHorizontal: 4 })}
+          >
+            <AppText variant="small" tint={c.caution} style={{ fontSize: 12 }}>
+              Dismiss
+            </AppText>
+          </Pressable>
+        </Row>
       ) : null}
 
       {/* Editable transcript — fix mishears/names before drafting. */}

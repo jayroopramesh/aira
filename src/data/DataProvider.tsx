@@ -8,9 +8,50 @@
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT } from './repository';
+import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT, MAX_NOTES_PER_CLIENT, PatientDetailsEntry } from './repository';
 import { CaseloadKpi, Client, DayDashboard, DraftNote } from './types';
-import { clientFromSession } from './sessionClient';
+import { appendSessionToClient, clientFromSession } from './sessionClient';
+
+const normalizeName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** Prepend the newest note and keep at most MAX_NOTES_PER_CLIENT per client (C4) — oldest rotates out. */
+function withNote(existing: DraftNote[] | undefined, note: DraftNote): DraftNote[] {
+  return [note, ...(existing ?? [])].slice(0, MAX_NOTES_PER_CLIENT);
+}
+
+/**
+ * Caseload KPI tiles computed from the ACTUAL caseload (F10). The tiles used to be static fixtures
+ * ("24 active clients", "17 improving") that contradicted a 7-client caseload and never moved when
+ * real clients were added. These derive from the clients on screen, so they can never disagree with
+ * the table below them.
+ */
+function computeCaseloadKpis(clients: Client[]): CaseloadKpi[] {
+  if (!clients.length) return [];
+  const active = clients.filter((c) => c.status === 'active').length;
+  const improving = clients.filter((c) => c.sparkline.length >= 2 && c.sparkline[c.sparkline.length - 1] < c.sparkline[0]).length;
+  const followUpsDue = clients.filter((c) => c.followUpDue).length;
+  const riskFlags = clients.filter((c) => c.risk === 'acute' || c.risk === 'elevated').length;
+  return [
+    { label: 'Clients', value: String(clients.length), sub: `${active} active` },
+    { label: 'Improving', value: String(improving), sub: 'PHQ-9 trending down' },
+    { label: 'Follow-ups due', value: String(followUpsDue), sub: followUpsDue ? 'need scheduling' : 'all scheduled' },
+    { label: 'Risk flags', value: String(riskFlags), sub: riskFlags ? 'elevated / acute · review' : 'none flagged', tone: riskFlags ? 'risk' : 'default' },
+  ];
+}
+
+/**
+ * The day-board "Notes to sign" tile counts the notes actually awaiting a signature (F15). It was a
+ * hand-authored fixture constant, so signing a note left the tile claiming work that no longer
+ * existed — the same class of contradiction computeCaseloadKpis closed for the caseload tiles.
+ */
+function withDerivedGlance(day: DayDashboard | null, notes: Record<string, DraftNote[]>): DayDashboard | null {
+  if (!day) return null;
+  const unsigned = Object.values(notes).reduce((n, list) => n + list.filter((x) => x.status !== 'signed').length, 0);
+  return {
+    ...day,
+    glance: day.glance.map((g) => (/notes to sign/i.test(g.label) ? { ...g, value: String(unsigned) } : g)),
+  };
+}
 
 type DataContextValue = {
   hydrated: boolean;
@@ -18,7 +59,8 @@ type DataContextValue = {
   clientsById: Record<string, Client>;
   dayDashboard: DayDashboard | null;
   caseloadKpis: CaseloadKpi[];
-  notes: Record<string, DraftNote>;
+  notes: Record<string, DraftNote[]>;
+  patientDetails: Record<string, PatientDetailsEntry>;
   sampleLoaded: boolean;
   /** Load the Amara K. sample cohort (Settings / dev affordance). */
   loadSample: () => Promise<void>;
@@ -29,6 +71,10 @@ type DataContextValue = {
    * captured session appears in the caseload. Returns the clientId the note is stored under.
    */
   saveSessionNote: (note: DraftNote, opts?: { clientId?: string; name?: string }) => Promise<string>;
+  /** Persist the clinician-entered patient-details card edits for a client (C2) — device-local. */
+  savePatientDetails: (clientId: string, patch: PatientDetailsEntry) => Promise<void>;
+  /** Persist a sign-off onto the stored note (F8) so the attestation survives navigation/reload. */
+  signNote: (clientId: string, noteIndex: number, signedBy: string, signedAt: string) => Promise<void>;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -70,22 +116,73 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const saveSessionNote = useCallback(
     async (note: DraftNote, opts?: { clientId?: string; name?: string }) => {
       const existingId = opts?.clientId;
+      const dateLabel = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+      const typedName = opts?.name?.trim() ?? '';
+      const name = typedName || 'New client'; // display fallback only — NEVER a fold key
+
+      // A session for a client we already know → fold it in rather than minting a duplicate (F3),
+      // so trends accumulate, the session history stays reachable, and the note's risk reaches the
+      // caseload on EVERY capture path (F4) — whether the client arrived by id (day board → session)
+      // or by a REAL typed name. Folding by name is scoped to captured clients ('s-' ids) AND requires
+      // a non-blank typed name: a blank capture defaults to "New client" for display but must never
+      // fold, or two different unnamed patients would merge into one record and cross-contaminate risk
+      // and notes (fold-name-collision).
+      const existing = existingId
+        ? snapshot.clients.find((cl) => cl.id === existingId)
+        : typedName
+          ? snapshot.clients.find((cl) => cl.id.startsWith('s-') && normalizeName(cl.name) === normalizeName(typedName))
+          : undefined;
+      if (existing) {
+        const sessionNumber = existing.sessionNumber + 1;
+        const updated = appendSessionToClient(existing, note, { sessionNumber, dateLabel });
+        const noteForClient: DraftNote = { ...note, sessionLabel: `Session ${sessionNumber} — ${dateLabel}` };
+        await persist({
+          ...snapshot,
+          clients: snapshot.clients.map((cl) => (cl.id === existing.id ? updated : cl)),
+          // Retain up to 3 notes (C4) — the newer session no longer erases the prior note's full text.
+          notes: { ...snapshot.notes, [existing.id]: withNote(snapshot.notes[existing.id], noteForClient) },
+        });
+        return existing.id;
+      }
+
+      // A clientId whose client no longer exists (e.g. cleared data mid-session) — keep the note
+      // reachable under that id rather than silently minting an unrelated client.
       if (existingId) {
-        await persist({ ...snapshot, notes: { ...snapshot.notes, [existingId]: note } });
+        await persist({ ...snapshot, notes: { ...snapshot.notes, [existingId]: withNote(snapshot.notes[existingId], note) } });
         return existingId;
       }
+
       // Standalone session — mint a lightweight client so blank boot visibly populates.
       const id = `s-${Date.now().toString(36)}`;
-      const dateLabel = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
       const sessionNumber = 1;
-      const client = clientFromSession(id, note, { name: opts?.name?.trim() || 'New client', sessionNumber, dateLabel });
+      const client = clientFromSession(id, note, { name, sessionNumber, dateLabel });
       const noteForClient: DraftNote = { ...note, sessionLabel: `Session ${sessionNumber} — ${dateLabel}` };
       await persist({
         ...snapshot,
         clients: [client, ...snapshot.clients],
-        notes: { ...snapshot.notes, [id]: noteForClient },
+        notes: { ...snapshot.notes, [id]: withNote(snapshot.notes[id], noteForClient) },
       });
       return id;
+    },
+    [persist, snapshot],
+  );
+
+  const savePatientDetails = useCallback(
+    async (clientId: string, patch: PatientDetailsEntry) => {
+      await persist({
+        ...snapshot,
+        patientDetails: { ...snapshot.patientDetails, [clientId]: { ...snapshot.patientDetails[clientId], ...patch } },
+      });
+    },
+    [persist, snapshot],
+  );
+
+  const signNote = useCallback(
+    async (clientId: string, noteIndex: number, signedBy: string, signedAt: string) => {
+      const list = snapshot.notes[clientId];
+      if (!list?.[noteIndex]) return;
+      const next = list.map((n, i) => (i === noteIndex ? { ...n, status: 'signed' as const, signedBy, signedAt } : n));
+      await persist({ ...snapshot, notes: { ...snapshot.notes, [clientId]: next } });
     },
     [persist, snapshot],
   );
@@ -96,15 +193,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       hydrated,
       clients: snapshot.clients,
       clientsById,
-      dayDashboard: snapshot.dayDashboard,
-      caseloadKpis: snapshot.caseloadKpis,
+      dayDashboard: withDerivedGlance(snapshot.dayDashboard, snapshot.notes),
+      caseloadKpis: computeCaseloadKpis(snapshot.clients),
       notes: snapshot.notes,
+      patientDetails: snapshot.patientDetails,
       sampleLoaded: snapshot.sampleLoaded,
       loadSample,
       clearAll,
       saveSessionNote,
+      savePatientDetails,
+      signNote,
     };
-  }, [snapshot, hydrated, loadSample, clearAll, saveSessionNote]);
+  }, [snapshot, hydrated, loadSample, clearAll, saveSessionNote, savePatientDetails, signNote]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
@@ -138,8 +238,20 @@ export function useCaseloadKpis(): CaseloadKpi[] {
   return useContext(DataContext)?.caseloadKpis ?? [];
 }
 
-/** The saved/generated draft for a client, if any. */
-export function useDraftNote(id?: string): DraftNote | undefined {
+/** All retained session notes for a client (newest first, up to 3 — C4). Empty outside the provider. */
+export function useClientNotes(id?: string): DraftNote[] {
   const ctx = useContext(DataContext);
-  return ctx && id ? ctx.notes[id] : undefined;
+  return ctx && id ? ctx.notes[id] ?? [] : [];
+}
+
+/** One saved/generated draft for a client — the newest by default, or the note at `index` (C4). */
+export function useDraftNote(id?: string, index = 0): DraftNote | undefined {
+  const ctx = useContext(DataContext);
+  return ctx && id ? ctx.notes[id]?.[index] : undefined;
+}
+
+/** The persisted patient-details card edits for a client (C2). Empty outside the provider. */
+export function usePatientDetails(id?: string): PatientDetailsEntry {
+  const ctx = useContext(DataContext);
+  return (ctx && id ? ctx.patientDetails[id] : undefined) ?? {};
 }

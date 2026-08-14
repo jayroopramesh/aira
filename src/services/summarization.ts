@@ -13,7 +13,7 @@
  */
 
 import { env, hasGroq } from '../config/env';
-import { DraftNote, NoteSection, PrepItem, ReviewCode } from '../data/types';
+import { DraftNote, NoteSection, PrepItem, ReviewCode, RiskLevel } from '../data/types';
 
 export type SummaryInput = {
   transcript: string;
@@ -31,11 +31,17 @@ export interface SummarizationService {
 type LlmDraft = {
   subjective?: { body?: string[]; quote?: string };
   objective?: { body?: string[] };
-  riskSafety?: { summary?: string; rows?: { label: string; value: string }[] };
+  riskSafety?: { summary?: string; rows?: { label: string; value: string }[]; level?: string };
   assessment?: { body?: string[] };
   plan?: { bullets?: string[] };
   reviewCodes?: { code: string; label: string; relevance?: 'high' | 'med' | 'low' }[];
 };
+
+/** Coerce the model's risk-tier string to a RiskLevel; unknown/absent → undefined (UI derives). */
+function toRiskLevel(level?: string): RiskLevel | undefined {
+  const v = level?.trim().toLowerCase();
+  return v === 'clear' || v === 'watch' || v === 'elevated' || v === 'acute' ? v : undefined;
+}
 
 const SYSTEM_PROMPT = `You are a clinical documentation assistant for a licensed mental-health counselor.
 You turn a single-session, English, single-speaker-assumed therapy transcript into a DRAFT progress note.
@@ -43,13 +49,20 @@ The note is NOT authoritative — the clinician reviews, edits, and signs it. Be
 never invent facts, diagnoses, scores, or safety findings that are not supported by it. Use plain, sober,
 non-alarming clinical language. Do not echo raw personal identifiers (names, ID numbers, phone numbers,
 addresses) in the body — refer to "the client". Always include a routine Risk & Safety check even when the
-session is unremarkable (state plainly if nothing of concern was raised).
+session is unremarkable (state plainly if nothing of concern was raised). The riskSafety.summary sentence
+MUST be consistent with riskSafety.rows — never say "no concerns were raised" if a row records ideation,
+self-harm, or that risk could not be assessed; if risk was not assessable, say so in the summary too.
+riskSafety.level is the caseload risk TIER for this session and drives a risk queue, so rate it for
+safety, not reassurance: "clear" only when suicidal ideation and self-harm were both screened and
+denied; "acute" for ANY disclosed/endorsed current suicidal ideation — passive, transient, fleeting,
+"better off not here", with or without a plan (a stated plan/means/intent is still acute); "elevated"
+for endorsed self-harm without suicidal ideation; "watch" when risk could not be assessed this session.
 
 Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY this shape:
 {
   "subjective": { "body": ["1-3 short paragraphs, the client's reported experience"], "quote": "one short verbatim-style client quote or empty string" },
   "objective": { "body": ["1-2 short paragraphs: observed presentation, engagement, mental status observations"] },
-  "riskSafety": { "summary": "one plain sentence on risk screened this session", "rows": [ { "label": "Suicidal ideation", "value": "Denied / Passive / ..." }, { "label": "Self-harm", "value": "..." }, { "label": "Safety plan", "value": "..." } ] },
+  "riskSafety": { "summary": "one plain sentence on risk screened this session", "rows": [ { "label": "Suicidal ideation", "value": "Denied / Passive / ..." }, { "label": "Self-harm", "value": "..." }, { "label": "Safety plan", "value": "..." } ], "level": "clear | watch | elevated | acute" },
   "assessment": { "body": ["1-2 short paragraphs: clinical impression and progress toward goals"] },
   "plan": { "bullets": ["3-6 concrete, actionable next-step items — these become prescriptions"] },
   "reviewCodes": [ { "code": "e.g. F41.1", "label": "human-readable label", "relevance": "high|med|low" } ]
@@ -103,24 +116,25 @@ export class GroqSummarizationService implements SummarizationService {
   }
 }
 
-/** Deterministic on-device fallback so the flow demos with no Groq key. */
+/**
+ * Deterministic on-device fallback so the flow demos with no Groq key. The mock is a stub — it does
+ * not run a clinical model — so it must NEVER fabricate a "Denied / clear" risk finding it did not
+ * assess (F4-mock-clear). It derives its risk row + structured level from a lightweight scan of the
+ * transcript: disclosed ideation → acute, self-harm → elevated, otherwise clear only when nothing was
+ * raised. This way a real dictated transcript that discloses ideation is never rated "clear" in
+ * no-keys mode (and the live Groq path is unaffected).
+ */
 export class MockSummarizationService implements SummarizationService {
   async summarize(input: SummaryInput): Promise<DraftNote> {
     const t = input.transcript.replace(/\s+/g, ' ').trim();
     const sentences = t ? t.split(/(?<=[.!?])\s+/).slice(0, 8) : [];
     const first = sentences.slice(0, 3).join(' ') || 'The client reported on the week since the last session.';
     const rest = sentences.slice(3, 6).join(' ') || 'Engaged and reflective throughout; no acute distress observed.';
+    const riskSafety = scanTranscriptRisk(t);
     const draft: LlmDraft = {
       subjective: { body: [first], quote: '' },
       objective: { body: [rest] },
-      riskSafety: {
-        summary: 'Risk screened this session · routine.',
-        rows: [
-          { label: 'Suicidal ideation', value: 'Denied on screening today' },
-          { label: 'Self-harm', value: 'None reported' },
-          { label: 'Safety plan', value: 'Existing plan reaffirmed' },
-        ],
-      },
+      riskSafety,
       assessment: { body: ['Draft impression pending clinician review. Progress consistent with the working plan.'] },
       plan: {
         bullets: ['Continue the agreed between-session practice', 'Review progress at the next session', 'Revisit any items the client raised today'],
@@ -129,6 +143,119 @@ export class MockSummarizationService implements SummarizationService {
     };
     return buildDraft(draft, input);
   }
+}
+
+/**
+ * A conservative keyword scan the no-keys mock uses so it never asserts a safety finding the
+ * transcript did not contain. Errs toward flagging: any ideation cue → acute; else self-harm → elevated;
+ * else it says plainly that safety was not explicitly addressed (never a fabricated "Denied").
+ *
+ * Two honesty rules the stub must respect, since a keyword hit is not a clinical finding:
+ *  • A cue that is PURELY denied ("denied suicidal ideation", "no self-harm", with nothing marking
+ *    the client as experiencing it) is not a disclosure — flagging it would fabricate a finding the
+ *    transcript explicitly contradicts. A denial alongside a disclosure still flags: see `disclosed`.
+ *  • Even when it does flag, the row says a possible REFERENCE was seen and asks the clinician to
+ *    confirm — it never asserts "Disclosed in session", which the stub cannot establish.
+ */
+function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafety']> {
+  const s = transcript.toLowerCase();
+  const has = (...kws: string[]) => kws.some((k) => s.includes(k));
+  const ideation = has(
+    'suicid',
+    'kill myself',
+    'end my life',
+    'end it all',
+    'better off dead',
+    'better off not here',
+    'better off gone',
+    "don't want to be here",
+    'do not want to be here',
+    "don't want to be alive",
+    'not want to be alive',
+    'not worth living',
+    "wasn't here anymore",
+    'wasnt here anymore',
+  );
+  const selfHarm = has('self-harm', 'self harm', 'cut myself', 'cutting myself', 'hurt myself', 'harm myself');
+
+  // Whether the transcript NEGATES a cue ("denied suicidal ideation", "no self-harm").
+  const deniedNear = (cues: string) =>
+    new RegExp(`\\b(?:denied|denies)\\b[^.?!]{0,40}?(?:${cues})|\\b(?:no|not|without(?: any)?)\\s+(?:[\\w'-]+\\s+){0,2}(?:${cues})`).test(s);
+  // A denial phrase is not enough to clear a cue: clinicians routinely deny the PLAN while recording
+  // the ideation ("denies plan or intent; reports fleeting suicidal thoughts"), and a denial of
+  // plan/intent/means must NEVER downgrade disclosed ideation. So a denial only clears a cue when
+  // nothing in the transcript marks the client as actually experiencing it — otherwise it stays
+  // flagged. Ambiguity is resolved toward over-rating, which is the safe direction here.
+  const disclosed = has(
+    'described',
+    'describes',
+    'reports',
+    'reported',
+    'experiencing',
+    'experienced',
+    'endorsed',
+    'admitted',
+    'expressed',
+    'disclosed',
+    'voiced',
+    'passive',
+    'fleeting',
+    'recurrent',
+    'intermittent',
+    'most evenings',
+    'most nights',
+    'this week',
+    'ongoing',
+  );
+  const ideationDenied =
+    !disclosed && deniedNear('suicid|ideation|thoughts of|wanting to die|kill (?:her|him|my|them)sel(?:f|ves)');
+  const selfHarmDenied =
+    !disclosed && deniedNear('self[- ]?harm|(?:cut|harm|hurt)(?:ting|ming|ing)? (?:her|him|my|them)sel(?:f|ves)');
+  const REVIEW = 'Possible reference in transcript — clinician to review and confirm';
+  const DENIED = 'Denied on an automated read of the transcript — clinician to confirm';
+
+  if (ideation && !ideationDenied) {
+    return {
+      summary: 'A possible reference to suicidal ideation was picked up in the transcript — review and confirm with the client.',
+      rows: [
+        { label: 'Suicidal ideation', value: REVIEW },
+        { label: 'Self-harm', value: selfHarm && !selfHarmDenied ? REVIEW : 'Not explicitly addressed' },
+        { label: 'Safety plan', value: 'Review or establish a safety plan this session' },
+      ],
+      level: 'acute',
+    };
+  }
+  if (selfHarm && !selfHarmDenied) {
+    return {
+      summary: 'A possible reference to self-harm was picked up in the transcript — review and confirm with the client.',
+      rows: [
+        { label: 'Suicidal ideation', value: 'Not explicitly addressed' },
+        { label: 'Self-harm', value: REVIEW },
+        { label: 'Safety plan', value: 'Review coping steps this session' },
+      ],
+      level: 'elevated',
+    };
+  }
+  if (ideation || selfHarm) {
+    return {
+      summary: 'Ideation / self-harm appear to have been raised and denied in this session — confirm with the client.',
+      rows: [
+        { label: 'Suicidal ideation', value: ideationDenied ? DENIED : 'Not raised this session' },
+        { label: 'Self-harm', value: selfHarmDenied ? DENIED : 'Not raised this session' },
+        { label: 'Safety plan', value: 'Not discussed this session' },
+      ],
+      level: 'clear',
+    };
+  }
+  return {
+    summary: 'No suicidal ideation or self-harm was raised in this session on an automated review.',
+    rows: [
+      { label: 'Suicidal ideation', value: 'Not raised this session' },
+      { label: 'Self-harm', value: 'Not raised this session' },
+      { label: 'Safety plan', value: 'Not discussed this session' },
+    ],
+    level: 'watch',
+  };
 }
 
 /* ------------------------------------------------------------------ mapping --- */
@@ -197,21 +324,30 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
     bullets: planBullets.length ? planBullets : [NOT_CAPTURED],
   });
 
-  const reviewCodes: ReviewCode[] = (d.reviewCodes ?? []).map((rc) => ({
-    code: rc.code,
-    label: rc.label,
-    relevance: rc.relevance === 'high' || rc.relevance === 'low' ? rc.relevance : 'med',
-  }));
+  const reviewCodes: ReviewCode[] = (d.reviewCodes ?? [])
+    // Drop codes the model returned without a code OR a label — a blank chip with a bare "low"
+    // confidence is not a real suggestion (F16).
+    .filter((rc) => rc.code?.trim() && rc.label?.trim())
+    .map((rc) => ({
+      code: rc.code.trim(),
+      label: rc.label.trim(),
+      relevance: rc.relevance === 'high' || rc.relevance === 'low' ? rc.relevance : 'med',
+    }));
 
   const durMin = input.durationMs ? Math.max(1, Math.round(input.durationMs / 60000)) : null;
   const sessionLabel = input.sessionNumber ? `Session ${input.sessionNumber}` : 'New session';
 
   return {
     sessionLabel,
-    sourceLine: durMin
-      ? `From a ${durMin}-min voice note · transcribed in demo mode (cloud) · drafted for your review`
-      : 'Transcribed in demo mode (cloud) · drafted for your review',
+    sourceLine: hasGroq
+      ? durMin
+        ? `From a ${durMin}-min voice note · transcribed in demo mode (cloud) · drafted for your review`
+        : 'Transcribed in demo mode (cloud) · drafted for your review'
+      : durMin
+        ? `From a ${durMin}-min voice note · transcribed and drafted on this device · nothing was sent anywhere`
+        : 'Transcribed and drafted on this device · nothing was sent anywhere',
     status: 'draft',
+    riskLevel: toRiskLevel(d.riskSafety?.level),
     sections,
     measures: [],
     reviewCodes,

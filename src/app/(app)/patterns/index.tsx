@@ -8,6 +8,7 @@ import { AppText, Avatar, Badge, Card, Chip, Eyebrow, Row, RiskDot } from '../..
 import { ZeroState } from '../../../components/ZeroState';
 import { useCaseloadKpis, useClients, useData } from '../../../data/DataProvider';
 import { Client } from '../../../data/types';
+import { authService } from '../../../services/auth';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 export default function Caseload() {
@@ -105,7 +106,17 @@ export default function Caseload() {
           </View>
         </Row>
 
-        {wide ? (
+        {filtered.length === 0 ? (
+          // Search/filter matched nothing — say so, instead of leaving bare table headers (F18).
+          <View style={{ paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.xl, alignItems: 'center' }}>
+            <AppText variant="bodyStrong" center>
+              No clients match {query.trim() ? `“${query.trim()}”` : 'this filter'}
+            </AppText>
+            <AppText variant="small" color="ink3" center style={{ marginTop: 6 }}>
+              {query.trim() ? 'Try a different name, or clear the search.' : 'Try a different filter, or choose “All statuses”.'}
+            </AppText>
+          </View>
+        ) : wide ? (
           <View>
             {/* header row */}
             <Row style={{ paddingHorizontal: theme.spacing.lg, paddingVertical: 10, backgroundColor: c.sunken }}>
@@ -130,9 +141,11 @@ export default function Caseload() {
           </View>
         )}
       </Card>
-      <AppText variant="small" color="ink3" style={{ marginTop: 12 }}>
-        Click any client to open their patterns · Leah C. opens the safety-review state.
-      </AppText>
+      {filtered.length > 0 ? (
+        <AppText variant="small" color="ink3" style={{ marginTop: 12 }}>
+          Click any client to open their patterns · Leah C. opens the safety-review state.
+        </AppText>
+      ) : null}
     </Screen>
   );
 }
@@ -147,9 +160,17 @@ const STATUS_TONE = { active: 'brand', intake: 'draft', 'wind-down': 'neutral' }
 function ClientRowWide({ client, first, onPress }: { client: Client; first: boolean; onPress: () => void }) {
   const theme = useTheme();
   const c = theme.colors;
+  // The Outreach icons are their own buttons, so they must NOT sit inside the row's button, or the DOM
+  // nests <button> in <button> (N3). The pressable wraps the navigating cells (flex 9.1); Outreach is a
+  // sibling column (flex 1.2) — same proportions as before, no invalid nesting.
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => ({ backgroundColor: pressed ? c.sunken : 'transparent' })}>
-      <Row style={{ paddingHorizontal: theme.spacing.lg, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.lineSoft }}>
+    <Row style={{ paddingHorizontal: theme.spacing.lg, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.lineSoft, alignItems: 'center' }}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${client.name}’s patterns`}
+        style={({ pressed }) => ({ flex: 9.1, flexDirection: 'row', alignItems: 'center', backgroundColor: pressed ? c.sunken : 'transparent' })}
+      >
         <Row gap={12} style={{ flex: 2.4 }}>
           <Avatar initials={client.initials} size={38} tone={client.risk === 'acute' ? 'risk' : 'brand'} />
           <View>
@@ -169,7 +190,7 @@ function ClientRowWide({ client, first, onPress }: { client: Client; first: bool
           <Sparkline values={client.sparkline} />
         </View>
         <AppText variant="bodyStrong" style={{ flex: 0.8, fontFamily: theme.type.numeric.fontFamily }}>
-          {client.latestScore}
+          {client.latestScore ?? '—'}
         </AppText>
         <AppText variant="body" tint={client.followUpDue ? c.caution : c.ink2} style={{ flex: 1.3 }}>
           {client.followUp}
@@ -177,11 +198,11 @@ function ClientRowWide({ client, first, onPress }: { client: Client; first: bool
         <View style={{ flex: 1 }}>
           <RiskDot level={client.risk} />
         </View>
-        <View style={{ flex: 1.2 }}>
-          <Outreach client={client} />
-        </View>
-      </Row>
-    </Pressable>
+      </Pressable>
+      <View style={{ flex: 1.2 }}>
+        <Outreach client={client} />
+      </View>
+    </Row>
   );
 }
 
@@ -198,7 +219,8 @@ const PREGREYED: Record<string, OutreachKind> = { amara: 'thanks', marcus: 'foll
 function buildMailto(client: Client, kind: OutreachKind): string {
   const first = client.name.split(' ')[0];
   const to = `${first.toLowerCase()}@clients.example`;
-  const sig = '\n\nWarm regards,\nDr. A. Okafor';
+  // Sign the outreach with the actual signed-in clinician, not a hardcoded name (F8).
+  const sig = `\n\nWarm regards,\n${authService.getClinicianName() ?? 'Your counselor'}`;
   const templates: Record<OutreachKind, { subject: string; body: string }> = {
     followup: {
       subject: `Following up after our session`,
@@ -267,9 +289,15 @@ function Outreach({ client }: { client: Client }) {
 function ClientRowNarrow({ client, first, onPress }: { client: Client; first: boolean; onPress: () => void }) {
   const theme = useTheme();
   const c = theme.colors;
+  // Outreach stays OUTSIDE the navigating pressable so its buttons don't nest inside the row button (N3).
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => ({ backgroundColor: pressed ? c.sunken : 'transparent' })}>
-      <Row style={{ justifyContent: 'space-between', paddingHorizontal: theme.spacing.lg, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.lineSoft }}>
+    <Row style={{ justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: theme.spacing.lg, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.lineSoft }}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${client.name}’s patterns`}
+        style={({ pressed }) => ({ flex: 1, backgroundColor: pressed ? c.sunken : 'transparent' })}
+      >
         <Row gap={12} style={{ flex: 1 }}>
           <Avatar initials={client.initials} size={40} tone={client.risk === 'acute' ? 'risk' : 'brand'} />
           <View style={{ flex: 1 }}>
@@ -278,17 +306,19 @@ function ClientRowNarrow({ client, first, onPress }: { client: Client; first: bo
               <Badge label={cap(client.status)} tone={STATUS_TONE[client.status]} />
             </Row>
             <AppText variant="small" color="ink3" style={{ marginTop: 2 }}>
-              {client.lastSessionLabel} · latest {client.latestScore}
+              {client.lastSessionLabel} · latest {client.latestScore ?? '—'}
             </AppText>
             <Row gap={12} style={{ marginTop: 8, alignItems: 'center' }}>
               <Sparkline values={client.sparkline} width={70} />
               <RiskDot level={client.risk} />
-              <Outreach client={client} />
             </Row>
           </View>
         </Row>
-      </Row>
-    </Pressable>
+      </Pressable>
+      <View style={{ marginLeft: 12 }}>
+        <Outreach client={client} />
+      </View>
+    </Row>
   );
 }
 

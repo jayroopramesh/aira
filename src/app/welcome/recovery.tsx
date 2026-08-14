@@ -39,20 +39,37 @@ function fileBody(words: string[]) {
 export default function WelcomeRecovery() {
   const router = useRouter();
   const words = authService.getRecoveryCode();
+  // Revisiting this screen after setup shows no code — Copy/Save must be inert then, or "Save as file"
+  // would download an EMPTY aira-recovery-code.txt over the user's real one (N4).
+  const hasCode = words.length > 0;
+  // Copy needs navigator.clipboard and Save needs a document to trigger a download — neither exists
+  // on native, so both affordances are DISABLED there with honest guidance (write the words down)
+  // rather than sitting tappable and silently doing nothing for a code shown exactly once.
+  const canUseWebTools = Platform.OS === 'web';
   const [revealed, setRevealed] = useState(false);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const [savedFile, setSavedFile] = useState(false);
 
   const copy = () => {
-    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(plainCode(words)).catch(() => {});
+    if (!hasCode) return;
+    // The honesty rule has NO platform exceptions (F12): only ever confirm "Copied" after a real
+    // successful clipboard write. A native mock with no real write, or a web build without a clipboard
+    // API (insecure context / older webview), must NOT claim success for a code shown exactly once —
+    // the user would navigate on having lost it. Use "Save as file" instead when no write is possible.
+    const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    if (clip) {
+      clip
+        .writeText(plainCode(words))
+        .then(() => setCopied(true))
+        .catch(() => setCopied(false));
     }
-    setCopied(true);
   };
 
   const save = () => {
-    // Web: a real download of the code as a text file. Native: visual confirmation (mock).
+    if (!hasCode) return;
+    // Only confirm "Saved" after a real download was triggered (F12 — no platform exceptions):
+    // on native no file is written, so claiming success would lose a code shown exactly once.
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const blob = new Blob([fileBody(words)], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
@@ -61,8 +78,8 @@ export default function WelcomeRecovery() {
       a.download = 'aira-recovery-code.txt';
       a.click();
       URL.revokeObjectURL(url);
+      setSavedFile(true);
     }
-    setSavedFile(true);
   };
 
   const enter = () => {
@@ -168,19 +185,26 @@ export default function WelcomeRecovery() {
         ) : null}
       </View>
 
-      {/* Copy / Save affordances */}
+      {/* Copy / Save affordances — inert when there is no code to give (N4), disabled on native. */}
       <Row gap={10} style={{ justifyContent: 'center', marginTop: 14 }}>
         <RecTool
           icon={<CopyIcon size={14} color={MINT} />}
           label={copied ? R.recoveryCopied : R.recoveryCopy}
           onPress={copy}
+          disabled={!hasCode || !canUseWebTools}
         />
         <RecTool
           icon={<DownloadIcon size={14} color={MINT} />}
           label={savedFile ? R.recoverySaved : R.recoverySave}
           onPress={save}
+          disabled={!hasCode || !canUseWebTools}
         />
       </Row>
+      {!canUseWebTools ? (
+        <AppText variant="small" tint="rgba(234,247,243,0.9)" center style={{ marginTop: 10, maxWidth: 360, lineHeight: 18 }}>
+          Copy and Save as file aren’t available on this device yet — write the 12 words down before continuing.
+        </AppText>
+      ) : null}
 
       {/* Stern-but-truthful warning */}
       <Row gap={9} style={{ alignItems: 'flex-start', marginTop: 20, maxWidth: 360 }}>
@@ -235,11 +259,13 @@ export default function WelcomeRecovery() {
   );
 }
 
-function RecTool({ icon, label, onPress }: { icon: React.ReactNode; label: string; onPress: () => void }) {
+function RecTool({ icon, label, onPress, disabled }: { icon: React.ReactNode; label: string; onPress: () => void; disabled?: boolean }) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
+      accessibilityState={{ disabled: !!disabled }}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
@@ -247,7 +273,8 @@ function RecTool({ icon, label, onPress }: { icon: React.ReactNode; label: strin
         paddingVertical: 9,
         paddingHorizontal: 14,
         borderRadius: 999,
-        backgroundColor: pressed ? 'rgba(234,247,243,0.18)' : 'rgba(234,247,243,0.1)',
+        opacity: disabled ? 0.4 : 1,
+        backgroundColor: pressed && !disabled ? 'rgba(234,247,243,0.18)' : 'rgba(234,247,243,0.1)',
       })}
     >
       {icon}

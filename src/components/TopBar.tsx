@@ -46,19 +46,37 @@ export function TopBar({
       }}
     >
       <Row style={{ justifyContent: 'space-between', maxWidth: 1120, width: '100%', alignSelf: 'center' }}>
-        <Row gap={9}>
-          <MascotMood mood={mood} size={30} />
-          <AppText variant="h2" tint={ink} style={{ fontSize: 21 }}>
-            Aira
-          </AppText>
-        </Row>
+        {/* Wordmark + mascot navigate to the day board from anywhere in the app (C1). On the pre-auth
+            chrome (transparent) there is no home to go to, so it stays static there. */}
+        {transparent ? (
+          <Row gap={9}>
+            <MascotMood mood={mood} size={30} />
+            <AppText variant="h2" tint={ink} style={{ fontSize: 21 }}>
+              Aira
+            </AppText>
+          </Row>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Aira — go to your day board"
+            onPress={() => router.navigate('/(app)/today')}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+          >
+            <Row gap={9}>
+              <MascotMood mood={mood} size={30} />
+              <AppText variant="h2" tint={ink} style={{ fontSize: 21 }}>
+                Aira
+              </AppText>
+            </Row>
+          </Pressable>
+        )}
 
         <Row gap={10}>
           {/* Escalate — calm clay pill, standing on every screen. */}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Escalate — open calm options"
-            onPress={escalate.open}
+            onPress={() => escalate.open()}
             style={({ pressed }) => ({
               flexDirection: 'row',
               alignItems: 'center',

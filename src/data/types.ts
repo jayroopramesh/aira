@@ -75,6 +75,12 @@ export type DraftNote = {
   status: 'draft' | 'signed';
   signedBy?: string;
   signedAt?: string;
+  /**
+   * Structured caseload risk tier the summarizer assigns for this session (F4). The UI maps this
+   * DIRECTLY onto Client.risk — never re-derived by sniffing the free-text rows — so an unseen
+   * phrasing of disclosed ideation can't be under-rated. Absent (mock/older notes) → derived.
+   */
+  riskLevel?: RiskLevel;
   sections: NoteSection[];
   measures: { measure: string; today: string; prev: string; band: string }[];
   reviewCodes: ReviewCode[];
@@ -87,7 +93,7 @@ export type Client = {
   name: string;
   initials: string;
   tokenId: string; // re-identified locally, e.g. "4c9-AK"
-  age: number;
+  age: number | null; // null before any intake age is recorded (rendered as "—", never a fabricated 0)
   pronouns?: string;
   status: ClientStatus;
   risk: RiskLevel;
@@ -97,8 +103,8 @@ export type Client = {
   lastSessionLabel: string;
   followUp: string;
   followUpDue?: boolean;
-  latestScore: number; // primary measure latest (PHQ-9)
-  sparkline: number[]; // PHQ-9 trend for the caseload sparkline
+  latestScore: number | null; // primary measure latest (PHQ-9); null when never screened (rendered as "—")
+  sparkline: number[]; // PHQ-9 trend for the caseload sparkline (empty when no readings)
   focusTags: string[];
   summaryLine: string; // one-line for cards
   // Detail:

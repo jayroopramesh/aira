@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { View } from 'react-native';
 import { BackLink, PageHeader, Screen } from '../../../components/Screen';
+import { ClientNotFound } from '../../../components/ClientNotFound';
 import { Highlights } from '../../../components/Highlights';
 import { ArrowRight } from '../../../components/icons';
 import { Button, Card, Eyebrow } from '../../../components/ui';
@@ -19,7 +20,7 @@ export default function PrepReminder() {
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
   const client = useClient(clientId);
 
-  if (!client) return null;
+  if (!client) return <ClientNotFound />;
   const lastDate = client.lastPlan[0]?.source.match(/\d+ \w+/)?.[0] ?? 'the last session';
 
   return (

@@ -16,20 +16,11 @@ import {
 } from '../../components/auth';
 import { MascotMood } from '../../components/mascotMoods';
 import { KeyIcon, LockIcon, ShieldIcon } from '../../components/icons';
-import { hasSupabase } from '../../config/env';
 import { authService } from '../../services/auth';
 import { AppText, Row } from '../../components/ui';
 import { recoveryStrings as R } from '../../strings/recovery';
 
-const CLINICIAN = 'Dr. Okafor';
-
 type Phase = 'login' | 'wrong' | 'decrypting';
-
-// With real accounts (Supabase), sign-in uses an email; defaults follow the create-account form so
-// the guided create → recovery → login walkthrough succeeds in one pass. With no keys, the mock
-// demo defaults apply.
-const DEFAULT_USERNAME = hasSupabase ? 'a.okafor@clinic.ae' : 'dr.okafor';
-const DEFAULT_PASSWORD = hasSupabase ? 'seafoam-harbor-42' : 'clinicvault';
 
 /**
  * Unlock — username + password (round-2 change #1, replacing the passcode keypad). A calm
@@ -39,8 +30,26 @@ const DEFAULT_PASSWORD = hasSupabase ? 'seafoam-harbor-42' : 'clinicvault';
 export default function UnlockScreen() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('login');
-  const [username, setUsername] = useState(() => authService.getKnownEmail() ?? DEFAULT_USERNAME);
-  const [password, setPassword] = useState(DEFAULT_PASSWORD);
+  // Prefill ONLY the account's own (persisted) email, never a demo identity, and never a password —
+  // a returning user must not be handed someone else's credentials (F17). knownEmail is persisted at
+  // account creation / sign-in and hydrated on boot, so it's the real user's email after a reload.
+  const [username, setUsername] = useState(() => authService.getKnownEmail() ?? '');
+  const [password, setPassword] = useState('');
+  // Hydration from the device store is async, so the first render can precede it; once it resolves,
+  // land the persisted email (only if the field is still empty) and re-render for the greeting name.
+  const [, setAuthHydrated] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    authService.whenHydrated().then(() => {
+      if (!alive) return;
+      setAuthHydrated(true);
+      const known = authService.getKnownEmail();
+      if (known) setUsername((prev) => prev || known);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState('');
   const [recoveryError, setRecoveryError] = useState(false);
@@ -70,7 +79,7 @@ export default function UnlockScreen() {
     <AuthScaffold>
       <MascotMood mood={wrong ? 'empathetic' : 'encouraging'} size={124} float />
       <View style={{ height: 16 }} />
-      <AuthHello>{wrong ? R.wrongEyebrow : R.loginEyebrow(CLINICIAN)}</AuthHello>
+      <AuthHello>{wrong ? R.wrongEyebrow : R.loginEyebrow(authService.getClinicianName() ?? 'Doctor')}</AuthHello>
       <AuthTitle>{wrong ? R.wrongTitle : R.loginTitle}</AuthTitle>
       <AuthLede>{wrong ? R.wrongSubtitle : R.loginSubtitle}</AuthLede>
 

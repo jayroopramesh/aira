@@ -3,15 +3,24 @@ import React, { useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowRight, CheckIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
-import { PageHeader, Screen } from '../../../components/Screen';
+import { BackLink, PageHeader, Screen } from '../../../components/Screen';
 import { AppText, Badge, Button, Card, Divider, Eyebrow, Row, TrustPill } from '../../../components/ui';
 import { ZeroState } from '../../../components/ZeroState';
-import { useClient, useDraftNote } from '../../../data/DataProvider';
+import { hasGroq } from '../../../config/env';
+import { useClient, useClientNotes, useData, useDraftNote } from '../../../data/DataProvider';
 import { DraftNote, NoteSection, PrepItem } from '../../../data/types';
+import { authService } from '../../../services/auth';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 const TABS = ['Note', 'Transcript', 'Context', '+ Screening tools'] as const;
 type Tab = (typeof TABS)[number];
+
+/** "13 Aug 14:18" — the real moment the clinician signed (F8), not a hardcoded timestamp. */
+function formatSignedAt(d: Date): string {
+  const date = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${date} ${time}`;
+}
 
 export default function ReviewNote() {
   const theme = useTheme();
@@ -20,12 +29,35 @@ export default function ReviewNote() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const wide = width >= 1040;
-  const { clientId } = useLocalSearchParams<{ clientId: string }>();
-  const draft = useDraftNote(clientId);
+  const { clientId, note: noteParam } = useLocalSearchParams<{ clientId: string; note?: string }>();
+  // Up to 3 notes are retained per client (C4); `note` selects which retained note to review (newest = 0).
+  const notes = useClientNotes(clientId);
+  const parsedIndex = noteParam ? Number(noteParam) : 0;
+  const noteIndex = Number.isInteger(parsedIndex) && parsedIndex >= 0 && parsedIndex < notes.length ? parsedIndex : 0;
+  const draft = useDraftNote(clientId, noteIndex);
   const client = useClient(clientId);
+  const { signNote } = useData();
 
-  const [tab, setTab] = useState<Tab>('Note');
-  const [signed, setSigned] = useState(false);
+  // The C4 rail switches notes via router.replace(...&note=i) without remounting, and notes rotate
+  // newest-first, so index alone can't identify the reviewed note. Per-note UI state (the tab here,
+  // and the section editors / prescriptions rail via the React key below) is tied to this identity
+  // so one note's clinical content can never render under another note's label.
+  const noteKey = `${clientId ?? ''}::${draft?.sessionLabel ?? noteIndex}`;
+  const [tabState, setTabState] = useState<{ key: string; tab: Tab }>({ key: noteKey, tab: 'Note' });
+  const tab = tabState.key === noteKey ? tabState.tab : 'Note';
+  const setTab = (t: Tab) => setTabState({ key: noteKey, tab: t });
+  // Sign-off attribution (F8): the clinician who actually signed in, and the moment they signed —
+  // this is the legal attestation line, so neither may be hardcoded. The sign-off lives ON the
+  // stored note (status/signedBy/signedAt persisted through the vault seam), so each note renders
+  // its OWN status — switching or rotating notes can never carry an attestation across, and a
+  // completed sign-off survives navigation and reload.
+  const clinician = authService.getClinicianName() ?? 'You';
+  const signed = draft?.status === 'signed';
+  const signedAt = (signed ? draft?.signedAt : null) ?? null;
+  const signedByName = (signed ? draft?.signedBy : null) ?? clinician;
+  const sign = () => {
+    if (clientId) signNote(clientId, noteIndex, clinician, formatSignedAt(new Date()));
+  };
 
   if (!draft) {
     return (
@@ -41,11 +73,14 @@ export default function ReviewNote() {
     );
   }
 
-  // A multi-session (sample) client shows the session sidebar; a freshly-captured one doesn't.
-  const showSessions = !!client && client.sessionNumber > 1;
+  // Show the session sidebar when there is more than one retained note to switch between (C4).
+  const showSessions = notes.length > 1;
 
-  const rail = <ReviewRail draft={draft} signed={signed} onSign={() => setSigned(true)} />;
-  const sessions = <SessionList name={client?.name ?? 'this client'} signed={signed} />;
+  const rail = <ReviewRail key={noteKey} draft={draft} signed={signed} onSign={sign} clinician={signedByName} signedAt={signedAt} />;
+  const sessions =
+    client && showSessions ? (
+      <SessionList clientId={client.id} clientName={client.name} notes={notes} activeIndex={noteIndex} clinician={clinician} />
+    ) : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: c.surface }}>
@@ -60,14 +95,20 @@ export default function ReviewNote() {
 
           {/* Center: note */}
           <View style={{ flex: 1, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, minWidth: 0 }}>
+            {/* A note is now openable from the client file and session history, so review needs its
+                own way back — the tab bar won't re-navigate the tab it is already on. */}
+            <BackLink label="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace('/(app)/today'))} />
             <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
               <Row gap={10} style={{ flexWrap: 'wrap' }}>
                 <AppText variant="h1" style={{ fontSize: 23 }}>
                   {draft.sessionLabel}
                 </AppText>
-                {signed ? <SignedChip /> : <Badge label="Draft · review" tone="draft" />}
+                {signed ? <SignedChip clinician={signedByName} signedAt={signedAt} /> : <Badge label="Draft · review" tone="draft" />}
               </Row>
-              <TrustPill label="De-identified on this device" icon={<ShieldIcon size={13} color={c.brand} />} />
+              {/* Honest scope (F9): the DRAFT is device-local; there is no de-identification hop in demo
+                  mode, so this must not claim "de-identified". The cloud transcription hop is disclosed
+                  by the demo banner and the audio-trust note below. */}
+              <TrustPill label="Draft stays on this device" icon={<ShieldIcon size={13} color={c.brand} />} />
             </Row>
             <AppText variant="small" color="ink3" style={{ marginTop: 8 }}>
               {draft.sourceLine}
@@ -91,9 +132,17 @@ export default function ReviewNote() {
 
             <View style={{ height: theme.spacing.lg }} />
 
-            {tab === 'Note' ? <NotePane draft={draft} signed={signed} /> : <OtherPane tab={tab} />}
+            {tab === 'Note' ? <NotePane key={noteKey} draft={draft} signed={signed} /> : <OtherPane tab={tab} />}
 
-            {/* On phone, the rail (prescriptions / codes / sign-off) stacks below the note. */}
+            {/* On phone, the note-switcher and the rail (prescriptions / codes / sign-off) stack
+                below the note — earlier retained notes must stay reachable on narrow too (C4). */}
+            {!wide && sessions ? (
+              <View style={{ marginTop: theme.spacing.xl }}>
+                <Divider />
+                <View style={{ height: theme.spacing.lg }} />
+                {sessions}
+              </View>
+            ) : null}
             {!wide ? (
               <View style={{ marginTop: theme.spacing.xl }}>
                 <Divider />
@@ -137,7 +186,7 @@ export default function ReviewNote() {
             </Row>
             <Row gap={10}>
               <Button title="Edit note" variant="secondary" onPress={() => {}} />
-              <Button title="Sign off" variant="primary" onPress={() => setSigned(true)} />
+              <Button title="Sign off" variant="primary" onPress={sign} />
             </Row>
           </Row>
         </View>
@@ -442,8 +491,9 @@ function MeasureTable({ measures }: { measures: DraftNote['measures'] }) {
 
 function OtherPane({ tab }: { tab: Tab }) {
   const copy: Record<string, string> = {
-    Transcript:
-      'The de-identified transcript lives here. Identifiers were tokenized on-device before drafting and the audio is deleted after transcription — only this reviewed text remains.',
+    Transcript: hasGroq
+      ? 'The transcript lives here on this device. In demo mode the audio was sent to the cloud (Groq) to transcribe; the audio is deleted afterwards and only this reviewed text remains — there is no on-device de-identification hop in demo mode.'
+      : 'This is a sample transcript — the demo services aren’t configured, so nothing was sent anywhere and no de-identification step runs. It stays on this device.',
     Context:
       'Prior-session context Aira grounded the draft against: last plan, latest measures, and standing safety items. Companion-app journal entries are shown separately and never blended with clinical scores.',
     '+ Screening tools':
@@ -460,7 +510,19 @@ function OtherPane({ tab }: { tab: Tab }) {
 
 /* ------------------------------------------------------------------ rail --- */
 
-function ReviewRail({ draft, signed, onSign }: { draft: DraftNote; signed: boolean; onSign: () => void }) {
+function ReviewRail({
+  draft,
+  signed,
+  onSign,
+  clinician,
+  signedAt,
+}: {
+  draft: DraftNote;
+  signed: boolean;
+  onSign: () => void;
+  clinician: string;
+  signedAt: string | null;
+}) {
   const theme = useTheme();
   return (
     <View style={{ gap: theme.spacing.lg }}>
@@ -469,7 +531,7 @@ function ReviewRail({ draft, signed, onSign }: { draft: DraftNote; signed: boole
       <ReviewCodes draft={draft} />
       <Divider />
       {signed ? <AudioTrust /> : null}
-      <SignOff signed={signed} onSign={onSign} />
+      <SignOff signed={signed} onSign={onSign} clinician={clinician} signedAt={signedAt} />
     </View>
   );
 }
@@ -646,9 +708,15 @@ function AudioTrust() {
         </AppText>
       </Row>
       <AppText variant="small" color="ink2" style={{ marginTop: 8, lineHeight: 18 }}>
+        {/* Honest audio provenance (F9): in demo mode the audio was sent to the cloud to transcribe,
+            so we must not claim it "never left this device". */}
         {kept
-          ? 'You chose to keep this recording. It stays encrypted on this device and never leaves it. Keeping the audio is what makes replay-with-notes possible for this session.'
-          : 'The recording never left this device, and it’s now gone — deletion is the default after every session. Only the de-identified draft you reviewed remains.'}
+          ? hasGroq
+            ? 'You chose to keep this recording. In demo mode a copy was sent to the cloud (Groq) to transcribe; the copy you kept stays on this device and makes replay-with-notes possible for this session.'
+            : 'You chose to keep this recording. It stays on this device and never leaves it. Keeping the audio is what makes replay-with-notes possible for this session.'
+          : hasGroq
+            ? 'In demo mode this recording was sent to the cloud (Groq) to transcribe, then deleted — deletion is the default after every session. Only the draft you reviewed remains.'
+            : 'The recording never left this device, and it’s now gone — deletion is the default after every session. Only the draft you reviewed remains.'}
       </AppText>
 
       <Pressable
@@ -693,7 +761,7 @@ function AudioTrust() {
   );
 }
 
-function SignOff({ signed, onSign }: { signed: boolean; onSign: () => void }) {
+function SignOff({ signed, onSign, clinician, signedAt }: { signed: boolean; onSign: () => void; clinician: string; signedAt: string | null }) {
   const theme = useTheme();
   const c = theme.colors;
   if (signed) {
@@ -703,7 +771,7 @@ function SignOff({ signed, onSign }: { signed: boolean; onSign: () => void }) {
         <Row gap={8} style={{ marginTop: 8 }}>
           <CheckIcon size={16} color={c.positive} />
           <AppText variant="body" color="ink2" style={{ flex: 1 }}>
-            Signed by Dr. Okafor · 12 Aug 11:18 · read-only
+            Signed by {clinician}{signedAt ? ` · ${signedAt}` : ''} · read-only
           </AppText>
         </Row>
       </Card>
@@ -724,67 +792,84 @@ function SignOff({ signed, onSign }: { signed: boolean; onSign: () => void }) {
   );
 }
 
-function SessionList({ name, signed = false }: { name: string; signed?: boolean }) {
+/**
+ * The session rail — the client's OWN retained notes (up to 3, newest first — C4), never a hardcoded
+ * fixture list (N1). Each entry switches the review pane to that note, so an earlier session's full
+ * note text stays reachable instead of being overwritten. Every row — active or not — reads its own
+ * persisted status and signer, so an attestation is never attributed to the wrong clinician.
+ */
+function SessionList({
+  clientId,
+  clientName,
+  notes,
+  activeIndex,
+  clinician,
+}: {
+  clientId: string;
+  clientName: string;
+  notes: DraftNote[];
+  activeIndex: number;
+  clinician: string;
+}) {
   const theme = useTheme();
   const c = theme.colors;
-  const rows = [
-    {
-      label: 'Session 5 · today',
-      time: '10:30',
-      sub: 'Subjective, objective, risk check, plan…',
-      status: signed ? 'Signed · you' : 'Draft · review',
-      active: true,
-      tone: (signed ? 'positive' : 'draft') as 'positive' | 'draft',
-    },
-    { label: 'Session 4', time: '5 Apr', sub: 'Sleep hygiene focus; PHQ-9 11.', status: 'Signed · you', active: false, tone: 'positive' as const },
-    { label: 'Session 3', time: '8 Mar', sub: 'First-gen pressure; values action.', status: 'Signed · you', active: false, tone: 'positive' as const },
-    { label: 'Session 2', time: '9 Feb', sub: 'Passive ideation screened — no plan.', status: 'Signed · you', active: false, tone: 'positive' as const },
-    { label: 'Intake', time: '12 Jan', sub: 'PHQ-9 18 · GAD-7 14.', status: 'Signed · you', active: false, tone: 'positive' as const },
-  ];
+  const router = useRouter();
+
   return (
     <View>
-      <Eyebrow>Sessions · {name}</Eyebrow>
+      <Eyebrow>Sessions · {clientName}</Eyebrow>
       <View style={{ height: 12 }} />
-      {rows.map((r) => (
-        <View
-          key={r.label}
-          style={{
-            backgroundColor: r.active ? c.brandBg : 'transparent',
-            borderRadius: theme.radii.sm,
-            padding: 12,
-            marginBottom: 6,
-            borderLeftWidth: r.active ? 3 : 0,
-            borderLeftColor: c.brand,
-          }}
-        >
-          <Row style={{ justifyContent: 'space-between' }}>
+      {notes.map((n, i) => {
+        const active = i === activeIndex;
+        const status: { label: string; tone: 'positive' | 'draft' | 'neutral' } =
+          n.status === 'signed'
+            ? { label: `Signed · ${!n.signedBy || n.signedBy === clinician ? 'you' : n.signedBy}`, tone: 'positive' }
+            : active
+              ? { label: 'Draft · review', tone: 'draft' }
+              : { label: 'Earlier note', tone: 'neutral' };
+        return (
+          <Pressable
+            key={i}
+            onPress={() => router.replace(`/(app)/session/review?clientId=${encodeURIComponent(clientId)}&note=${i}`)}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${n.sessionLabel}`}
+            accessibilityState={{ selected: active }}
+            style={{
+              backgroundColor: active ? c.brandBg : 'transparent',
+              borderRadius: theme.radii.sm,
+              padding: 12,
+              marginBottom: 6,
+              borderLeftWidth: active ? 3 : 0,
+              borderLeftColor: c.brand,
+            }}
+          >
             <AppText variant="bodyStrong" style={{ fontSize: 14 }}>
-              {r.label}
+              {n.sessionLabel}
             </AppText>
-            <AppText variant="small" color="ink3" style={{ fontSize: 11 }}>
-              {r.time}
+            <AppText variant="small" color="ink3" numberOfLines={1} style={{ marginTop: 4 }}>
+              {n.sourceLine}
             </AppText>
-          </Row>
-          <AppText variant="small" color="ink3" numberOfLines={1} style={{ marginTop: 4 }}>
-            {r.sub}
-          </AppText>
-          <View style={{ marginTop: 8 }}>
-            <Badge label={r.status} tone={r.tone} />
-          </View>
-        </View>
-      ))}
+            <View style={{ marginTop: 8 }}>
+              <Badge label={status.label} tone={status.tone} />
+            </View>
+          </Pressable>
+        );
+      })}
+      <AppText variant="small" color="ink3" style={{ marginTop: 2, fontSize: 11 }}>
+        Up to 3 recent notes are kept per client.
+      </AppText>
     </View>
   );
 }
 
-function SignedChip() {
+function SignedChip({ clinician, signedAt }: { clinician: string; signedAt: string | null }) {
   const theme = useTheme();
   const c = theme.colors;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: c.positiveBg, borderRadius: theme.radii.pill, paddingVertical: 4, paddingHorizontal: 10 }}>
       <CheckIcon size={13} color={c.positive} />
       <AppText variant="bodyStrong" tint={c.positive} style={{ fontSize: 12 }}>
-        Signed · Dr. Okafor · 12 Aug 11:18
+        Signed · {clinician}{signedAt ? ` · ${signedAt}` : ''}
       </AppText>
     </View>
   );

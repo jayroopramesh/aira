@@ -2,21 +2,56 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 import { BackLink, Screen } from '../../../components/Screen';
+import { ClientNotFound } from '../../../components/ClientNotFound';
 import { useEscalate } from '../../../components/Escalate';
 import { BandedChart, DotStrip, ScaleChart } from '../../../components/charts';
 import { ArrowRight, PhoneIcon, ShieldIcon } from '../../../components/icons';
 import { AppText, Avatar, Button, Card, Chip, Eyebrow, Row, RiskDot, TrustPill } from '../../../components/ui';
 import { AMARA_SCALES } from '../../../data/scales';
-import { useClient } from '../../../data/DataProvider';
+import { useClient, useClientNotes } from '../../../data/DataProvider';
 import { Client } from '../../../data/types';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 export default function ClientPatterns() {
   const { clientId, risk } = useLocalSearchParams<{ clientId: string; risk?: string }>();
   const client = useClient(clientId);
-  if (!client) return null;
+  // The client route can outlive its client (e.g. caseload cleared while mounted) — show an honest
+  // not-found with a way back, never a blank page (N2).
+  if (!client) return <ClientNotFound />;
   const showRisk = risk === '1' || client.risk === 'acute';
   return showRisk && client.safety ? <RiskReview clientId={client.id} /> : <PatternsView clientId={client.id} />;
+}
+
+/**
+ * The doors out of a client's file: their session history, and — when notes are actually retained —
+ * the note itself. Without the note door, a captured note and its sign-off are only reachable in the
+ * moments right after a capture (F5 / C4), so the client file must offer a way back in.
+ */
+function ClientFileDoors({ clientId }: { clientId: string }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const router = useRouter();
+  const notes = useClientNotes(clientId);
+
+  const door = (label: string, onPress: () => void) => (
+    <Pressable onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}>
+      <Card elevation="sm" padded={false} radius="sm" style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
+        <Row gap={8}>
+          <AppText variant="bodyStrong">{label}</AppText>
+          <ArrowRight size={16} color={c.ink} />
+        </Row>
+      </Card>
+    </Pressable>
+  );
+
+  return (
+    <Row gap={theme.spacing.sm} style={{ flexWrap: 'wrap' }}>
+      {notes.length
+        ? door('Open session note', () => router.push(`/(app)/session/review?clientId=${encodeURIComponent(clientId)}`))
+        : null}
+      {door('Session history', () => router.push(`/(app)/patterns/history?clientId=${encodeURIComponent(clientId)}`))}
+    </Row>
+  );
 }
 
 /**
@@ -30,14 +65,19 @@ function NoReadingsYet({ client }: { client: Client }) {
   return (
     <Screen>
       <BackLink label="Back to caseload" onPress={() => router.replace('/(app)/patterns')} />
-      <Row gap={14} style={{ marginTop: theme.spacing.sm }}>
-        <Avatar initials={client.initials} size={52} />
-        <View style={{ flex: 1 }}>
-          <AppText variant="h1">{client.name}</AppText>
-          <AppText variant="small" color="ink3" style={{ marginTop: 4 }}>
-            ID {client.tokenId} · client since {client.clientSince}
-          </AppText>
-        </View>
+      <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginTop: theme.spacing.sm }}>
+        <Row gap={14} style={{ flex: 1, minWidth: 220 }}>
+          <Avatar initials={client.initials} size={52} />
+          <View style={{ flex: 1 }}>
+            <AppText variant="h1">{client.name}</AppText>
+            <AppText variant="small" color="ink3" style={{ marginTop: 4 }}>
+              ID {client.tokenId} · client since {client.clientSince}
+            </AppText>
+          </View>
+        </Row>
+        {/* A freshly-captured client's signed note is only reachable through here (F5) — the sparse
+            state must still surface the note and history doors, not just the full patterns view. */}
+        <ClientFileDoors clientId={client.id} />
       </Row>
       <View style={{ height: theme.spacing.lg }} />
       <Card tone="sunken" elevation="none" radius="lg" style={{ backgroundColor: c.brandBg, borderColor: c.brandBd }}>
@@ -88,7 +128,7 @@ function PatternsView({ clientId }: { clientId: string }) {
 
   const headline =
     clientId === 'amara'
-      ? 'Amara’s depression has more than halved since January — PHQ-9 fell from 18 to 9 across four visits — with the steepest drop after sleep became the focus. Anxiety is following the same path.'
+      ? 'Amara’s depression has halved since January — PHQ-9 fell from 18 to 9 across nine readings — with the steepest drop after sleep became the focus. Anxiety is following the same path.'
       : `${client.name.split(' ')[0]}’s PHQ-9 latest reading is ${phq.latest}${phq.deltaSinceStart ? `, ${phq.deltaSinceStart < 0 ? 'down' : 'up'} ${Math.abs(phq.deltaSinceStart)} since intake` : ''}.`;
 
   return (
@@ -102,20 +142,13 @@ function PatternsView({ clientId }: { clientId: string }) {
             <AppText variant="h1">{client.name}</AppText>
             <Row gap={8} style={{ marginTop: 4, flexWrap: 'wrap' }}>
               <AppText variant="small" color="ink3">
-                ID {client.tokenId} · {client.age} · client since {client.clientSince}
+                ID {client.tokenId} · {client.age ?? '—'} · client since {client.clientSince}
               </AppText>
               <RiskDot level={client.risk} />
             </Row>
           </View>
         </Row>
-        <Pressable onPress={() => router.push(`/(app)/patterns/history?clientId=${client.id}`)} style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}>
-          <Card elevation="sm" padded={false} radius="sm" style={{ paddingVertical: 10, paddingHorizontal: 16 }}>
-            <Row gap={8}>
-              <AppText variant="bodyStrong">Session history</AppText>
-              <ArrowRight size={16} color={c.ink} />
-            </Row>
-          </Card>
-        </Pressable>
+        <ClientFileDoors clientId={client.id} />
       </Row>
 
       {/* Plain-language headline FIRST — before any chart (stoic. pattern). */}
@@ -255,7 +288,7 @@ function RiskReview({ clientId }: { clientId: string }) {
           <AppText variant="h1">{client.name}</AppText>
           <Row gap={8} style={{ marginTop: 4, flexWrap: 'wrap' }}>
             <AppText variant="small" color="ink3">
-              ID {client.tokenId} · {client.age} · Session {client.sessionNumber} · today 1:00
+              ID {client.tokenId} · {client.age ?? '—'} · Session {client.sessionNumber} · today 1:00
             </AppText>
             <TrustPill label="Re-identified locally" icon={<ShieldIcon size={12} color={c.brand} />} />
           </Row>
@@ -265,9 +298,11 @@ function RiskReview({ clientId }: { clientId: string }) {
       {/* Acute banner — clay, calm, the literal word "review". Never alarm-red, never modal. */}
       <Card tone="elevated" elevation="none" radius="lg" style={{ marginTop: theme.spacing.lg, backgroundColor: c.riskBg, borderColor: c.riskBg }}>
         <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-          <Row gap={10}>
-            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: c.riskFill }} />
-            <AppText variant="h2" tint={c.risk}>
+          {/* flex + minWidth:0 lets the most safety-critical heading WRAP at phone width instead of
+              being clipped mid-word (N5). The dot stays fixed and aligns to the first line. */}
+          <Row gap={10} style={{ flex: 1, minWidth: 220, alignItems: 'flex-start' }}>
+            <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: c.riskFill, marginTop: 7 }} />
+            <AppText variant="h2" tint={c.risk} style={{ flex: 1 }}>
               {safety.headline}
             </AppText>
           </Row>
@@ -312,8 +347,8 @@ function RiskReview({ clientId }: { clientId: string }) {
 
       <View style={{ height: theme.spacing.lg }} />
       <Row gap={12} wrap>
-        <Button title="Open escalation options" variant="danger" leftIcon={<PhoneIcon size={18} color={c.risk} />} onPress={escalate.open} />
-        <Button title="Review safety plan" variant="secondary" onPress={() => {}} />
+        <Button title="Open escalation options" variant="danger" leftIcon={<PhoneIcon size={18} color={c.risk} />} onPress={() => escalate.open({ clientId: client.id, clientToken: client.tokenId })} />
+        <Button title="Review safety plan" variant="secondary" onPress={() => router.push(`/(app)/patterns/safety-plan?clientId=${client.id}`)} />
         <Button title="See history" variant="secondary" onPress={() => router.push(`/(app)/patterns/history?clientId=${client.id}`)} />
       </Row>
       <AppText variant="small" color="ink3" style={{ marginTop: 14 }}>

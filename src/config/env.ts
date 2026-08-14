@@ -17,6 +17,8 @@ const raw = {
   supabaseKey: process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ?? '',
   groqKey: process.env.EXPO_PUBLIC_GROQ_API_KEY?.trim() ?? '',
   groqBaseUrl: (process.env.EXPO_PUBLIC_GROQ_BASE_URL?.trim() || 'https://api.groq.com/openai/v1').replace(/\/$/, ''),
+  crisisLine: process.env.EXPO_PUBLIC_CRISIS_LINE?.trim() ?? '',
+  onCallEmail: process.env.EXPO_PUBLIC_ONCALL_EMAIL?.trim() ?? '',
 };
 
 /** A placeholder (from .env.example) is treated as "not configured". */
@@ -46,6 +48,31 @@ export const hasGroq = isRealValue(raw.groqKey);
 
 /** Any cloud service is wired — drives the demo-mode banner. */
 export const demoServicesConfigured = hasSupabase || hasGroq;
+
+/**
+ * The crisis line the Escalate + safety surfaces dial (F6/F7). A deployment sets its regional 24/7
+ * line via EXPO_PUBLIC_CRISIS_LINE. When none is configured we do NOT fabricate a mental-health
+ * number — we fall back to local emergency services (always a correct 24/7 path) and label it
+ * honestly, and the UI says a dedicated line isn't set for this build. `configured` drives that copy.
+ */
+export const crisisLine: { configured: boolean; display: string; tel: string } = (() => {
+  if (isRealValue(raw.crisisLine)) {
+    const digits = raw.crisisLine.replace(/[^\d+]/g, '');
+    return { configured: true, display: raw.crisisLine, tel: `tel:${digits}` };
+  }
+  return { configured: false, display: '999 · local emergency services', tel: 'tel:999' };
+})();
+
+/**
+ * The on-call clinician's email the Escalate warm-handoff drafts to (F6). A deployment sets it via
+ * EXPO_PUBLIC_ONCALL_EMAIL. Same "no dead promise" rule as the crisis line: when it isn't configured
+ * we do NOT claim a handoff address exists — the UI says so and drafts to a clearly-placeholder
+ * address the clinician must edit, so nothing silently goes nowhere.
+ */
+export const onCallEmail: { configured: boolean; address: string } = (() => {
+  if (isRealValue(raw.onCallEmail)) return { configured: true, address: raw.onCallEmail };
+  return { configured: false, address: 'on-call@clinic.example' };
+})();
 
 /** Which cloud services are live, for the demo banner / settings copy. */
 export function configuredServices(): { label: string; on: boolean }[] {
