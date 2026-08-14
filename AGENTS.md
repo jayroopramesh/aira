@@ -69,13 +69,23 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   overriding a denial in another), and nothing can lower a tier once set. Within a row the test is
   `deniesRisk`-only — a row discloses when it is present, not-assessed and not denied — with **no**
   positive-marker override, for the same reason: a marker substring can't be scoped to its clause
-  ("Denied; protective factors noted" read as a disclosure). Accepted residual: a value that endorses
+  ("Denied; protective factors noted" read as a disclosure). The one exception is a **contiguous
+  severity-qualified ideation phrase** ("passive/chronic/fleeting … ideation|SI", `affirmsQualifiedIdeation`):
+  it floors to acute even alongside a denial of a narrower form ("denies active ideation, plan or
+  intent") — the standard way passive ideation is documented — and being one phrase rather than a
+  loose substring, it cannot be hijacked across clauses. Accepted residuals: a value that endorses
   ideation *and* carries an unrelated bare denial ("Endorsed; denied to spouse") or a trailing
-  screening-status clause ("…; safety plan deferred") can under-rate — rare, and far cheaper than a
-  permanent false acute. `client.risk` is likewise a
+  screening-status clause ("…; safety plan deferred") can under-rate; and "no history of passive
+  ideation" reads as an affirmation and over-rates. All rare, and far cheaper than a permanent false
+  acute. `client.risk` is likewise a
   capture-time signal: it is NOT re-derived from later manual edits to a note's risk narrative (see
   `updateNoteSection`). See `scanNoteRisk` / `riskFromNote` / `appendSessionToClient` in
   `src/data/sessionClient.ts`, proved by `scripts/risk-floor-harness.mjs`.
+- Snapshot writes are **serialized** (`createWriteQueue` in `src/services/writeQueue.ts`, applied at
+  `ClientRepository.save`): signing persists twice in one tick (pending section edit, then the
+  sign-off) and on native each save is an independent file write, so without an ordered queue the
+  stale snapshot can land last and drop the signature. Proved by `scripts/persist-race-harness.mjs`.
+  Read-only-after-sign is enforced at the seam too — `updateNoteSection` refuses a signed note.
 - Sparse series (≤ 2 readings) render as a dot-strip with no trend line.
 - Login + recovery copy is isolated in `src/strings/recovery.ts`; the recovery-key policy is
   captain-resolved (`decision-recovery-key-policy`): account creation + one-time recovery code,

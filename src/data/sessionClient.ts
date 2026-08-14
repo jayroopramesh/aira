@@ -85,6 +85,29 @@ function deniesRisk(s: string): boolean {
 }
 
 /**
+ * Severity-qualified ideation, stated positively. This is how passive suicidal ideation is normally
+ * documented — "Passive ideation reported; denies active ideation, plan or intent" — and a denial
+ * whose object is the NARROWER form ("denies active ideation", "no active ideation", "means absent")
+ * must not read as a denial of the row. Without this the standard phrasing derived 'clear', which is
+ * worse than the 'watch' this design treats as its safe floor.
+ *
+ * It is a single CONTIGUOUS clinical phrase, not a loose substring, so — unlike the marker list this
+ * replaced — it cannot be hijacked by a word sitting in an unrelated clause. Negated forms of the
+ * same phrase ("denies passive ideation") are scrubbed before the test. Written as a scrub rather
+ * than a lookbehind, which Hermes does not support.
+ *
+ * Accepted safe residual: "no history of passive ideation" reads as an affirmation and floors to
+ * acute. Rare, and it errs in the safe direction.
+ */
+const QUALIFIED_IDEATION = /\b(?:passive|chronic|fleeting|transient|intermittent|recurrent|persistent)\s+(?:suicidal\s+)?(?:ideation|si)\b/;
+const NEGATED_QUALIFIED_IDEATION =
+  /\b(?:no|not|denies|denied|denying|without|nil)\s+(?:passive|chronic|fleeting|transient|intermittent|recurrent|persistent)\s+(?:suicidal\s+)?(?:ideation|si)\b/g;
+
+function affirmsQualifiedIdeation(s: string): boolean {
+  return QUALIFIED_IDEATION.test(s.replace(NEGATED_QUALIFIED_IDEATION, ' '));
+}
+
+/**
  * Derive, from a note's STRUCTURED risk rows, the tier the note documents: disclosed suicidal ideation
  * is ACUTE, disclosed self-harm is ELEVATED, un-assessed risk is WATCH (never a false "clear"). Errs
  * toward over-, never under-, rating. This matches the app's own convention (Leah, whose last session
@@ -127,8 +150,12 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
   // "Not explicitly addressed" the mock emits on its self-harm branch) as disclosed ideation.
   // These describe the STATUS OF THE SCREENING, not what a client did: 'not disclosed'/'not reported'
   // were dropped because they equally describe ordinary content ("not disclosed to family").
+  // 'Not applicable' / 'N/A' are the same non-answer written two ways; both must land on the same
+  // tier rather than three apart. 'n/a' is matched on word boundaries, not as a substring, so an
+  // ordinary "clinician/assessor" cannot read as a non-answer.
   const isNotAssessed = (s: string) =>
-    has(s, 'not assessed', 'not captured', 'unable to assess', 'not evaluated', 'review required', 'deferred', 'not raised', 'not explicitly addressed', 'not addressed', 'not discussed');
+    has(s, 'not assessed', 'not captured', 'unable to assess', 'not evaluated', 'review required', 'deferred', 'not raised', 'not explicitly addressed', 'not addressed', 'not discussed', 'not applicable') ||
+    /\bn\/a\b/.test(s);
   // A disclosure is simply a PRESENT row that is neither not-assessed nor denied. There is
   // deliberately NO positive-substring marker test: a marker cannot be scoped to the clause it belongs
   // to inside a multi-clause value, so it structurally produces false acutes — "Denied; protective
@@ -139,8 +166,12 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
   // carrying an unrelated bare denial ("Endorsed; denied to spouse") or a trailing screening-status
   // clause ("Passive ideation reported; safety plan deferred") reads as denied / not-assessed and can
   // under-rate to clear/watch. Rare in model output, and far cheaper than a permanent false acute.
+  // The one exception is `affirmsQualifiedIdeation`, which is a contiguous phrase rather than a
+  // marker substring, so it can outrank a denial of a NARROWER form without the clause-scoping
+  // problem that made the old marker list unusable. Ideation only — self-harm has no equivalent
+  // severity qualifier, so it stays purely denial-driven.
   const isDisclosed = (s: string) => !!s && !isNotAssessed(s) && !deniesRisk(s);
-  const ideationDisclosed = isDisclosed(ideation);
+  const ideationDisclosed = !!ideation && !isNotAssessed(ideation) && (affirmsQualifiedIdeation(ideation) || !deniesRisk(ideation));
   const selfHarmDisclosed = isDisclosed(selfHarm);
 
   if (ideationDisclosed) return 'acute';

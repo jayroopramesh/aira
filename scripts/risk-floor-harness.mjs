@@ -53,6 +53,22 @@ const cases = [
   // 'not reported' describe ordinary content, not the status of the screening, so they are not in
   // `isNotAssessed`.
   { name: 'live: disclosure carrying "not disclosed to family" still floors to acute', in: note({ level: 'watch', rows: ideationRow('Endorsed passive ideation; not disclosed to family') }), want: 'acute' },
+  // --- Severity-qualified ideation: a denial of the NARROWER form never clears the row -------------
+  // This is how passive ideation is normally documented, so reading it as a denial derived 'clear' —
+  // worse than the 'watch' this design treats as its safe floor.
+  { name: 'live: "Passive ideation reported; denies active ideation, plan or intent" floors to acute', in: note({ level: 'watch', rows: ideationRow('Passive ideation reported; denies active ideation, plan or intent') }), want: 'acute' },
+  { name: 'live: "Passive SI reported, no active ideation" floors to acute', in: note({ level: 'watch', rows: ideationRow('Passive SI reported, no active ideation') }), want: 'acute' },
+  { name: 'live: "Endorsed passive ideation; no plan, means absent" floors to acute', in: note({ level: 'watch', rows: ideationRow('Endorsed passive ideation; no plan, means absent') }), want: 'acute' },
+  { name: 'live: "Chronic passive ideation; denies intent" floors to acute', in: note({ level: 'watch', rows: ideationRow('Chronic passive ideation; denies intent') }), want: 'acute' },
+  // …and the same values with no structured level must derive the same tier (floor == derivation).
+  { name: 'asymmetry: qualified ideation + subtype denial, no level → acute', in: note({ level: undefined, rows: ideationRow('Passive ideation reported; denies active ideation, plan or intent') }), want: 'acute' },
+  { name: 'asymmetry: "Passive SI reported, no active ideation", no level → acute', in: note({ level: undefined, rows: ideationRow('Passive SI reported, no active ideation') }), want: 'acute' },
+  { name: 'asymmetry: "Endorsed passive ideation; no plan, means absent", no level → acute', in: note({ level: undefined, rows: ideationRow('Endorsed passive ideation; no plan, means absent') }), want: 'acute' },
+  // The negated form of the SAME phrase is still a denial.
+  { name: 'live: "Denies passive ideation" stays clear (negated qualified phrase)', in: note({ level: undefined, rows: ideationRow('Denies passive ideation') }), want: 'clear' },
+  // Documented ACCEPTED RESIDUAL: a historical negation reads as an affirmation. Rare, errs safe.
+  { name: 'residual: "No history of passive ideation" floors to acute (accepted, errs safe)', in: note({ level: 'watch', rows: ideationRow('No history of passive ideation') }), want: 'acute' },
+
   // A row mentioning the OTHER topic must not shadow the row actually about it.
   {
     name: 'live: an ideation row mentioning self-harm does not shadow the real self-harm row',
@@ -145,6 +161,9 @@ const cases = [
 
   // --- Nothing assessed → watch, never a false "clear" ---------------------------------------------
   { name: 'no rows at all → watch', in: note({ level: undefined, rows: [] }), want: 'watch' },
+  // The two spellings of the same non-answer must land on the same tier.
+  { name: '"Not applicable" is a non-answer → watch', in: note({ level: 'watch', rows: ideationRow('Not applicable') }), want: 'watch' },
+  { name: '"N/A" is a non-answer → watch', in: note({ level: 'watch', rows: ideationRow('N/A') }), want: 'watch' },
   { name: "buildDraft's uncaptured-risk stand-in row derives watch, never a false clear", in: note({ level: undefined, rows: [{ label: 'Risk screening', value: 'Not captured in this draft — review required' }] }), want: 'watch' },
 
   // --- Accepted residual: a disclosure carrying a trailing SCREENING-STATUS clause reads as

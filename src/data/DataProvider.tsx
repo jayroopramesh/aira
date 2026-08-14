@@ -216,6 +216,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const snapshot = snapshotRef.current;
       const list = snapshot.notes[clientId];
       if (!list?.[noteIndex]) return;
+      // Read-only after sign-off is enforced HERE, at the seam, not only by the screen hiding its
+      // editor: a signed note is a legal attestation, so no caller may rewrite its content.
+      if (list[noteIndex].status === 'signed') return;
       const edit = (s: NoteSection): NoteSection => {
         if (s.id !== sectionId) return s;
         // Only a section that already carries bullets keeps them — a plain prose section never grows a
