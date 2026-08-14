@@ -49,6 +49,10 @@ const cases = [
   // clinical fact in plainer words must not silently lose the floor.
   { name: 'live: "Present; denies plan or intent" floors to acute', in: note({ level: 'watch', rows: ideationRow('Present; denies plan or intent') }), want: 'acute' },
   { name: 'live: "Active thoughts, denies intent" floors to acute', in: note({ level: 'watch', rows: ideationRow('Active thoughts, denies intent') }), want: 'acute' },
+  // An incidental screening-status phrase elsewhere in the value must not cancel a real disclosure.
+  { name: 'live: disclosure carrying "not disclosed to family" still floors to acute', in: note({ level: 'watch', rows: ideationRow('Endorsed passive ideation; not disclosed to family') }), want: 'acute' },
+  { name: 'live: disclosure carrying "not discussed with family" still floors to acute', in: note({ level: 'watch', rows: ideationRow('Endorsed passive ideation; not discussed with family') }), want: 'acute' },
+  { name: 'live: disclosure carrying a deferred safety plan still floors to acute', in: note({ level: 'watch', rows: ideationRow('Passive ideation reported; safety plan deferred') }), want: 'acute' },
   // A row mentioning the OTHER topic must not shadow the row actually about it.
   {
     name: 'live: an ideation row mentioning self-harm does not shadow the real self-harm row',
@@ -91,6 +95,12 @@ const cases = [
   { name: 'live: "Nil for this session" stays clear', in: note({ level: 'clear', rows: ideationRow('Nil for this session') }), want: 'clear' },
   { name: 'live: "No acute concerns" stays clear', in: note({ level: 'clear', rows: ideationRow('No acute concerns') }), want: 'clear' },
   { name: 'live: "Nothing of concern" stays clear', in: note({ level: 'clear', rows: ideationRow('Nothing of concern') }), want: 'clear' },
+  // A NEGATED disclosure marker is a denial, not a disclosure. The summarizer's own prompt teaches this
+  // vocabulary ("passive, transient, fleeting, better off"), so these are ordinary, not exotic.
+  { name: 'live: "Denies thoughts of self-harm or suicide" stays clear', in: note({ level: undefined, rows: ideationRow('Denies thoughts of self-harm or suicide') }), want: 'clear' },
+  { name: 'live: "No passive or active ideation" stays clear', in: note({ level: undefined, rows: ideationRow('No passive or active ideation') }), want: 'clear' },
+  { name: 'live: "Denied any thoughts of suicide" stays clear', in: note({ level: undefined, rows: ideationRow('Denied any thoughts of suicide') }), want: 'clear' },
+  { name: 'live: "Denies passive ideation" stays clear', in: note({ level: undefined, rows: ideationRow('Denies passive ideation') }), want: 'clear' },
 
   // --- A benign risk SUMMARY never drives the tier, whatever it says -------------------------------
   { name: 'summary: "nothing of concern was raised" over denied rows stays clear', in: note({ level: 'clear', rows: [{ label: 'Suicidal ideation', value: 'Denied' }, { label: 'Self-harm', value: 'Denied' }], summary: 'Suicidal ideation and self-harm were screened; nothing of concern was raised this session.' }), want: 'clear' },

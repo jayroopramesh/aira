@@ -49,6 +49,21 @@ export function riskFromNote(note: DraftNote): RiskLevel {
 
 const IDEATION_LABEL = /ideation|suicid/;
 const SELF_HARM_LABEL = /self[- ]?harm/;
+
+/**
+ * Words that, in a risk ROW value, positively disclose the risk the row is about — and, negated, do
+ * the opposite. Both readings come from this ONE list: `NEGATED_MARKER` is built from it, so a marker
+ * can never be added to the positive test while its negated form goes unscrubbed. That drift is what
+ * made "Denies thoughts of self-harm" read as a disclosure and pin a benign client to acute.
+ */
+const DISCLOSURE_MARKERS = [
+  'passive', 'transient', 'fleeting', 'intermittent', 'endorsed', 'reported', 'noted',
+  'thoughts of', 'better off', 'not wanting to be', 'present', 'active', 'ongoing', 'positive',
+] as const;
+const NEGATED_MARKER = new RegExp(
+  `\\b(?:none|not|no|nothing|denies|denied|without)\\s+(?:[\\w-]+\\s+){0,2}(?:${DISCLOSURE_MARKERS.join('|')})\\b`,
+  'g',
+);
 /** Ideation cues, used to find the ideation ROW when the model labelled it something unexpected. */
 const IDEATION_CUE =
   /suicid|ideation|thoughts of (?:dying|death|suicide|not being here|being better off)|kill (?:my|her|him|them)sel|end (?:my|her|his|their) life|better off (?:dead|gone|not here)|\bsi\b|\bsi\/hi\b/;
@@ -113,28 +128,31 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
   const selfHarm = valueFor(SELF_HARM_LABEL, SELF_HARM_CUE, IDEATION_LABEL);
   const allText = rows.map((r) => `${r.label} ${r.value}`.toLowerCase()).join(' | ');
 
-  // "Not raised / not disclosed / not addressed" are NEUTRAL: the topic simply didn't come up. They are
+  // "Not raised / not addressed / deferred" are NEUTRAL: the topic simply didn't come up. They are
   // neither a disclosure nor a clinical denial, so they must land on "watch" — without them the
   // not-denied branch below would read a benign mock row ("Not raised this session", or the
   // "Not explicitly addressed" the mock emits on its self-harm branch) as disclosed ideation.
+  // These describe the STATUS OF THE SCREENING, not what a client did: 'not disclosed'/'not reported'
+  // were dropped because they equally describe ordinary content ("not disclosed to family").
   const isNotAssessed = (s: string) =>
-    has(s, 'not assessed', 'not captured', 'unable to assess', 'not evaluated', 'review required', 'deferred', 'not raised', 'not disclosed', 'not reported', 'not explicitly addressed', 'not addressed', 'not discussed');
+    has(s, 'not assessed', 'not captured', 'unable to assess', 'not evaluated', 'review required', 'deferred', 'not raised', 'not explicitly addressed', 'not addressed', 'not discussed');
   // A row like "Passive ideation reported; denies plan or intent" DISCLOSES even though it also
   // contains a denial verb — a positive-disclosure marker outranks the denial of a plan/means. Plain
   // STATE words count as markers too ("Present; denies plan or intent", "Active thoughts, denies
   // intent"): the same clinical fact written without a fancier adjective must not lose the floor.
-  // Negated forms ("not currently present", "no active ideation") are scrubbed first — every marker
-  // that can be negated appears in the scrub's trailing group as well.
+  // Negated forms ("not currently present", "denies thoughts of suicide") are scrubbed first.
   const discloses = (s: string) => {
-    const scrubbed = s.replace(/\b(?:none|not|no|nothing|denies|denied|without)\s+(?:[\w-]+\s+){0,2}(?:reported|endorsed|present|noted|active|ongoing|positive)\b/g, '');
-    return (
-      has(scrubbed, 'passive', 'transient', 'fleeting', 'intermittent', 'endorsed', 'reported', 'noted', 'thoughts of', 'better off', 'not wanting to be', 'present', 'active', 'ongoing', 'positive') ||
-      /(?:ideation|thoughts?|urges?)\s+present/.test(scrubbed)
-    );
+    const scrubbed = s.replace(NEGATED_MARKER, '');
+    return has(scrubbed, ...DISCLOSURE_MARKERS) || /(?:ideation|thoughts?|urges?)\s+present/.test(scrubbed);
   };
 
-  const ideationDisclosed = !!ideation && !isNotAssessed(ideation) && (discloses(ideation) || !deniesRisk(ideation));
-  const selfHarmDisclosed = !!selfHarm && !isNotAssessed(selfHarm) && (discloses(selfHarm) || !deniesRisk(selfHarm));
+  // A positive disclosure is checked FIRST and wins outright. An incidental status phrase elsewhere in
+  // the value ("Endorsed passive ideation; not discussed with family", "…; safety plan deferred") must
+  // never cancel a documented disclosure — that under-rates, the one direction the floor exists to
+  // prevent. Not-assessed and denial only decide rows that disclose nothing.
+  const isDisclosed = (s: string) => !!s && (discloses(s) || (!isNotAssessed(s) && !deniesRisk(s)));
+  const ideationDisclosed = isDisclosed(ideation);
+  const selfHarmDisclosed = isDisclosed(selfHarm);
 
   if (ideationDisclosed) return 'acute';
   if (selfHarmDisclosed) return 'elevated';
