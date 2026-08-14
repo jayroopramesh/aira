@@ -567,6 +567,7 @@ function Analysing({
       clientName: client?.name ?? name,
       sessionNumber: client?.sessionNumber ?? 1,
       durationMs: capture.durationMs,
+      transcribedInCloud,
     };
     try {
       const note = await summarizationService.summarize(input, { signal: controller.current.signal });

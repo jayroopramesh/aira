@@ -20,6 +20,14 @@ export type SummaryInput = {
   clientName?: string;
   sessionNumber?: number;
   durationMs?: number;
+  /**
+   * How THIS capture was transcribed: true iff the audio went to the cloud (Groq) for ASR, false when
+   * the on-device mock transcriber produced it (the `mock://` sample-audio and no-live-mic paths are
+   * on-device even with keys configured). Absent → treated as on-device, because a cloud hop we can't
+   * prove is never claimed. Feeds the note's `sourceLine`, which reports the transcription and the
+   * drafting hop separately rather than collapsing both onto the app-wide config.
+   */
+  transcribedInCloud?: boolean;
 };
 
 export interface SummarizationService {
@@ -337,15 +345,24 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
   const durMin = input.durationMs ? Math.max(1, Math.round(input.durationMs / 60000)) : null;
   const sessionLabel = input.sessionNumber ? `Session ${input.sessionNumber}` : 'New session';
 
+  // Transcription and drafting are independent hops: the audio can stay on-device (sample audio, no
+  // live mic) while the transcript text is still drafted in the cloud. Report each from its own truth
+  // — per-note capture provenance for transcription, the configured summarizer for drafting — and only
+  // promise "nothing was sent anywhere" when both stayed here.
+  const cloudTranscribed = input.transcribedInCloud === true;
+  const where = (cloud: boolean) => (cloud ? 'in demo mode (cloud)' : 'on this device');
+  const hops =
+    cloudTranscribed === hasGroq
+      ? `transcribed and drafted ${where(hasGroq)}`
+      : `transcribed ${where(cloudTranscribed)}, drafted ${where(hasGroq)}`;
+  const tail = !cloudTranscribed && !hasGroq ? 'nothing was sent anywhere' : 'for your review';
+  const provenance = `${hops} · ${tail}`;
+
   return {
     sessionLabel,
-    sourceLine: hasGroq
-      ? durMin
-        ? `From a ${durMin}-min voice note · transcribed in demo mode (cloud) · drafted for your review`
-        : 'Transcribed in demo mode (cloud) · drafted for your review'
-      : durMin
-        ? `From a ${durMin}-min voice note · transcribed and drafted on this device · nothing was sent anywhere`
-        : 'Transcribed and drafted on this device · nothing was sent anywhere',
+    sourceLine: durMin
+      ? `From a ${durMin}-min voice note · ${provenance}`
+      : provenance.charAt(0).toUpperCase() + provenance.slice(1),
     status: 'draft',
     riskLevel: toRiskLevel(d.riskSafety?.level),
     sections,

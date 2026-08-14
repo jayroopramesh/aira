@@ -504,9 +504,12 @@ function MeasureTable({ measures }: { measures: DraftNote['measures'] }) {
  * the vault seam) — the exact text the clinician reviewed and drafted from, so they can check the note
  * against it later. HONESTY INVARIANT: when a note has no stored transcript (sample fixtures, or notes
  * captured before transcripts were saved) it says so plainly and never renders placeholder prose as if
- * it were the session. The provenance line comes from how THIS note was transcribed (recorded on the
- * note at capture time), never from the app-wide config — an unrecorded provenance is read as
- * on-device, so a cloud hop is only ever claimed when it demonstrably happened.
+ * it were the session. The caption reports the two cloud hops separately and truthfully: TRANSCRIPTION
+ * from how THIS note was captured (recorded on the note at capture time — an unrecorded provenance is
+ * read as on-device, so an unprovable cloud hop is never claimed), and DRAFTING from `hasGroq`, which
+ * is exactly when the summarizer is Groq-backed. Only the both-on-device branch may say nothing was
+ * sent anywhere — with keys configured the transcript text goes to Groq to draft even when the audio
+ * never left the device.
  */
 function TranscriptPane({
   transcript,
@@ -536,7 +539,9 @@ function TranscriptPane({
       <AppText variant="small" color="ink3" style={{ marginBottom: 10 }}>
         {(transcribedInCloud
           ? 'The transcript of this session, kept on this device. The audio was sent to the cloud (Groq) to transcribe, then deleted — only this text remains. There is no on-device de-identification hop in demo mode.'
-          : 'The transcript of this session, kept on this device — it was transcribed on-device, so nothing was sent anywhere and no de-identification step runs.') +
+          : hasGroq
+            ? 'The transcript of this session, produced and kept on this device — the audio was never sent for transcription. In demo mode the note is drafted in the cloud, so this text was sent to Groq to draft from (see the demo banner). There is no on-device de-identification hop in demo mode.'
+            : 'The transcript of this session, produced and kept on this device — nothing was sent anywhere, and no de-identification step runs.') +
           (signed ? '' : ' Check the note against it before signing.')}
       </AppText>
       <Card tone="sunken" elevation="none" radius="md">
