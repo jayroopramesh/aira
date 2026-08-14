@@ -45,14 +45,17 @@ Five workflows, built to the s4 prototype's steps and phone-adapted:
 |---|---|
 | **Welcome** (boots here when signed out) | onboarding (post-session "personal scribe" framing; endowed setup progress bar, prefilled 20% → 45% → 72% → 100%) → create account (Emirates ID + "why?", phone, name, email, password) → one-time recovery code (reveal once, copy/save, "I saved it" gate) → login |
 | **Unlock** | login (username + password, "Encrypted with your login", HIPAA-aligned trust note) → calm wrong-password state (inline recovery-code fallback) → decrypt transition |
-| **Get ready** | day dashboard (countdown, session cards) → client drawer (scores, timeline, last plan, patient-details card, mock SALAMA/EHR connection card with a persistent no-external-system disclaimer) → read-only prep reminder → ready state |
-| **Session summary** | pre-capture (read-only reminders; record, upload a clip, or use sample audio) → recording (waveform + timer, timestamp-synced comment-card strip with a dotted add-first card, trust note; transcription is one-shot on stop — no live readout) → analysing (editable transcript) → note with SOAP/DAP format switcher (SOAP: S · O · Risk & Safety · A · P; DAP merges S+O into one D — Data section, derived so content never diverges; three-pane on web, stacked on phone) → per-section edit/regenerate → Prescriptions rail → sign-off → audio-trust moment (delete-by-default, keep toggle) |
-| **Patterns** | caseload table (search, status chips, sparklines with a dashed first-reading baseline, sober risk column, Outreach mailto templates that grey out once used) → client patterns (plain-language headline *before* charts; multi-scale tabs PHQ-9 · GAD-7 · MHI-5 · DASS-21 with a muted dashed "Caseload avg" comparison stroke + legend; sparse ≤2-reading dot-strip rule kept per scale; companion-app journal box) → history timeline → acute-risk review |
+| **Get ready** | day dashboard (countdown, session cards) → client drawer (scores, timeline, last plan, editable patient-details card that persists device-local, mock SALAMA/EHR connection card with a persistent no-external-system disclaimer) → read-only prep reminder → ready state |
+| **Session summary** | pre-capture (read-only reminders; record, upload a clip, or use sample audio) → recording (waveform + timer, timestamp-synced comment-card strip with a dotted add-first card, trust note; transcription is one-shot on stop — no live readout) → analysing (editable transcript; a silent/near-empty capture is refused rather than drafted, and a dismissible banner flags a transcript that doesn't read like clinical text) → note with SOAP/DAP format switcher (SOAP: S · O · Risk & Safety · A · P; DAP merges S+O into one D — Data section, derived so content never diverges; three-pane on web, stacked on phone) → per-section edit/regenerate → Prescriptions rail → sign-off (attributed to the signed-in clinician, stamped when they sign) → audio-trust moment (delete-by-default, keep toggle). Up to **3 notes per client** are retained, newest first — the session rail switches between them. |
+| **Patterns** | caseload table (search, status chips, sparklines with a dashed first-reading baseline, sober risk column carried over from each note's risk tier, Outreach mailto templates that grey out once used; tiles computed from the caseload itself) → client patterns (plain-language headline *before* charts; multi-scale tabs PHQ-9 · GAD-7 · MHI-5 · DASS-21 with a muted dashed "Caseload avg" comparison stroke + legend; sparse ≤2-reading dot-strip rule kept per scale; companion-app journal box) → history timeline (with the retained notes) → acute-risk review → safety-plan viewer |
 
 The standing calm **Escalate** affordance sits on every screen (never alarm-red, never modal — a
-dismissible sheet). The **mascot** (the captain's background-removed mood set — hero moods on the
-welcome/login/recovery screens, a per-workflow mood beside the app-bar wordmark) appears only on
-human surfaces; it is banned from charts, tables, the risk queue, and the in-session capture
+dismissible sheet). No option in it is a dead promise: it dials the configured crisis line (local
+emergency services when none is set), drafts a warm-handoff mail to the on-call clinician, and opens
+the client's safety plan — and where there is no client in context or a contact isn't configured, the
+control says so plainly instead of sitting inert. The **mascot** (the captain's background-removed
+mood set — hero moods on the welcome/login/recovery screens, a per-workflow mood beside the app-bar
+wordmark, which also returns you to the day board) appears only on human surfaces; it is banned from charts, tables, the risk queue, and the in-session capture
 content (see `src/components/mascotMoods.tsx`).
 
 Rendered captures of the workflows (light + dark; the current set is `r4r5-`) live in
@@ -85,6 +88,10 @@ cp .env.example .env.local   # then set EXPO_PUBLIC_SUPABASE_* and EXPO_PUBLIC_G
 
 `.env.local` is gitignored — never commit real keys. Only the Supabase **publishable** (anon) key
 belongs in a client env var. See [Demo-mode live services](#demo-mode-live-services).
+
+The same template also carries the deployment's **safety contacts** — the crisis line the Escalate
+sheet dials and the on-call address a warm handoff drafts to. `.env.example` documents each one and
+what the app says honestly when it is left unset (it never fabricates a mental-health number).
 
 ### Web
 ```bash
@@ -178,15 +185,21 @@ in without touching callers (see live wiring above; crypto is still a mock).
 
 ### Auth / session — `src/services/auth.ts`
 - `AuthService` is the account + session seam in front of the vault. It models the captain-approved
-  recovery-key policy with realistic in-memory state transitions
+  recovery-key policy through the state transitions
   (`none → awaiting-recovery-save → active`): account creation, the **one-time recovery code**
   (generated once, revealed once), sign-in (username + password), the calm wrong-password state, and
-  the recovery-code fallback. With Supabase configured the app uses `SupabaseAuthService` (see
+  the recovery-code fallback. The code itself is never kept — a non-cryptographic **hash** of it is
+  persisted device-locally at account creation (alongside the clinician's name and email), so the
+  saved code still unlocks after a reload and the sign-off is attributed to whoever actually signed
+  in. Login prefills only that persisted email — never a demo identity, and never a password. With
+  Supabase configured the app uses `SupabaseAuthService` (see
   [Demo-mode live services](#demo-mode-live-services)); otherwise `MockAuthService` (the password
   chosen at account creation is accepted, in addition to the demo default `clinicvault`; anything
   else drives the wrong-password state — no crypto, no server calls). Either way the actual vault
-  open is delegated to `VaultStorage` and the recovery code stays app-side. The production impl
-  (registry check + Argon2id envelope + server-side key escrow) slots in behind the same interface.
+  open is delegated to `VaultStorage` and the recovery code stays app-side. The whole `(app)` group
+  renders only while that vault is open, so signing out — or simply reloading — bounces back to
+  unlock instead of showing the caseload. The production impl (registry check + Argon2id envelope +
+  server-side key escrow) slots in behind the same interface.
 
 ### Data / vault — `src/services/storage.ts`, `src/data/repository.ts`
 - `ClientRepository` is the seam the **encrypted vault** slots behind. `VaultClientRepository`
@@ -233,7 +246,7 @@ drives the recording/analysing states. Neither needs a native module.
 ### What is live vs stubbed
 | Area | Status |
 |---|---|
-| Auth (account creation, sign-in) | **Live (demo)** — Supabase when configured, else `MockAuthService`. One-time recovery code stays app-side. |
+| Auth (account creation, sign-in) | **Live (demo)** — Supabase when configured, else `MockAuthService`. One-time recovery code stays app-side, verified against a device-local hash so it survives reloads. |
 | Transcription | **Live (demo)** — Groq whisper-large-v3 when configured, else `MockTranscriptionService`. |
 | Summarization → SOAP draft | **Live (demo)** — Groq llama-3.3-70b when configured, else `MockSummarizationService`. |
 | Persisted data | **Device-local** — reactive store behind `ClientRepository` → `VaultStorage`; blank on first boot. |
@@ -252,10 +265,10 @@ src/
     (app)/             authed shell (top bar + workflow tab switcher + escalate)
       today/           Get ready: dashboard → drawer → prep reminder → ready
       session/         Session summary: capture → recording → analysing → review (SOAP)
-      patterns/        Patterns: caseload → client patterns → history → risk review
+      patterns/        Patterns: caseload → client patterns → history → risk review → safety plan
       settings/        demo-services status, load sample data / clear all data, sign out
   components/          mascot moods (mascotMoods), auth surface, DemoBanner, ZeroState, Highlights, charts, waveform, escalate sheet, ui primitives
-  config/              env.ts (EXPO_PUBLIC_* + hasSupabase/hasGroq flags)
+  config/              env.ts (EXPO_PUBLIC_* + hasSupabase/hasGroq flags, crisis line / on-call contacts)
   theme/               tokens + ThemeProvider
   data/                types, sample fixtures (no PHI), assessment scales, repository + reactive DataProvider
   services/            auth (Supabase/mock), storage (vault) + deviceStore, transcription + summarization (Groq/mock), audio capture
