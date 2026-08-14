@@ -566,7 +566,10 @@ function Analysing({
     };
     try {
       const note = await summarizationService.summarize(input, { signal: controller.current.signal });
-      onDrafted(note);
+      // Persist the real transcript alongside the note (the exact text the clinician reviewed and drafted
+      // from) so the review screen's Transcript tab can show the actual session — not placeholder prose —
+      // and a clinician can later check the note against it. Rides on the note through the vault seam.
+      onDrafted({ ...note, transcript: trimmed });
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
       setError('Drafting failed — nothing was drafted. Check your connection, review the transcript below, and try again.');

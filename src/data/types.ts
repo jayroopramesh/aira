@@ -81,6 +81,15 @@ export type DraftNote = {
    * phrasing of disclosed ideation can't be under-rated. Absent (mock/older notes) → derived.
    */
   riskLevel?: RiskLevel;
+  /**
+   * The real session transcript this note was drafted from — the Groq-transcribed (or clinician-typed)
+   * text, persisted device-local alongside the note through ClientRepository/VaultStorage and shown in
+   * the review screen's Transcript tab. HONESTY INVARIANT: this is only ever the actual captured text,
+   * never fabricated. Absent for sample fixtures and older notes captured before transcripts were
+   * stored — the Transcript tab then says so plainly rather than passing placeholder prose off as the
+   * session.
+   */
+  transcript?: string;
   sections: NoteSection[];
   measures: { measure: string; today: string; prev: string; band: string }[];
   reviewCodes: ReviewCode[];

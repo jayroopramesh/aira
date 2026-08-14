@@ -8,7 +8,25 @@ Regenerate after UI changes: `npx expo export --platform web && npx expo serve`,
 flows by **client-side navigation** — never load dynamic `[clientId]` routes directly against the
 static server. Dark shots emulate `prefers-color-scheme: dark`, which the theme follows.
 
-## Current: rounds 4 + 5 (`r4r5-`)
+## Current signature set: mobile (`mobile/`)
+
+Phone-dimension captures of the signature screens, **light + dark**, with the Amara sample cohort
+loaded — the set the README strip uses. Rendered at a **390×844 iPhone-class viewport, @2×**
+(`deviceScaleFactor: 2`, so files are 780px wide), on the static web export driven through the real
+sign-in → load-sample → client-side navigation flow (the authed `(app)` routes are never hit
+directly — the in-memory vault would re-lock). The build is the on-device **mock** path (no
+`.env.local`), so nothing leaves the machine and login accepts the demo password.
+
+- `01-onboarding` · welcome intro: mascot hero, personal-scribe copy, endowed progress bar
+- `02-login` · unlock: vault-locked copy + both trust notes ("Encrypted with your login", HIPAA-aligned)
+- `03-day-dashboard` · Get ready: countdown, today's session cards, day-at-a-glance, standing safety
+- `04-client-drawer` · client details: latest scores, patient-details + SALAMA/EHR card, history timeline
+- `05-caseload` · caseload: per-row Outreach quick-actions (two pre-greyed), sparklines, sober risk chips
+- `06-patterns` · Amara's longitudinal PHQ-9 chart, multi-scale tabs, sparse ≤2-reading dot-strip, journal box
+- `07-soap-note` · session note with the **SOAP/DAP** format switcher, risk section, prescriptions, sign-off
+- `08-recording` · in-session capture: live timer + waveform, timestamp-synced comment-card strip
+
+## Prior set: rounds 4 + 5 (`r4r5-`)
 
 Both themes where the design shifted; detail states are light-only.
 

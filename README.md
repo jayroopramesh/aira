@@ -30,10 +30,12 @@ approved click-through prototype. Expo **replaces** the earlier SvelteKit plan a
 > (see [Locked v1 constraints](#locked-v1-constraints)).
 
 <p align="center">
-  <img src="docs/screenshots/r4r5-welcome-light.png" alt="Welcome onboarding with mascot hero (light)" width="32%" />
-  <img src="docs/screenshots/r4r5-patterns-phq-dark.png" alt="Client patterns — multi-scale stoic chart (dark)" width="32%" />
-  <img src="docs/screenshots/r4r5-review-dap-light.png" alt="Session note with SOAP/DAP switcher (light)" width="32%" />
+  <img src="docs/screenshots/mobile/01-onboarding-light.png" alt="Welcome onboarding with mascot hero, phone (light)" width="32%" />
+  <img src="docs/screenshots/mobile/06-patterns-dark.png" alt="Client patterns — Amara's multi-scale longitudinal chart, phone (dark)" width="32%" />
+  <img src="docs/screenshots/mobile/07-soap-note-light.png" alt="Session note with SOAP/DAP switcher, phone (light)" width="32%" />
 </p>
+
+<p align="center"><sub>Phone-dimension captures (390×844 @2×), light + dark — see <a href="docs/screenshots/mobile/"><code>docs/screenshots/mobile/</code></a>.</sub></p>
 
 ---
 
@@ -58,8 +60,9 @@ mood set — hero moods on the welcome/login/recovery screens, a per-workflow mo
 wordmark, which also returns you to the day board) appears only on human surfaces; it is banned from charts, tables, the risk queue, and the in-session capture
 content (see `src/components/mascotMoods.tsx`).
 
-Rendered captures of the workflows (light + dark; the current set is `r4r5-`) live in
-[`docs/screenshots/`](./docs/screenshots).
+Rendered captures of the workflows (light + dark) live in
+[`docs/screenshots/`](./docs/screenshots) — the current signature set is the phone-dimension
+[`mobile/`](./docs/screenshots/mobile) captures; the earlier `r4r5-` web renders are kept alongside.
 
 ---
 

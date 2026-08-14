@@ -132,7 +132,13 @@ export default function ReviewNote() {
 
             <View style={{ height: theme.spacing.lg }} />
 
-            {tab === 'Note' ? <NotePane key={noteKey} draft={draft} signed={signed} /> : <OtherPane tab={tab} />}
+            {tab === 'Note' ? (
+              <NotePane key={noteKey} draft={draft} signed={signed} />
+            ) : tab === 'Transcript' ? (
+              <TranscriptPane transcript={draft.transcript} />
+            ) : (
+              <OtherPane tab={tab} />
+            )}
 
             {/* On phone, the note-switcher and the rail (prescriptions / codes / sign-off) stack
                 below the note — earlier retained notes must stay reachable on narrow too (C4). */}
@@ -489,11 +495,48 @@ function MeasureTable({ measures }: { measures: DraftNote['measures'] }) {
   );
 }
 
+/**
+ * The Transcript tab shows the REAL session transcript persisted with the note (device-local, through
+ * the vault seam) — the exact text the clinician reviewed and drafted from, so they can check the note
+ * against it later. HONESTY INVARIANT: when a note has no stored transcript (sample fixtures, or notes
+ * captured before transcripts were saved) it says so plainly and never renders placeholder prose as if
+ * it were the session.
+ */
+function TranscriptPane({ transcript }: { transcript?: string }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const text = transcript?.trim();
+
+  if (!text) {
+    return (
+      <Card tone="sunken" elevation="none" radius="md">
+        <AppText variant="body" color="ink2">
+          No transcript is stored for this note. Sample data and notes captured before transcripts were
+          saved don’t include the session text — nothing is shown here rather than standing in a placeholder
+          for the real session.
+        </AppText>
+      </Card>
+    );
+  }
+
+  return (
+    <View>
+      <AppText variant="small" color="ink3" style={{ marginBottom: 10 }}>
+        {hasGroq
+          ? 'The transcript of this session, kept on this device. In demo mode the audio was sent to the cloud (Groq) to transcribe, then deleted — only this text remains. There is no on-device de-identification hop in demo mode. Check the note against it before signing.'
+          : 'The transcript of this session, kept on this device — the demo services aren’t configured, so nothing was sent anywhere and no de-identification step runs. Check the note against it before signing.'}
+      </AppText>
+      <Card tone="sunken" elevation="none" radius="md">
+        <AppText variant="body" color="ink2" selectable style={{ lineHeight: 22 }}>
+          {text}
+        </AppText>
+      </Card>
+    </View>
+  );
+}
+
 function OtherPane({ tab }: { tab: Tab }) {
   const copy: Record<string, string> = {
-    Transcript: hasGroq
-      ? 'The transcript lives here on this device. In demo mode the audio was sent to the cloud (Groq) to transcribe; the audio is deleted afterwards and only this reviewed text remains — there is no on-device de-identification hop in demo mode.'
-      : 'This is a sample transcript — the demo services aren’t configured, so nothing was sent anywhere and no de-identification step runs. It stays on this device.',
     Context:
       'Prior-session context Aira grounded the draft against: last plan, latest measures, and standing safety items. Companion-app journal entries are shown separately and never blended with clinical scores.',
     '+ Screening tools':
