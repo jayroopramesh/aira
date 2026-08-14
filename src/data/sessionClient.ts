@@ -50,44 +50,37 @@ export function riskFromNote(note: DraftNote): RiskLevel {
 const IDEATION_LABEL = /ideation|suicid/;
 const SELF_HARM_LABEL = /self[- ]?harm/;
 
-/**
- * Words that, in a risk ROW value, positively disclose the risk the row is about — and, negated, do
- * the opposite. Both readings come from this ONE list: `NEGATED_MARKER` is built from it, so a marker
- * can never be added to the positive test while its negated form goes unscrubbed. That drift is what
- * made "Denies thoughts of self-harm" read as a disclosure and pin a benign client to acute.
- */
-const DISCLOSURE_MARKERS = [
-  'passive', 'transient', 'fleeting', 'intermittent', 'endorsed', 'reported', 'noted',
-  'thoughts of', 'better off', 'not wanting to be', 'present', 'active', 'ongoing', 'positive',
-] as const;
-const NEGATED_MARKER = new RegExp(
-  `\\b(?:none|not|no|nothing|denies|denied|without)\\s+(?:[\\w-]+\\s+){0,2}(?:${DISCLOSURE_MARKERS.join('|')})\\b`,
-  'g',
-);
 /** Ideation cues, used to find the ideation ROW when the model labelled it something unexpected. */
 const IDEATION_CUE =
   /suicid|ideation|thoughts of (?:dying|death|suicide|not being here|being better off)|kill (?:my|her|him|them)sel|end (?:my|her|his|their) life|better off (?:dead|gone|not here)|\bsi\b|\bsi\/hi\b/;
 const SELF_HARM_CUE = /self[- ]?harm|cutting|hurt (?:my|her|him|them)sel/;
 
 /**
- * Does this risk-row VALUE deny the risk it describes? A denial verb, a standalone denial word
- * ("Nil for this session", "Screening negative", "Absent this session"), or a negation BOUND to an
- * ideation/self-harm/state anchor within a few tokens ("no SI/HI", "not currently present",
- * "none currently reported", "no acute concerns").
+ * Does this risk-row VALUE deny the risk it describes? Four readings, any of which is a denial:
+ * a denial VERB that isn't denying the plan/means ("Denied", "Denies thoughts of suicide" — but NOT
+ * the "denies plan or intent" that follows a disclosure); a negation BOUND to an ideation/self-harm/
+ * state/concern anchor within a few tokens ("no SI/HI", "not currently present", "no acute concerns");
+ * a LEADING terse denial ("None", "No", "None this session", "None disclosed"); or a fixed denial
+ * word ("Nil for this session", "Screening negative", "Absent this session").
  *
- * Both looseness and tightness have burned this before. Exact bigrams ('not present') missed every
- * phrasing with a word inserted; requiring a denial word to be the WHOLE value missed every phrasing
- * with a word appended — both read a routine denial as a disclosure and pin a benign client to acute.
- * Generic anchors ('risk', 'factors') fail the other way: "Active with a plan; no other risk factors"
- * would read as a denial of the ideation itself and cancel the floor on the most severe row there is.
- * So denial words match anywhere, and a negation only binds an ideation/self-harm/state/concern word.
+ * The leading-denial branch answers the row, so it holds however the phrase is finished — UNLESS the
+ * value goes on to name the risk itself ("No plan, but active ideation present"), which is a
+ * disclosure wearing a denial's opening clause.
+ *
+ * Every one of these shapes has been read as a DISCLOSURE by an earlier, narrower predicate, and each
+ * time it pinned an ordinary client to acute permanently — nothing lowers a tier. Exact bigrams
+ * ('not present') missed every phrasing with a word inserted; requiring the denial word to be the
+ * WHOLE value missed every phrasing with a word appended; requiring an anchor missed the bare "None"
+ * that is the canonical terse answer to a screening row. Tightness fails the other way too: generic
+ * anchors ('risk', 'factors') would let "Active with a plan; no other risk factors" read as a denial
+ * of the ideation itself and cancel the floor on the most severe row there is.
  */
 function deniesRisk(s: string): boolean {
   return (
-    /\b(?:denied|denies|denying)\b/.test(s) ||
-    /\b(?:nil|negative|absent)\b/.test(s) ||
-    /none reported|not present|no ideation|no concerns|not endorsed/.test(s) ||
-    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b[\s\w'/-]{0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|present|reported|endorsed|noted|raised|current|concerns?|si|hi)\b/.test(s)
+    /\b(?:denied|denies|denying)\b(?!\s+(?:to\s+\w+\s+)?(?:a\s+|any\s+|the\s+)?(?:plan|intent|means|access|method|specific)\b)/.test(s) ||
+    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b[\s\w'/-]{0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|present|reported|endorsed|noted|raised|current|concerns?|si|hi)\b/.test(s) ||
+    /^\s*(?:no|none|nil|negative|absent|denied|denies|nad|n\/?a)\b(?![\s\w'/-]{0,30}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|plan|intent|endorsed|present|active|passive|reported)\b)/.test(s) ||
+    /\b(?:nil|negative|absent)\b|none reported|not present|no ideation|no concerns|nothing of concern|not endorsed/.test(s)
   );
 }
 
@@ -136,21 +129,17 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
   // were dropped because they equally describe ordinary content ("not disclosed to family").
   const isNotAssessed = (s: string) =>
     has(s, 'not assessed', 'not captured', 'unable to assess', 'not evaluated', 'review required', 'deferred', 'not raised', 'not explicitly addressed', 'not addressed', 'not discussed');
-  // A row like "Passive ideation reported; denies plan or intent" DISCLOSES even though it also
-  // contains a denial verb — a positive-disclosure marker outranks the denial of a plan/means. Plain
-  // STATE words count as markers too ("Present; denies plan or intent", "Active thoughts, denies
-  // intent"): the same clinical fact written without a fancier adjective must not lose the floor.
-  // Negated forms ("not currently present", "denies thoughts of suicide") are scrubbed first.
-  const discloses = (s: string) => {
-    const scrubbed = s.replace(NEGATED_MARKER, '');
-    return has(scrubbed, ...DISCLOSURE_MARKERS) || /(?:ideation|thoughts?|urges?)\s+present/.test(scrubbed);
-  };
-
-  // A positive disclosure is checked FIRST and wins outright. An incidental status phrase elsewhere in
-  // the value ("Endorsed passive ideation; not discussed with family", "…; safety plan deferred") must
-  // never cancel a documented disclosure — that under-rates, the one direction the floor exists to
-  // prevent. Not-assessed and denial only decide rows that disclose nothing.
-  const isDisclosed = (s: string) => !!s && (discloses(s) || (!isNotAssessed(s) && !deniesRisk(s)));
+  // A disclosure is simply a PRESENT row that is neither not-assessed nor denied. There is
+  // deliberately NO positive-substring marker test: a marker cannot be scoped to the clause it belongs
+  // to inside a multi-clause value, so it structurally produces false acutes — "Denied; protective
+  // factors noted" and "Client denied; presents as future-oriented" both read as disclosures and, under
+  // never-downgrade, pin a clear client to acute forever. `deniesRisk` carries the whole burden, and
+  // its plan/intent lookahead is what keeps "Passive ideation reported; denies plan or intent" a
+  // disclosure. KNOWN ACCEPTED RESIDUAL (captain decision): a value that endorses ideation while also
+  // carrying an unrelated bare denial ("Endorsed; denied to spouse") or a trailing screening-status
+  // clause ("Passive ideation reported; safety plan deferred") reads as denied / not-assessed and can
+  // under-rate to clear/watch. Rare in model output, and far cheaper than a permanent false acute.
+  const isDisclosed = (s: string) => !!s && !isNotAssessed(s) && !deniesRisk(s);
   const ideationDisclosed = isDisclosed(ideation);
   const selfHarmDisclosed = isDisclosed(selfHarm);
 
