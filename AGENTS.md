@@ -42,9 +42,12 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   payloads carrying a client identifier/name (400), and relays upstream errors faithfully (including
   `Retry-After` / `x-ratelimit-*`).
   `verify_jwt=false` in `supabase/config.toml` on purpose — we verify in-code so the anon key (a valid
-  JWT) is rejected. Deploy + the honest residency note (Supabase global edge; project ap-south-1;
-  Azure in-region for prod) are in `README.md` → "Groq proxy (Edge Function)". Never reintroduce
-  `EXPO_PUBLIC_GROQ_API_KEY`.
+  JWT) is rejected. The function is **Deno** (uses `Deno.*` globals), so `supabase/functions` is
+  excluded from the app `tsconfig.json` — `npx tsc --noEmit` does not cover it; its promises are
+  proved instead by `scripts/groq-proxy-harness.mjs`, which runs the real function over HTTP with
+  stand-in GoTrue/Groq servers (no Deno or Docker). Deploy + the honest residency note (Supabase
+  global edge; project ap-south-1; Azure in-region for prod) are in `README.md` → "Groq proxy (Edge
+  Function)". Never reintroduce `EXPO_PUBLIC_GROQ_API_KEY`.
 - **Transcription — Groq whisper-large-v3** (`GroqTranscriptionService` in `transcription.ts`) and
   **summarization — Groq llama-3.3-70b** (`src/services/summarization.ts` → a `DraftNote`), both via
   the proxy above with the session token. Web audio via `src/services/audioCapture.ts` (MediaRecorder

@@ -237,6 +237,9 @@ whisper-large-v3) and `POST /groq-proxy/chat/completions` (JSON messages → lla
 - **Passes upstream Groq errors through faithfully** (status code + body preserved, plus `Retry-After`
   and `x-ratelimit-*` so a caller can actually back off — those are CORS-exposed for browser callers).
 
+Those promises are executable: `node scripts/groq-proxy-harness.mjs` runs the real function over HTTP
+(with stand-in GoTrue and Groq servers, no Deno or Docker needed) and asserts each one.
+
 **Honest degradation — the line it draws.** *Fabrication* is the app **inventing clinical text**:
 standing canned words in for a session that was actually recorded. That is never acceptable.
 *Drafting the clinician's own typed or pasted words on-device* invents nothing, and is the accepted
@@ -413,8 +416,9 @@ src/
   config/              env.ts (EXPO_PUBLIC_* + hasSupabase/hasGroq flags, crisis line / on-call contacts)
   theme/               tokens + ThemeProvider
   data/                types, sample fixtures (no PHI), assessment scales, repository + reactive DataProvider
-  services/            auth (Supabase/mock), storage (vault) + deviceStore, transcription + summarization (Groq/mock), audio capture, writeQueue (serialized snapshot saves)
+  services/            auth (Supabase/mock), storage (vault) + deviceStore, transcription + summarization (groq-proxy/mock) + cloudSession, audio capture, writeQueue (serialized snapshot saves)
   strings/             recovery.ts (login + recovery copy, captain-resolved policy)
+supabase/              config.toml + functions/groq-proxy (the server-side Groq proxy; Deno, not part of the app tsconfig)
 scripts/               dependency-free invariant harnesses (`node scripts/<name>.mjs`)
 docs/screenshots/      rendered captures of every workflow step (light/dark/phone)
 ```
