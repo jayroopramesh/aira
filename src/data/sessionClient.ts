@@ -109,7 +109,7 @@ function deniesRisk(s: string): boolean {
     /\b(?:no|not|none|without|nil|negative|absent|nothing)\b[\s\w'/,-]{0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|si|hi)\b/.test(s) ||
     /\b(?:no|not|none|without|nil|negative|absent|nothing)\b(?:(?!\b(?:plan|intent|means|method|access)\b)[\s\w'/-]){0,20}?\b(?:present|reported|endorsed|noted|raised|concerns?)\b/.test(s) ||
     /^\s*(?:no|none|nil|negative|absent|denied|denies|nad|n\/?a)\b(?![\s\w'/-]{0,30}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|plan|intent|endorsed|present|active|passive|reported)\b)/.test(s) ||
-    /\b(?:reports?|reported|endorses?|endorsed|elicited|voiced|describes?|described|denies|denied)\s+(?:no|none|nil|nothing)\b/.test(s) ||
+    /\b(?:reports?|reported|endorses?|endorsed|elicited|voiced|describes?|described|denies|denied)\s+(?:no|none|nil|nothing)\b(?!\s+(?:of\s+)?(?:a\s+|any\s+)?(?:plan|intent|means))/.test(s) ||
     /\b(?:none|nil)\s+(?:elicited|endorsed|reported|noted|voiced|expressed|disclosed)\b/.test(s) ||
     /\bnot\s+(?:disclosed|reported|elicited|endorsed)\b(?!\s+to\b)/.test(s) ||
     /\b(?:nil|negative|absent)\b|none reported|not present|no ideation|no concerns|nothing of concern|not endorsed/.test(s)

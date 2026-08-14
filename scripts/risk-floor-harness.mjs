@@ -61,9 +61,22 @@ const cases = [
   { name: 'live: "Endorsed ideation; no plan reported" floors to acute', in: note({ level: 'watch', rows: ideationRow('Endorsed ideation; no plan reported') }), want: 'acute' },
   { name: 'live: "Active thoughts; no intent reported" floors to acute', in: note({ level: 'watch', rows: ideationRow('Active thoughts; no intent reported') }), want: 'acute' },
   { name: 'live: "Endorsed; no means noted" floors to acute', in: note({ level: 'watch', rows: ideationRow('Endorsed; no means noted') }), want: 'acute' },
+  // …and the same plan denial written with a REPORT VERB rather than a bare negation. The object is
+  // still the plan, so it must not read as a denial of the row.
+  { name: 'live: "Present; reports no plan" floors to acute', in: note({ level: 'watch', rows: ideationRow('Present; reports no plan') }), want: 'acute' },
+  { name: 'live: "Present, but reports no intent" floors to acute', in: note({ level: 'watch', rows: ideationRow('Present, but reports no intent') }), want: 'acute' },
+  { name: 'live: "Present; endorsed no plan or intent" floors to acute', in: note({ level: 'watch', rows: ideationRow('Present; endorsed no plan or intent') }), want: 'acute' },
+  { name: 'live: "Active thoughts; reports no plan" floors to acute', in: note({ level: 'watch', rows: ideationRow('Active thoughts; reports no plan') }), want: 'acute' },
+  { name: 'live: "Present; reports no plan or intent" floors to acute', in: note({ level: 'watch', rows: ideationRow('Present; reports no plan or intent') }), want: 'acute' },
   // …and with no structured level the derivation must agree (floor == derivation).
   { name: 'asymmetry: "Present; no current plan or intent", no level → acute', in: note({ level: undefined, rows: ideationRow('Present; no current plan or intent') }), want: 'acute' },
   { name: 'asymmetry: "Endorsed; no means noted", no level → acute', in: note({ level: undefined, rows: ideationRow('Endorsed; no means noted') }), want: 'acute' },
+  { name: 'asymmetry: "Present; reports no plan", no level → acute', in: note({ level: undefined, rows: ideationRow('Present; reports no plan') }), want: 'acute' },
+  { name: 'asymmetry: "Present, but reports no intent", no level → acute', in: note({ level: undefined, rows: ideationRow('Present, but reports no intent') }), want: 'acute' },
+  { name: 'asymmetry: "Present; endorsed no plan or intent", no level → acute', in: note({ level: undefined, rows: ideationRow('Present; endorsed no plan or intent') }), want: 'acute' },
+  // The self-harm row has no affirmation escape, so a report-verb plan denial is its only guard.
+  { name: 'live: self-harm "Endorsed cutting last week; reports no intent to escalate" → elevated', in: note({ level: 'watch', rows: [{ label: 'Self-harm', value: 'Endorsed cutting last week; reports no intent to escalate' }, { label: 'Suicidal ideation', value: 'Denied' }] }), want: 'elevated' },
+  { name: 'live: self-harm "Recent cutting; reports no plan to repeat" → elevated', in: note({ level: 'watch', rows: [{ label: 'Self-harm', value: 'Recent cutting; reports no plan to repeat' }, { label: 'Suicidal ideation', value: 'Denied' }] }), want: 'elevated' },
   // An incidental phrase about who else knows must not cancel a real disclosure — 'not disclosed' /
   // 'not reported' describe ordinary content, not the status of the screening, so they are not in
   // `isNotAssessed`.
