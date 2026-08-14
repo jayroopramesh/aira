@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowRight, CheckIcon, CopyIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
 import { BackLink, PageHeader, Screen } from '../../../components/Screen';
@@ -47,31 +47,38 @@ function noteToPlainText(draft: DraftNote): string {
 
 /**
  * Copy the whole note to the clipboard, with a truthful confirmation (F12 / no-dead-promise): the
- * "Copied" state flips ONLY after a real successful clipboard write. There is no clipboard on native
- * (no `navigator.clipboard`), so the control is disabled there with honest guidance rather than a
- * silent no-op — mirroring the recovery screen's Copy affordance.
+ * "Copied" state flips ONLY after a real successful clipboard write, and a REJECTED write (permission
+ * denied) says so instead of failing silently.
+ *
+ * The disabled state is gated on the ACTUAL capability (`navigator.clipboard`), not on `Platform.OS`:
+ * there is no clipboard on native, but there is equally none on web in an insecure context (an http://
+ * LAN dev origin) or an old webview. Gating on the platform proxy left the button enabled-but-dead
+ * exactly there — the failure this control was written to eliminate.
  */
 function CopyNoteButton({ draft }: { draft: DraftNote }) {
   const theme = useTheme();
   const c = theme.colors;
-  const canCopy = Platform.OS === 'web';
-  const [copied, setCopied] = useState(false);
+  const canCopy = typeof navigator !== 'undefined' && !!navigator.clipboard;
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
-  const copy = () => {
-    const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
-    if (!clip) return; // only ever confirm after a real write
-    clip
-      .writeText(noteToPlainText(draft))
-      .then(() => {
-        setCopied(true);
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(() => setCopied(false), 2000);
-      })
-      .catch(() => setCopied(false));
+  const flash = (next: 'copied' | 'failed') => {
+    setState(next);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState('idle'), next === 'copied' ? 2000 : 4000);
   };
 
+  const copy = () => {
+    const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    if (!clip) return flash('failed'); // only ever confirm after a real write
+    clip
+      .writeText(noteToPlainText(draft))
+      .then(() => flash('copied'))
+      .catch(() => flash('failed'));
+  };
+
+  const copied = state === 'copied';
   return (
     <View>
       <Button
@@ -85,6 +92,10 @@ function CopyNoteButton({ draft }: { draft: DraftNote }) {
       {!canCopy ? (
         <AppText variant="small" color="ink3" style={{ marginTop: 4, fontSize: 11, maxWidth: 260, lineHeight: 15 }}>
           Copy isn’t available on this device — open the note on web to copy it into your record.
+        </AppText>
+      ) : state === 'failed' ? (
+        <AppText variant="small" tint={c.caution} style={{ marginTop: 4, fontSize: 11, maxWidth: 260, lineHeight: 15 }}>
+          Couldn’t copy — your browser blocked clipboard access. Select the note text and copy it manually.
         </AppText>
       ) : null}
     </View>
@@ -202,7 +213,7 @@ export default function ReviewNote() {
             <View style={{ height: theme.spacing.lg }} />
 
             {tab === 'Note' ? (
-              <NotePane key={noteKey} draft={draft} signed={signed} />
+              <NotePane key={noteKey} draft={draft} signed={signed} clientId={clientId} noteIndex={noteIndex} />
             ) : tab === 'Transcript' ? (
               <TranscriptPane
                 transcript={draft.transcript}
@@ -257,10 +268,10 @@ export default function ReviewNote() {
             paddingHorizontal: theme.spacing.lg,
           }}
         >
-          {/* Copy is the clinician's most common real action (note → EHR) and now does a real clipboard
-              write. Per-section Edit / Regenerate live inline on each section (they actually work), so
-              the former dead "Regenerate / Add / Replace / Edit note" bar controls were removed rather
-              than left as no-ops — the product's no-dead-promise rule. */}
+          {/* Copy is the clinician's most common real action (note → EHR) and does a real clipboard
+              write. Editing lives inline per section, where "Done" persists the edit through the vault
+              seam, so the former dead "Regenerate / Add / Replace / Edit note" bar controls were removed
+              rather than left as no-ops — the product's no-dead-promise rule. */}
           <Row style={{ justifyContent: 'space-between', maxWidth: 1320, width: '100%', alignSelf: 'center', flexWrap: 'wrap', gap: 10 }}>
             <CopyNoteButton draft={draft} />
             <Button title="Sign off" variant="primary" onPress={sign} />
@@ -289,10 +300,30 @@ export default function ReviewNote() {
 
 type NoteFormat = 'SOAP' | 'DAP';
 
-function NotePane({ draft, signed }: { draft: DraftNote; signed: boolean }) {
+function NotePane({
+  draft,
+  signed,
+  clientId,
+  noteIndex,
+}: {
+  draft: DraftNote;
+  signed: boolean;
+  clientId?: string;
+  noteIndex: number;
+}) {
   const theme = useTheme();
   const c = theme.colors;
   const [format, setFormat] = useState<NoteFormat>('SOAP');
+  const { updateNoteSection } = useData();
+
+  // A section edit is only a real edit if it survives navigation and reload, so "Done" writes it back
+  // through the same vault seam the sign-off uses. A signed note is read-only, and a note we can't
+  // address (no clientId) can't be written — those render no editor at all rather than a lost edit.
+  const editable = !signed && !!clientId;
+  const saveSection = (sectionId: string, body: string[], bullets?: string[]) => {
+    if (!clientId) return;
+    void updateNoteSection(clientId, noteIndex, sectionId, body, bullets);
+  };
 
   const subjective = draft.sections.find((s) => s.marker === 'S');
   const objective = draft.sections.find((s) => s.marker === 'O');
@@ -340,13 +371,13 @@ function NotePane({ draft, signed }: { draft: DraftNote; signed: boolean }) {
       </Row>
 
       {format === 'SOAP' ? (
-        draft.sections.map((s) => <Section key={s.id} section={s} measures={draft.measures} editable={!signed} />)
+        draft.sections.map((s) => <Section key={s.id} section={s} measures={draft.measures} editable={editable} onSave={saveSection} />)
       ) : (
         <>
           {subjective && objective ? <DataSection subjective={subjective} objective={objective} measures={draft.measures} /> : null}
-          {risk ? <Section key={risk.id} section={risk} measures={draft.measures} editable={!signed} /> : null}
-          {assessment ? <Section key={assessment.id} section={assessment} measures={draft.measures} editable={!signed} /> : null}
-          {plan ? <Section key={plan.id} section={plan} measures={draft.measures} editable={!signed} /> : null}
+          {risk ? <Section key={risk.id} section={risk} measures={draft.measures} editable={editable} onSave={saveSection} /> : null}
+          {assessment ? <Section key={assessment.id} section={assessment} measures={draft.measures} editable={editable} onSave={saveSection} /> : null}
+          {plan ? <Section key={plan.id} section={plan} measures={draft.measures} editable={editable} onSave={saveSection} /> : null}
         </>
       )}
     </View>
@@ -402,14 +433,36 @@ function DataSection({ subjective, objective, measures }: { subjective: NoteSect
   );
 }
 
-function Section({ section, measures, editable }: { section: NoteSection; measures: DraftNote['measures']; editable: boolean }) {
+function Section({
+  section,
+  measures,
+  editable,
+  onSave,
+}: {
+  section: NoteSection;
+  measures: DraftNote['measures'];
+  editable: boolean;
+  onSave: (sectionId: string, body: string[], bullets?: string[]) => void;
+}) {
   const theme = useTheme();
   const c = theme.colors;
-  const [regenerating, setRegenerating] = useState(false);
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState([...section.body, ...(section.bullets ?? [])].join('\n\n'));
 
   const isRisk = section.isRisk;
+
+  /**
+   * Round-trip the editor text back into the section's own body/bullets shape. The editor shows body
+   * paragraphs followed by bullets, so the first `body.length` blocks go back to the body and the rest
+   * stay bullets — a bulleted section (Plan) keeps its bullets, which the prescriptions rail generates
+   * from, and any block the clinician adds joins them. Nothing typed is dropped.
+   */
+  const commitEdit = () => {
+    const blocks = text.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+    if (section.bullets === undefined) return onSave(section.id, blocks);
+    const cut = Math.min(section.body.length, blocks.length);
+    onSave(section.id, blocks.slice(0, cut), blocks.slice(cut));
+  };
 
   return (
     <View
@@ -434,19 +487,22 @@ function Section({ section, measures, editable }: { section: NoteSection; measur
           )}
           <Eyebrow color={isRisk ? 'risk' : 'brand'}>{section.title}</Eyebrow>
         </Row>
+        {/* Per-section Edit only — the former "Regenerate" dimmed the text for 900ms and re-drafted
+            nothing, and single-section re-drafting isn't wired, so it was removed rather than left as
+            a dead promise. */}
         {editable ? (
-          <Row gap={12}>
-            <Pressable onPress={() => { setRegenerating(true); setTimeout(() => setRegenerating(false), 900); }}>
-              <AppText variant="small" tint={c.brand}>
-                {regenerating ? 'Regenerating…' : 'Regenerate'}
-              </AppText>
-            </Pressable>
-            <Pressable onPress={() => setEditing((e) => !e)}>
-              <AppText variant="small" tint={c.brand}>
-                {editing ? 'Done' : 'Edit'}
-              </AppText>
-            </Pressable>
-          </Row>
+          <Pressable
+            onPress={() => {
+              if (editing) commitEdit();
+              setEditing((e) => !e);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={editing ? `Save your edits to ${section.title}` : `Edit ${section.title}`}
+          >
+            <AppText variant="small" tint={c.brand}>
+              {editing ? 'Done' : 'Edit'}
+            </AppText>
+          </Pressable>
         ) : null}
       </Row>
 
@@ -494,7 +550,7 @@ function Section({ section, measures, editable }: { section: NoteSection; measur
           }}
         />
       ) : (
-        <View style={{ opacity: regenerating ? 0.45 : 1 }}>
+        <View>
           {section.body.map((p, i) => (
             <AppText key={i} variant="body" color="ink" style={{ marginBottom: 8 }}>
               {p}
@@ -925,8 +981,8 @@ function SignOff({ signed, onSign, clinician, signedAt }: { signed: boolean; onS
       </AppText>
       <View style={{ height: 14 }} />
       <Row gap={10}>
-        {/* Editing happens inline per section (each section has a working Edit toggle), so the former
-            dead "Edit first" no-op was removed rather than left as a broken promise. */}
+        {/* Editing happens inline per section — each section's Edit toggle persists on "Done" — so the
+            former dead "Edit first" no-op was removed rather than left as a broken promise. */}
         <Button title="Sign off" variant="primary" leftIcon={<CheckIcon size={16} color={c.onBrand} />} onPress={onSign} />
       </Row>
     </Card>

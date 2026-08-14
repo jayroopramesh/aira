@@ -9,7 +9,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT, MAX_NOTES_PER_CLIENT, PatientDetailsEntry } from './repository';
-import { CaseloadKpi, Client, DayDashboard, DraftNote } from './types';
+import { CaseloadKpi, Client, DayDashboard, DraftNote, NoteSection } from './types';
 import { appendSessionToClient, clientFromSession } from './sessionClient';
 
 const normalizeName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -75,6 +75,12 @@ type DataContextValue = {
   savePatientDetails: (clientId: string, patch: PatientDetailsEntry) => Promise<void>;
   /** Persist a sign-off onto the stored note (F8) so the attestation survives navigation/reload. */
   signNote: (clientId: string, noteIndex: number, signedBy: string, signedAt: string) => Promise<void>;
+  /**
+   * Persist a clinician's inline edit to ONE note section, so the review screen's per-section Edit is a
+   * real edit rather than a throwaway text box (no-dead-promise). Only the section prose moves — the
+   * sign-off (status/signedBy/signedAt) and the structured riskLevel are never touched here.
+   */
+  updateNoteSection: (clientId: string, noteIndex: number, sectionId: string, body: string[], bullets?: string[]) => Promise<void>;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -187,6 +193,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [persist, snapshot],
   );
 
+  const updateNoteSection = useCallback(
+    async (clientId: string, noteIndex: number, sectionId: string, body: string[], bullets?: string[]) => {
+      const list = snapshot.notes[clientId];
+      if (!list?.[noteIndex]) return;
+      const edit = (s: NoteSection): NoteSection => {
+        if (s.id !== sectionId) return s;
+        // Only a section that already carries bullets keeps them — a plain prose section never grows a
+        // bullets array it never had, so the round-trip can't change how the section renders.
+        return s.bullets === undefined ? { ...s, body } : { ...s, body, bullets: bullets ?? [] };
+      };
+      const next: DraftNote[] = list.map((n, i) => (i === noteIndex ? { ...n, sections: n.sections.map(edit) } : n));
+      await persist({ ...snapshot, notes: { ...snapshot.notes, [clientId]: next } });
+    },
+    [persist, snapshot],
+  );
+
   const value = useMemo<DataContextValue>(() => {
     const clientsById = Object.fromEntries(snapshot.clients.map((c) => [c.id, c]));
     return {
@@ -203,8 +225,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       saveSessionNote,
       savePatientDetails,
       signNote,
+      updateNoteSection,
     };
-  }, [snapshot, hydrated, loadSample, clearAll, saveSessionNote, savePatientDetails, signNote]);
+  }, [snapshot, hydrated, loadSample, clearAll, saveSessionNote, savePatientDetails, signNote, updateNoteSection]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
