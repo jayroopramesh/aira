@@ -26,7 +26,7 @@ function plainCode(words: string[]) {
 
 /** A numbered, human-readable file body, for the Save affordance. */
 function fileBody(words: string[]) {
-  return `Aira recovery code — keep this private.\n\n${words.map((w, i) => `${String(i + 1).padStart(2, '0')}. ${w}`).join('\n')}\n`;
+  return `Airava recovery code — keep this private.\n\n${words.map((w, i) => `${String(i + 1).padStart(2, '0')}. ${w}`).join('\n')}\n`;
 }
 
 /**
@@ -40,7 +40,7 @@ export default function WelcomeRecovery() {
   const router = useRouter();
   const words = authService.getRecoveryCode();
   // Revisiting this screen after setup shows no code — Copy/Save must be inert then, or "Save as file"
-  // would download an EMPTY aira-recovery-code.txt over the user's real one (N4).
+  // would download an EMPTY airava-recovery-code.txt over the user's real one (N4).
   const hasCode = words.length > 0;
   // Copy needs navigator.clipboard and Save needs a document to trigger a download — neither exists
   // on native, so both affordances are DISABLED there with honest guidance (write the words down)
@@ -75,7 +75,7 @@ export default function WelcomeRecovery() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'aira-recovery-code.txt';
+      a.download = 'airava-recovery-code.txt';
       a.click();
       URL.revokeObjectURL(url);
       setSavedFile(true);
@@ -253,7 +253,7 @@ export default function WelcomeRecovery() {
       <AuthSubmit title={R.recoveryEnterCta} onPress={enter} disabled={!saved} style={{ maxWidth: 300 }} />
       <View style={{ height: 6 }} />
       <AppText variant="small" tint={INK2} center style={{ fontSize: 11, opacity: 0.6 }}>
-        On this device only · the code is never sent to Aira.
+        On this device only · the code is never sent to Airava.
       </AppText>
     </AuthScaffold>
   );

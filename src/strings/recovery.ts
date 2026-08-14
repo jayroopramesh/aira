@@ -21,7 +21,7 @@ export const recoveryStrings = {
   passwordLabel: 'Password',
   signInCta: 'Sign in & decrypt',
   demoWrongLink: 'See a wrong-password state',
-  createAccountLink: 'New to Aira? Create an account',
+  createAccountLink: 'New to Airava? Create an account',
   vaultLine: 'Encrypted with your login · notes stay on this device.',
   // Supanote-style trust note — HIPAA-ALIGNED phrasing only (never "compliant/certified"; counsel pending).
   hipaaLine: 'HIPAA-aligned safeguards · encrypted on this device — only you hold the key.',
@@ -48,10 +48,10 @@ export const recoveryStrings = {
   decryptingVaultLine: 'Encrypted with your login · keys never leave this device',
 
   // Welcome · onboarding
-  onboard1Eyebrow: 'Welcome to Aira',
+  onboard1Eyebrow: 'Welcome to Airava',
   onboard1Title: 'Your sessions, understood — and kept only by you',
   onboard1Lede:
-    'Aira is your personal scribe for after the session — not another ear in the room. You capture the conversation on your device; Aira drafts the clinical note once you’re done, and shows what’s changing over time. Everything private stays on your device, encrypted.',
+    'Airava is your personal scribe for after the session — not another ear in the room. You capture the conversation on your device; Airava drafts the clinical note once you’re done, and shows what’s changing over time. Everything private stays on your device, encrypted.',
   onboard1Chips: ['Encrypted on your device', 'Notes drafted for you', 'Patterns over time'],
   onboard1Cta: 'Get started',
   onboardSkip: 'Skip — I already have an account',
@@ -59,11 +59,11 @@ export const recoveryStrings = {
   onboard2Eyebrow: 'How it works',
   onboard2Title: 'Three steps, every session',
   onboard2Beats: [
-    { title: 'Capture on your device', body: 'Record the session on your device; Aira transcribes it and drafts your note for you to review.' },
-    { title: 'Sign your note', body: 'Aira drafts a SOAP note. You review, edit, and sign — nothing is final until you say so.' },
+    { title: 'Capture on your device', body: 'Record the session on your device; Airava transcribes it and drafts your note for you to review.' },
+    { title: 'Sign your note', body: 'Airava drafts a SOAP note. You review, edit, and sign — nothing is final until you say so.' },
     { title: 'See patterns', body: 'Scores and themes build over time, so change is visible across visits.' },
   ],
-  onboard2Privacy: 'Your notes are encrypted with a key only you hold. Aira can’t read them, and neither can anyone else.',
+  onboard2Privacy: 'Your notes are encrypted with a key only you hold. Airava can’t read them, and neither can anyone else.',
   onboard2Cta: 'Create your account',
 
   // Welcome · create account
@@ -79,7 +79,7 @@ export const recoveryStrings = {
   emailLabel: 'Email',
   confirmPasswordLabel: 'Confirm password',
   consentText:
-    'I’m a licensed clinician and I agree to Aira’s Terms and Privacy Notice. I understand my notes are encrypted on this device.',
+    'I’m a licensed clinician and I agree to Airava’s Terms and Privacy Notice. I understand my notes are encrypted on this device.',
   createCta: 'Create account',
   createSignInLink: 'Already have an account? Sign in',
 
@@ -87,7 +87,7 @@ export const recoveryStrings = {
   recoveryBadge: 'Shown once — never again',
   recoveryTitle: 'Your recovery code',
   recoveryLede:
-    'If you ever forget your password, this code is how you get back into your vault. Save it now — Aira can’t show it to you a second time.',
+    'If you ever forget your password, this code is how you get back into your vault. Save it now — Airava can’t show it to you a second time.',
   recoveryReveal: 'Tap to reveal',
   recoveryCopy: 'Copy code',
   recoveryCopied: 'Copied',
@@ -96,5 +96,5 @@ export const recoveryStrings = {
   recoveryWarning:
     'Treat this code as your only way back in. Lose both it and your password, and recovery becomes a slow, manually-verified process — if it’s possible at all.',
   recoveryGate: 'I’ve saved my recovery code somewhere safe. I understand it won’t be shown again.',
-  recoveryEnterCta: 'Enter Aira',
+  recoveryEnterCta: 'Enter Airava',
 } as const;

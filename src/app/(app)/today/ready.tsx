@@ -38,7 +38,7 @@ export default function ReadyScreen() {
           You’re ready for {first}
         </AppText>
         <AppText variant="body" color="ink2" center style={{ marginTop: 10, maxWidth: 400 }}>
-          Last session’s highlights are fresh in mind. When you begin, Aira captures on-device and drafts a note against the SOAP sections.
+          Last session’s highlights are fresh in mind. When you begin, Airava captures on-device and drafts a note against the SOAP sections.
         </AppText>
         <View style={{ height: 22 }} />
         <Row gap={12}>

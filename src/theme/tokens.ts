@@ -217,6 +217,16 @@ export const fontFamily = {
   bold: 'Lexend_700Bold',
 } as const;
 
+/**
+ * Wordmark-only display face — Atkinson Hyperlegible Mono Medium, loaded as a local asset
+ * in the root layout (see `_layout.tsx`). This is a design-token decision so the wordmark's
+ * face lives in one place, not hardcoded across screens. ONLY the product wordmark (the
+ * TopBar brand mark, shared by every onboarding/login lockup via AuthScaffold) uses it —
+ * Lexend stays the interface font everywhere else (body, headings, labels, data), which the
+ * measured WCAG pairings in the s3 token sheet assume. Do not introduce this face into UI text.
+ */
+export const brandFont = 'AtkinsonHyperlegibleMono-Medium';
+
 export const typeRamp = {
   display: { fontSize: 34, lineHeight: 38, fontFamily: fontFamily.semibold, letterSpacing: -0.85 },
   h1: { fontSize: 25, lineHeight: 30, fontFamily: fontFamily.semibold, letterSpacing: -0.5 },

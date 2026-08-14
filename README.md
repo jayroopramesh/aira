@@ -1,7 +1,7 @@
 <div align="center">
-  <img src="assets/brand/logo.png" alt="Aira" width="140" height="140" />
+  <img src="assets/brand/logo.png" alt="Airava" width="140" height="140" />
 
-  <h1>Aira</h1>
+  <h1>Airava</h1>
 
   <p><strong>Your sessions, understood — and kept only by you.</strong></p>
 
@@ -12,14 +12,17 @@
   </p>
 </div>
 
-Aira is a privacy-first documentation and longitudinal-insight app for mental-health counselors: a
+Airava is a privacy-first documentation and longitudinal-insight app for mental-health counselors: a
 post-session scribe that turns a recorded session into a draft SOAP note, then surfaces
 plain-language patterns across a caseload over time. Patient data stays **on the counselor's own
 device**, encrypted under a password only they hold — nothing is synced to a server.
 
 This repository is the **Expo (React Native) application** — the production app that realises the
-approved click-through prototype. Expo **replaces** the earlier SvelteKit plan as *the* Aira app
-(captain decision, 2026-08-12).
+approved click-through prototype. Expo **replaces** the earlier SvelteKit plan as *the* Airava app
+(captain decision, 2026-08-12). **Airava** is the user-visible product name; the shorthand `aira`
+stays for everything non-user-facing (repo, npm package, the Expo `slug`/`scheme`, the device-storage
+namespace, code identifiers and paths) — see `AGENTS.md` "Name vs. slug" for why those must not be
+renamed.
 
 > **Status:** v1 foundation with a **live demo mode**. Five navigable workflows. A fresh install
 > boots **blank** (zero-states everywhere; load the sample cohort from Settings). Behind the existing
@@ -131,7 +134,8 @@ re-measured (source: `aira-ui-screens-s4/revision-4-notes.md`; values in `src/th
 ```
 src/theme/
   tokens.ts          Raw token values — light + dark colour roles, radii, spacing,
-                     elevation presets, motion, and the Lexend type ramp.
+                     elevation presets, motion, the Lexend type ramp, and the
+                     wordmark-only `brandFont`.
   ThemeProvider.tsx  React context. Follows the system colour scheme with a manual
                      override (useThemeControls().toggle). useTheme() returns the
                      resolved theme.
@@ -143,7 +147,12 @@ src/theme/
   text pairing meets AA/AAA).
 - **Type** is consumed through `<AppText variant="…">`, bound to the ramp
   (`display`/`h1`/`h2`/`body`/`bodyStrong`/`small`/`label`/`numeric`). **Lexend** is loaded via
-  `@expo-google-fonts/lexend` in the root layout.
+  `@expo-google-fonts/lexend` in the root layout. The wordmark — and only the wordmark — renders in
+  the `brandFont` token (`theme.brandFont` = Atkinson Hyperlegible Mono Medium, a local asset in
+  `assets/fonts/` with its Braille Institute license, loaded through the same `useFonts` call);
+  interface text never uses it. Web metadata Expo's static export doesn't emit is declared by hand:
+  the `<title>` via a root `Head` in `_layout.tsx`, and `public/manifest.json` linked from
+  `src/app/+html.tsx` (which also carries the `theme-color`, read from the `brand` token).
 - **Dark mode** is a full parallel palette (turquoise-leaning since round 4); the theme toggle
   (top-right) pins a manual override over the system setting.
 - Reusable primitives live in `src/components/ui.tsx` (`Card`, `Button`, `Chip`, `Badge`,
@@ -245,7 +254,7 @@ drives the recording/analysing states. Neither needs a native module.
   makes it read-only.
 - **Recovery-key policy is captain-resolved** (`decision-recovery-key-policy`). Account creation
   collects Emirates ID + phone + name + email + password; a **one-time recovery code** is shown once
-  at setup and is the self-service path if the password is forgotten. Aira additionally escrows the
+  at setup and is the self-service path if the password is forgotten. Airava additionally escrows the
   decrypt key server-side, released only on a manual, mutually-approved basis — deliberately **not**
   surfaced as a UI button. Setup framing is stern but truthful (effectively unrecoverable without
   claiming impossibility). **All** recovery + login copy is isolated in `src/strings/recovery.ts`.

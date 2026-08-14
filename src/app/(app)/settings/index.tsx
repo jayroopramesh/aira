@@ -50,7 +50,7 @@ export default function Settings() {
   return (
     <Screen maxWidth={760}>
       <BackLink label="Back to the app" onPress={() => router.back()} />
-      <PageHeader eyebrow="Settings" title="Settings & demo controls" subtitle="Everything Aira stores stays on this device. These controls are for the demo build." />
+      <PageHeader eyebrow="Settings" title="Settings & demo controls" subtitle="Everything Airava stores stays on this device. These controls are for the demo build." />
 
       {/* Sample data */}
       <Card>

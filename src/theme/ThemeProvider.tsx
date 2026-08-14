@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import {
+  brandFont,
   ColorTokens,
   darkColors,
   darkElevation,
@@ -27,6 +28,8 @@ export type Theme = {
   spacing: typeof spacing;
   motion: typeof motion;
   type: Record<TypeVariant, TypeStyle>;
+  /** Wordmark-only display face (Atkinson Hyperlegible Mono Medium). Never for UI text. */
+  brandFont: string;
 };
 
 type ThemeContextValue = {
@@ -48,6 +51,7 @@ function buildTheme(mode: ColorMode): Theme {
     spacing,
     motion,
     type: typeRamp,
+    brandFont,
   };
 }
 

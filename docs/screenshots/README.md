@@ -1,4 +1,10 @@
-# Aira — rendered workflow captures
+# Airava — rendered workflow captures
+
+> **Every capture in this folder predates the Airava brand rename.** The README hero strip,
+> `mobile/*`, and the `r4r5-`/`r2r3-` sets all still show the old **"Aira"** wordmark set in Lexend;
+> the shipped app now shows **"Airava"** in Atkinson Hyperlegible Mono. Nothing else in them is
+> affected — judge layout and colour from them as usual, but not the brand mark. A full refresh is
+> queued as a separate task.
 
 Real renders of the running **web** app (headless Chrome, 2× scale). The `mobile/` folder is the
 **current** set (phone-dimension signature screens, light + dark); the `r4r5-` prefix below it is the

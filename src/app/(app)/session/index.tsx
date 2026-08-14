@@ -134,8 +134,8 @@ function PreCapture({
       </AppText>
       <AppText variant="body" color="ink2" center style={{ marginTop: 10, maxWidth: 460 }}>
         {hasGroq
-          ? 'In demo mode Aira transcribes and drafts in the cloud (Groq). You review and sign every note; the draft and transcript stay on this device.'
-          : 'Aira transcribes then drafts a note. You review and sign every note. (Demo services aren’t configured — this runs on a sample transcript.)'}
+          ? 'In demo mode Airava transcribes and drafts in the cloud (Groq). You review and sign every note; the draft and transcript stay on this device.'
+          : 'Airava transcribes then drafts a note. You review and sign every note. (Demo services aren’t configured — this runs on a sample transcript.)'}
       </AppText>
 
       {client ? (
@@ -321,7 +321,7 @@ function Recording({
         <AppText variant="bodyStrong" color="ink2" style={{ fontSize: 12.5 }}>
           Nothing is authoritative yet — this is a draft you will review and sign.
         </AppText>{' '}
-        When you stop, Aira transcribes, drafts the note, then deletes the recording (unless you keep it).
+        When you stop, Airava transcribes, drafts the note, then deletes the recording (unless you keep it).
       </AppText>
     </View>
   );
@@ -559,7 +559,7 @@ function Analysing({
       setError(
         quality === 'too-short'
           ? 'This capture is too short to draft a reliable note. Check the recording or upload, or paste the session transcript below, then draft.'
-          : 'This capture didn’t contain enough clear speech to draft from (a dead mic, muted input, or failed upload can cause this). Re-capture or paste the real transcript below — Aira won’t write up a note from an unclear recording.',
+          : 'This capture didn’t contain enough clear speech to draft from (a dead mic, muted input, or failed upload can cause this). Re-capture or paste the real transcript below — Airava won’t write up a note from an unclear recording.',
       );
       return;
     }

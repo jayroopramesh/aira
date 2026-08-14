@@ -329,7 +329,7 @@ function RiskReview({ clientId }: { clientId: string }) {
         <AppText variant="body" color="ink" style={{ marginTop: 12, lineHeight: 23 }}>
           {safety
             ? safety.detail
-            : 'Aira rated this client acute from a documented session. Open the session note below to see exactly what was disclosed, review or start a safety plan, and use the escalation options as needed. This tier is never lowered automatically.'}
+            : 'Airava rated this client acute from a documented session. Open the session note below to see exactly what was disclosed, review or start a safety plan, and use the escalation options as needed. This tier is never lowered automatically.'}
         </AppText>
       </Card>
 
@@ -370,7 +370,7 @@ function RiskReview({ clientId }: { clientId: string }) {
           <Eyebrow>Safety snapshot</Eyebrow>
           <AppText variant="body" color="ink2" style={{ marginTop: 10, lineHeight: 23 }}>
             No structured risk snapshot is on file for this client yet — the risk lives in the session note
-            Aira drafted. Open the note to review what was documented, then complete a safety plan to record
+            Airava drafted. Open the note to review what was documented, then complete a safety plan to record
             coping steps and a trusted contact.
           </AppText>
         </Card>

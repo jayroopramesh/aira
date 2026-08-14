@@ -48,6 +48,19 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
 (`.github/workflows/infra.yml`) — no Azure DevOps.
 
 ## Structural rules to preserve (locked design decisions)
+- **Name vs. slug**: the user-visible product name is **Airava** (`app.json` `name`, the TopBar
+  wordmark, onboarding/login lockups, the web `<title>`, and `public/manifest.json`). The shorthand
+  **aira** stays for everything non-user-facing — repo, npm package, the `aira` `slug`/`scheme`, the
+  `aira.vault.` storage namespace in `deviceStore.ts`, code identifiers, and paths — so persisted data
+  and deep links keep working; do not rename those. Web `<title>` and PWA manifest are NOT emitted by
+  Expo static export, so they're declared explicitly: the title via a root `Head` in `_layout.tsx`
+  (the static HTML title stays empty and hydrates at runtime), the manifest as `public/manifest.json`
+  linked from `src/app/+html.tsx`.
+- **Wordmark font**: the wordmark — and ONLY the wordmark — renders in the `brandFont` token
+  (`src/theme/tokens.ts`, exposed as `theme.brandFont`) = Atkinson Hyperlegible Mono Medium, a local
+  asset in `assets/fonts/` (with its Braille Institute license) loaded via `useFonts` in
+  `_layout.tsx`. Lexend remains the interface font everywhere else (body/headings/labels/data) — the
+  s3 WCAG pairings assume it; never put the mono face into UI text.
 - Mascot only on human surfaces (welcome onboarding, unlock/login, wordmark) — never on
   charts/tables/risk queue or the in-session capture screen. The final art is the captain's
   background-removed mood set in `assets/mascot/<mood>.png`, driven by
