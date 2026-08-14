@@ -34,6 +34,15 @@ export function TopBar({
   const onRisk = params?.risk === '1' || paramClient?.risk === 'acute';
   const mood = appBarMood(pathname, onRisk);
 
+  const mark = (
+    <Row gap={9}>
+      <MascotMood mood={mood} size={30} />
+      <AppText variant="h2" tint={ink} style={{ fontSize: 21, fontFamily: theme.brandFont }}>
+        Airava
+      </AppText>
+    </Row>
+  );
+
   return (
     <View
       style={{
@@ -49,12 +58,7 @@ export function TopBar({
         {/* Wordmark + mascot navigate to the day board from anywhere in the app (C1). On the pre-auth
             chrome (transparent) there is no home to go to, so it stays static there. */}
         {transparent ? (
-          <Row gap={9}>
-            <MascotMood mood={mood} size={30} />
-            <AppText variant="h2" tint={ink} style={{ fontSize: 21, fontFamily: theme.brandFont }}>
-              Airava
-            </AppText>
-          </Row>
+          mark
         ) : (
           <Pressable
             accessibilityRole="button"
@@ -62,12 +66,7 @@ export function TopBar({
             onPress={() => router.navigate('/(app)/today')}
             style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
           >
-            <Row gap={9}>
-              <MascotMood mood={mood} size={30} />
-              <AppText variant="h2" tint={ink} style={{ fontSize: 21, fontFamily: theme.brandFont }}>
-                Airava
-              </AppText>
-            </Row>
+            {mark}
           </Pressable>
         )}
 

@@ -143,7 +143,12 @@ src/theme/
   text pairing meets AA/AAA).
 - **Type** is consumed through `<AppText variant="…">`, bound to the ramp
   (`display`/`h1`/`h2`/`body`/`bodyStrong`/`small`/`label`/`numeric`). **Lexend** is loaded via
-  `@expo-google-fonts/lexend` in the root layout.
+  `@expo-google-fonts/lexend` in the root layout. The wordmark — and only the wordmark — renders in
+  the `brandFont` token (`theme.brandFont` = Atkinson Hyperlegible Mono Medium, a local asset in
+  `assets/fonts/` with its Braille Institute license, loaded through the same `useFonts` call);
+  interface text never uses it. Web metadata Expo's static export doesn't emit is declared by hand:
+  the `<title>` via a root `Head` in `_layout.tsx`, and `public/manifest.json` linked from
+  `src/app/+html.tsx` (which also carries the `theme-color`, read from the `brand` token).
 - **Dark mode** is a full parallel palette (turquoise-leaning since round 4); the theme toggle
   (top-right) pins a manual override over the system setting.
 - Reusable primitives live in `src/components/ui.tsx` (`Card`, `Button`, `Chip`, `Badge`,

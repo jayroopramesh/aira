@@ -1,5 +1,6 @@
 import { ScrollViewStyleReset } from 'expo-router/html';
 import { type PropsWithChildren } from 'react';
+import { lightColors } from '../theme/tokens';
 
 /**
  * Web-only root HTML document, wrapping every statically-rendered page.
@@ -20,7 +21,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
 
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#0F6E60" />
+        <meta name="theme-color" content={lightColors.brand} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-title" content="Airava" />
 

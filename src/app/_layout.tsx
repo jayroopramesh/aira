@@ -34,7 +34,7 @@ function RootStack() {
 }
 
 export default function RootLayout() {
-  const [loaded] = useFonts({
+  const [loaded, error] = useFonts({
     Lexend_400Regular,
     Lexend_500Medium,
     Lexend_600SemiBold,
@@ -43,8 +43,10 @@ export default function RootLayout() {
     'AtkinsonHyperlegibleMono-Medium': require('../../assets/fonts/AtkinsonHyperlegibleMono-Medium.ttf'),
   });
 
-  // Fonts are the type ramp's backbone; hold render until they resolve.
-  if (!loaded) return null;
+  // Fonts are the type ramp's backbone; hold render until they resolve — but never past a failure.
+  // If any face (including the decorative wordmark one) can't load, render on the fallback glyphs:
+  // a blank screen would also take the standing Escalate affordance down with it.
+  if (!loaded && !error) return null;
 
   return (
     <SafeAreaProvider>
