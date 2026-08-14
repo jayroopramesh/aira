@@ -53,13 +53,18 @@ const cases = [
   { name: 'live: "screened and denied" summary, level=clear stays clear', in: note({ level: 'clear', rows: [], summary: 'Suicidal ideation and self-harm were both screened and denied.' }), want: 'clear' },
   { name: 'live: denial verb BEFORE the topic ("denied suicidal ideation") stays clear', in: note({ level: 'clear', rows: [], summary: 'The client denied suicidal ideation and self-harm this session.' }), want: 'clear' },
   { name: 'live: present-tense denial before the topic ("denies current …") stays clear', in: note({ level: 'clear', rows: [], summary: 'The client denies current suicidal ideation and any self-harm.' }), want: 'clear' },
-  { name: 'live: unrelated "reports" elsewhere never overrides the denial', in: note({ level: 'clear', rows: [], summary: 'Client reports improved mood; suicidal ideation and self-harm were both screened and denied.' }), want: 'clear' },
   { name: 'live: "none reported" summary stays clear (negated marker is not a disclosure)', in: note({ level: 'clear', rows: [], summary: 'Suicidal ideation: none reported this session.' }), want: 'clear' },
-  { name: 'live: summary discloses passive ideation while denying a plan → acute', in: note({ level: 'watch', rows: [], summary: 'Client discloses passive ideation but denies a plan.' }), want: 'acute' },
+  // A disclosure marker belonging to another clause must never override the denial. Each of these
+  // carries a marker ('reported', 'thoughts of', 'noted') outside the denial it is attached to.
+  { name: 'live: "reported" in an unrelated clause never overrides the denial', in: note({ level: 'clear', rows: [], summary: 'Client reported improved mood; suicidal ideation and self-harm were both screened and denied.' }), want: 'clear' },
+  { name: 'live: "denied any thoughts of suicide" stays clear', in: note({ level: 'clear', rows: [{ label: 'Suicidal ideation', value: 'Denied' }, { label: 'Self-harm', value: 'Denied' }], summary: 'The client denied any thoughts of suicide or self-harm this session.' }), want: 'clear' },
+  { name: 'live: trailing "were noted" outside the scrub window stays clear', in: note({ level: 'clear', rows: [], summary: 'The client denied suicidal ideation; no significant safety concerns were noted.' }), want: 'clear' },
 
   // --- Plainest row phrasings floor too (not just hand-listed disclosure markers) ------------------
   { name: 'live: bare "Present" ideation row, level=watch → acute', in: note({ level: 'watch', rows: ideationRow('Present') }), want: 'acute' },
   { name: 'live: "Active, with a plan" ideation row, level=watch → acute', in: note({ level: 'watch', rows: ideationRow('Active, with a plan') }), want: 'acute' },
+  // A denial of OVERALL risk sitting in the ideation row must not cancel the floor on the disclosure.
+  { name: 'live: disclosed ideation carrying a generic "no other risk" clause still floors to acute', in: note({ level: 'watch', rows: ideationRow('Active with a plan; no other risk factors') }), want: 'acute' },
 
   // --- Asymmetry guard: identical risk text must derive the same tier with and without a level -----
   { name: 'asymmetry: bare "Present" ideation row, no level → acute (floor == derivation)', in: note({ level: undefined, rows: ideationRow('Present') }), want: 'acute' },

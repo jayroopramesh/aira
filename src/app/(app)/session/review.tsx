@@ -465,8 +465,13 @@ function Section({
   /**
    * Round-trip the editor text back into the section's own body/bullets shape. The editor shows body
    * paragraphs followed by bullets, so the first `body.length` blocks go back to the body and the rest
-   * stay bullets — a bulleted section (Plan) keeps its bullets, which the prescriptions rail generates
-   * from, and any block the clinician adds joins them. Nothing typed is dropped.
+   * stay bullets — a bulleted section (Plan) keeps its bullets, and any block the clinician adds joins
+   * them. Nothing typed is dropped.
+   *
+   * Scope: this persists the edited SECTION onto the note and deliberately nothing else. It does not
+   * retroactively rewrite `draft.prescriptions` (which the rail seeds from, copied from the plan
+   * bullets at draft time) or a client's `lastPlan`. The prescriptions rail is independently editable,
+   * and "Generate from notes" re-pulls from the current Plan bullets on demand.
    */
   const commitEdit = () => {
     const blocks = text.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
