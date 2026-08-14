@@ -182,8 +182,8 @@ report which are live). Configuration is `EXPO_PUBLIC_*` in `.env.local`, read v
 | Concern | Live (keys present) | Mock (no keys) |
 |---|---|---|
 | **Accounts** | Supabase `signUp` / `signInWithPassword` (`SupabaseAuthService`). Email confirmation OFF; Emirates ID/phone/name → user metadata. The one-time recovery code stays app-side (local vault key). | `MockAuthService` |
-| **Transcription** | Groq **whisper-large-v3** over recorded/uploaded audio (`GroqTranscriptionService`), via the `groq-proxy` Edge Function. Web capture via MediaRecorder + a file-picker fallback (`services/audioCapture.ts`). | `MockTranscriptionService` (canned transcript) |
-| **Summarization** | Groq **llama-3.3-70b** → SOAP sections + risk/safety + plan → `DraftNote` (`services/summarization.ts`), via the `groq-proxy` Edge Function. | `MockSummarizationService` |
+| **Transcription** | Groq **whisper-large-v3** over recorded/uploaded audio (`GroqTranscriptionService`), via the `groq-proxy` Edge Function. Web capture via MediaRecorder + a file-picker fallback (`services/audioCapture.ts`). | `MockTranscriptionService` — replays the canned transcript **only for the built-in `mock://` sample clip**; any real capture is refused (`TranscriptionUnavailableError`) so the clinician types or pastes it |
+| **Summarization** | Groq **llama-3.3-70b** → SOAP sections + risk/safety + plan → `DraftNote` (`services/summarization.ts`), via the `groq-proxy` Edge Function. | `MockSummarizationService` — the full walkthrough note **only for the sample clip**; a real session gets derive-only sections |
 
 Both Groq calls go through a **server-side proxy** so the Groq API key never ships in the bundle —
 see [Groq proxy (Edge Function)](#groq-proxy-edge-function). Transcription + summarization are two
@@ -365,8 +365,9 @@ out of scope for v1; the seam encodes the spike's decisions so `whisper.rn` slot
 With Groq configured the app uses `GroqTranscriptionService` — a disclosed **cloud hop** through the
 [`groq-proxy` Edge Function](#groq-proxy-edge-function) (see
 [Demo-mode live services](#demo-mode-live-services)); note the on-device de-identification hop does
-**not** run in demo mode. Otherwise `MockTranscriptionService` (mocked timing, canned transcript)
-drives the recording/analysing states. Neither needs a native module.
+**not** run in demo mode. Otherwise `MockTranscriptionService` drives the recording/analysing states:
+it replays the canned transcript for the built-in `mock://` sample clip and refuses any real capture,
+so a recording is never answered with words nobody said. Neither needs a native module.
 
 ---
 

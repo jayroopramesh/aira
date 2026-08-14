@@ -21,7 +21,10 @@ import { register } from 'node:module';
 register('./ts-service-loader.mjs', import.meta.url);
 
 const { MockSummarizationService, GroqSummarizationService } = await import('../src/services/summarization.ts');
-const { MockTranscriptionService, isTranscriptionUnavailableError } = await import('../src/services/transcription.ts');
+const { MockTranscriptionService, GroqTranscriptionService, isSampleCapture, isTranscriptionUnavailableError } =
+  await import('../src/services/transcription.ts');
+const { isCloudSessionRequiredError } = await import('../src/services/cloudSession.ts');
+const { failedCaptureRef } = await import('../src/services/audioCapture.ts');
 
 let failed = 0;
 function check(name, ok, detail) {
@@ -73,6 +76,130 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
     uploadThrown = e;
   }
   check('an uploaded audio file is treated as real, not sample', isTranscriptionUnavailableError(uploadThrown), uploadThrown?.name);
+}
+
+// --- 1b. The CLOUD transcriber refuses too, and with the OTHER error kind ------------------------
+// Only `CloudSessionRequiredError` makes the capture screen offer "sign in" — signing in fixes a
+// missing session and cannot conjure an engine that isn't in the build, so the kinds must stay apart.
+{
+  const signedOut = new GroqTranscriptionService('https://proxy.invalid', async () => null, 'whisper-large-v3');
+  let thrown = null;
+  try {
+    await signedOut.transcribe(RECORDING);
+  } catch (e) {
+    thrown = e;
+  }
+  check('cloud transcription with no session is refused', thrown !== null, 'it returned a transcript');
+  check('the refusal is CloudSessionRequiredError, so the UI offers sign-in', isCloudSessionRequiredError(thrown), thrown?.name);
+  check('it is NOT the on-device error kind', !isTranscriptionUnavailableError(thrown), thrown?.name);
+  check('the refusal does not leak the canned text', !String(thrown?.message ?? '').includes(CANNED_MARKER), thrown?.message);
+
+  // With a token it must actually reach the proxy rather than answering locally.
+  const originalFetch = globalThis.fetch;
+  let posted = null;
+  globalThis.fetch = async (url) => {
+    if (String(url) === RECORDING.uri) return new Response(new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }));
+    posted = String(url);
+    return new Response(JSON.stringify({ text: 'real whisper output', segments: [] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  const signedIn = new GroqTranscriptionService('https://proxy.invalid', async () => 'session-token', 'whisper-large-v3');
+  const cloud = await signedIn.transcribe(RECORDING);
+  check('with a session the audio goes to the proxy', posted === 'https://proxy.invalid/transcriptions', posted);
+  check('and the transcript is whisper\'s, not canned', cloud.text === 'real whisper output', cloud.text);
+  globalThis.fetch = originalFetch;
+}
+
+// --- 1c. A recording that cannot be finalised is never relabelled as the sample ------------------
+// `stopAndAnalyse` used to fall back to the sample ref when MediaRecorder.stop() threw, which handed
+// a real 40-minute session the canned transcript and the canned walkthrough note.
+{
+  const failed = failedCaptureRef(40 * 60 * 1000);
+  check('a failed recording is not a sample capture', isSampleCapture(failed.uri) === false, failed.uri);
+  check('it keeps the elapsed duration', failed.durationMs === 40 * 60 * 1000, String(failed.durationMs));
+
+  let thrown = null;
+  try {
+    await new MockTranscriptionService(0.001).transcribe(failed);
+  } catch (e) {
+    thrown = e;
+  }
+  check('and it is refused rather than answered with canned words', isTranscriptionUnavailableError(thrown), thrown?.name);
+
+  // The drafting half of the same gate: a failed recording must not unlock the walkthrough content.
+  const draft = await new MockSummarizationService().summarize({
+    transcript: REAL_TRANSCRIPT,
+    sampleCapture: isSampleCapture(failed.uri),
+  });
+  check('nor given the walkthrough diagnosis chip', draft.reviewCodes.length === 0, JSON.stringify(draft.reviewCodes));
+  check('nor the walkthrough prescriptions', draft.prescriptions.length === 0, String(draft.prescriptions.length));
+}
+
+// --- 1d. A recorder that stops itself still hands back the real clip -----------------------------
+// When every track of the stream ends (mic unplugged, permission revoked) MediaRecorder fires `stop`
+// and goes `inactive` on its own; a later stop() then throws InvalidStateError. The recorded audio is
+// already in hand, so it must be returned rather than surfaced as a capture failure.
+{
+  class FakeRecorder {
+    constructor() {
+      this.state = 'recording';
+      this.ondataavailable = null;
+      this.onstop = null;
+    }
+    start() {}
+    stop() {
+      if (this.state === 'inactive') {
+        const e = new Error('The MediaRecorder is not recording');
+        e.name = 'InvalidStateError';
+        throw e;
+      }
+      this.state = 'inactive';
+      this.onstop?.();
+    }
+    endStreamOnItsOwn() {
+      this.state = 'inactive';
+      this.onstop?.();
+    }
+    static isTypeSupported() {
+      return false;
+    }
+  }
+
+  let recorder = null;
+  const priorRecorder = globalThis.MediaRecorder;
+  const priorNavigator = globalThis.navigator;
+  globalThis.MediaRecorder = new Proxy(FakeRecorder, {
+    construct(T, args) {
+      recorder = new T(...args);
+      return recorder;
+    },
+  });
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } },
+    configurable: true,
+    writable: true,
+  });
+
+  const { startRecording } = await import('../src/services/audioCapture.ts');
+  const active = await startRecording();
+  recorder.ondataavailable({ data: new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }) });
+  recorder.endStreamOnItsOwn();
+
+  let ref = null;
+  let stopThrew = null;
+  try {
+    ref = await active.stop();
+  } catch (e) {
+    stopThrew = e;
+  }
+  check('stopping an already-inactive recorder does not reject', stopThrew === null, stopThrew?.name);
+  check('it returns the real recorded clip', !!ref && ref.uri.startsWith('blob:'), ref?.uri);
+  check('never the sample clip', !!ref && isSampleCapture(ref.uri) === false, ref?.uri);
+
+  globalThis.MediaRecorder = priorRecorder;
+  Object.defineProperty(globalThis, 'navigator', { value: priorNavigator, configurable: true, writable: true });
 }
 
 // --- 2. The on-device summarizer's canned clinical content is sample-only -------------------------
