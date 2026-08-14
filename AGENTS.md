@@ -69,13 +69,20 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   overriding a denial in another), and nothing can lower a tier once set. Within a row the test is
   `deniesRisk`-only — a row discloses when it is present, neither not-assessed nor denied — with **no**
   positive-marker override, for the same reason: a marker substring can't be scoped to its clause
-  ("Denied; protective factors noted" read as a disclosure). The one exception is a **contiguous
-  severity-qualified ideation phrase** ("passive/chronic/fleeting … ideation|SI", `affirmsQualifiedIdeation`):
-  it floors to acute even alongside a denial of a narrower form ("denies active ideation, plan or
-  intent") — the standard way passive ideation is documented — and being one phrase rather than a
-  loose substring, it cannot be hijacked across clauses. A negation only denies the row when what it
-  reaches is the topic or its state — the bound-negation gap never crosses a plan/intent/means noun,
-  so "Present; no current plan or intent" stays a disclosure. Accepted residuals: a value that
+  ("Denied; protective factors noted" read as a disclosure). The one exception is **ideation NAMED
+  positively** (`affirmsIdeation`): a severity qualifier or report verb bound to the word
+  "ideation"/"SI", or ideation carrying a plan — it floors to acute even alongside a denial of a
+  narrower form ("denies active ideation, plan or intent") or of an unrelated worry ("Active suicidal
+  ideation with a plan; no other concerns"). Being anchored ON the ideation word rather than a loose
+  substring, it cannot be hijacked across clauses, and negated mentions are scrubbed first so "No
+  suicidal ideation reported" stays clear. A negation denies the row when what it reaches is the topic
+  — freely, across plan/intent nouns and commas, so word order cannot decide the tier ("Denies any
+  plan, intent, or suicidal ideation" is a full denial) — or its *state*, where the gap must not cross
+  a plan/intent/means noun, so "Present; no current plan or intent" stays a disclosure.
+  The floor is a **heuristic backstop** over the model's own structured tier, not a parser: a deeply
+  compound value where a denial and a disclosure interleave may mis-tier at the margin, which is
+  acceptable because it only ever raises and the clinician reads and signs every note. Accepted
+  residuals: a value that
   endorses ideation *and* carries an unrelated bare denial ("Endorsed; denied to spouse") or a
   trailing screening-status clause ("…; safety plan deferred") can under-rate; a trailing
   concern-denial reads as a row denial ("Present; nothing further of concern"), since it is

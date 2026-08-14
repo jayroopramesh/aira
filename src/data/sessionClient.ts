@@ -65,11 +65,16 @@ const SELF_HARM_CUE = /self[- ]?harm|cutting|hurt (?:my|her|him|them)sel/;
  * "Screening negative", "Absent this session").
  *
  * A negation only denies the ROW when its object is the row's own topic or state. What the clinician
- * denied is decided by what the negation REACHES, so the bound-negation gap cannot cross a
- * plan/intent/means noun: "Present; no current plan or intent" and "Endorsed; no means noted" deny
- * the plan, not the ideation, and reading them as row denials silently drops the acute floor on a
- * documented disclosure — the one direction this floor exists to prevent. The denial-verb branch
- * carries the same scoping as a lookahead.
+ * denied is decided by what the negation REACHES, so the bound-negation gap to a STATE word cannot
+ * cross a plan/intent/means noun: "Present; no current plan or intent" and "Endorsed; no means noted"
+ * deny the plan, not the ideation, and reading them as row denials silently drops the acute floor on a
+ * documented disclosure — the one direction this floor exists to prevent.
+ *
+ * Reaching the TOPIC itself needs no such guard: whatever else a negation lists, if it arrives at
+ * "ideation" it denied the ideation. So the topic branches cross plan/intent nouns and commas freely —
+ * "Denies any plan, intent, or suicidal ideation" and "No plan, intent, or ideation" are ordinary full
+ * denials, and reading them as disclosures pinned a benign client to acute forever purely because of
+ * the order the model happened to list the objects in.
  *
  * "Concerns" is a genuine denial anchor wherever it sits, because "Screened; no acute concerns" is an
  * ordinary way to answer the row and reading it as a disclosure pins a benign client to acute forever.
@@ -94,7 +99,8 @@ const SELF_HARM_CUE = /self[- ]?harm|cutting|hurt (?:my|her|him|them)sel/;
 function deniesRisk(s: string): boolean {
   return (
     /\b(?:denied|denies|denying)\b(?!\s+(?:to\s+\w+\s+)?(?:a\s+|any\s+|the\s+)?(?:plan|intent|means|access|method|specific)\b)/.test(s) ||
-    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b(?:(?!\b(?:plan|intent|means|method|access)\b)[\s\w'/-]){0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|si|hi)\b/.test(s) ||
+    /\b(?:denied|denies|denying)\b[\s\w'/,-]{0,40}?\b(?:ideation|suicid\w*|self[- ]?harm|si|hi|thoughts of)\b/.test(s) ||
+    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b[\s\w'/,-]{0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|si|hi)\b/.test(s) ||
     /\b(?:no|not|none|without|nil|negative|absent|nothing)\b(?:(?!\b(?:plan|intent|means|method|access)\b)[\s\w'/-]){0,20}?\b(?:present|reported|endorsed|noted|raised|concerns?)\b/.test(s) ||
     /^\s*(?:no|none|nil|negative|absent|denied|denies|nad|n\/?a)\b(?![\s\w'/-]{0,30}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|plan|intent|endorsed|present|active|passive|reported)\b)/.test(s) ||
     /\b(?:nil|negative|absent)\b|none reported|not present|no ideation|no concerns|nothing of concern|not endorsed/.test(s)
@@ -102,33 +108,36 @@ function deniesRisk(s: string): boolean {
 }
 
 /**
- * Severity-qualified ideation, stated positively. This is how passive suicidal ideation is normally
- * documented — "Passive ideation reported; denies active ideation, plan or intent" — and a denial
- * whose object is the NARROWER form ("denies active ideation", "no active ideation", "means absent")
- * must not read as a denial of the row. Without this the standard phrasing derived 'clear', which is
- * worse than the 'watch' this design treats as its safe floor.
+ * Ideation NAMED and stated positively — a severity qualifier or a report verb bound to the word
+ * "ideation"/"SI", or ideation carrying a plan/intent/means. This is how a real disclosure is written
+ * ("Passive ideation reported; denies active ideation, plan or intent", "Active suicidal ideation with
+ * a plan; no other concerns"), and it must outrank a denial elsewhere in the value: the denial there is
+ * of a NARROWER form or of an unrelated worry, and letting it cancel the row drops the acute floor on a
+ * documented disclosure.
  *
- * It is a single CONTIGUOUS clinical phrase, not a loose substring, so — unlike the marker list this
- * replaced — it cannot be hijacked by a word sitting in an unrelated clause. Negated forms of the
- * same phrase are scrubbed before the test. Written as a scrub rather than a lookbehind, which Hermes
- * does not support.
+ * Every test is anchored ON the ideation word rather than being a loose substring, so — unlike the
+ * marker list this replaced — a word sitting in an unrelated clause cannot trigger it. Negated
+ * mentions of ideation are scrubbed FIRST, which is what keeps "No suicidal ideation reported" and
+ * "Denies any passive ideation" clear. Written as a scrub rather than a lookbehind, which Hermes does
+ * not support.
  *
- * The scrub allows a few words between the negation and the phrase, because a denial is rarely
- * adjacent to its object: "Denies any passive ideation", "Denies active or passive ideation",
- * "Not endorsing passive ideation" are ordinary phrasings, and reading any of them as an affirmation
- * pins a benign client to acute forever. The gap is word-only, so it cannot cross the ';' or ',' that
- * separates a real disclosure from a following denial clause — "Passive ideation reported; denies
- * active ideation, plan or intent" still affirms.
+ * The scrub allows a few words between the negation and the ideation word, because a denial is rarely
+ * adjacent to its object. Its gap is word-only, so it cannot cross the ';' or ',' separating a real
+ * disclosure from a following denial clause — "Passive ideation reported; denies active ideation" still
+ * affirms.
  *
- * Accepted safe residual: a negation separated from the phrase by punctuation ("denies, on direct
- * questioning, any passive ideation") still reads as an affirmation. Rare, and it errs safe.
+ * Accepted safe residual: a negation separated from the ideation word by punctuation ("denies, on
+ * direct questioning, any passive ideation") still reads as an affirmation. Rare, and it errs safe.
  */
-const QUALIFIED_IDEATION = /\b(?:passive|chronic|fleeting|transient|intermittent|recurrent|persistent)\s+(?:suicidal\s+)?(?:ideation|si)\b/;
-const NEGATED_QUALIFIED_IDEATION =
-  /\b(?:no|not|none|nil|negative|absent|nothing|without|denies|denied|denying)\s+(?:[\w'-]+\s+){0,3}(?:passive|chronic|fleeting|transient|intermittent|recurrent|persistent)\s+(?:suicidal\s+)?(?:ideation|si)\b/g;
+const NEGATED_IDEATION =
+  /\b(?:no|not|none|nil|negative|absent|nothing|without|denies|denied|denying)\s+(?:[\w'-]+\s+){0,3}(?:suicidal\s+)?(?:ideation|si)\b/g;
+const NAMED_IDEATION =
+  /\b(?:passive|active|chronic|fleeting|transient|intermittent|recurrent|persistent|endorses?|endorsed|reports?|reported|describes?|described|expresses?|expressed|admits?|admitted|voiced|discloses?|disclosed)\s+(?:suicidal\s+)?(?:ideation|si)\b/;
+const IDEATION_WITH_PLAN = /\b(?:suicidal\s+)?(?:ideation|si)\s+(?:with|and)\s+(?:a\s+)?(?:plan|intent|means)\b/;
 
-function affirmsQualifiedIdeation(s: string): boolean {
-  return QUALIFIED_IDEATION.test(s.replace(NEGATED_QUALIFIED_IDEATION, ' '));
+function affirmsIdeation(s: string): boolean {
+  const scrubbed = s.replace(NEGATED_IDEATION, ' ');
+  return NAMED_IDEATION.test(scrubbed) || IDEATION_WITH_PLAN.test(scrubbed);
 }
 
 /**
@@ -186,16 +195,20 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
   // factors noted" and "Client denied; presents as future-oriented" both read as disclosures and, under
   // never-downgrade, pin a clear client to acute forever. `deniesRisk` carries the whole burden, and
   // its plan/intent lookahead is what keeps "Passive ideation reported; denies plan or intent" a
-  // disclosure. KNOWN ACCEPTED RESIDUAL (captain decision): a value that endorses ideation while also
-  // carrying an unrelated bare denial ("Endorsed; denied to spouse") or a trailing screening-status
-  // clause ("Passive ideation reported; safety plan deferred") reads as denied / not-assessed and can
-  // under-rate to clear/watch. Rare in model output, and far cheaper than a permanent false acute.
-  // The one exception is `affirmsQualifiedIdeation`, which is a contiguous phrase rather than a
-  // marker substring, so it can outrank a denial of a NARROWER form without the clause-scoping
-  // problem that made the old marker list unusable. Ideation only — self-harm has no equivalent
-  // severity qualifier, so it stays purely denial-driven.
+  // disclosure. The one exception is `affirmsIdeation`, which is anchored ON the ideation word rather
+  // than being a marker substring, so it can outrank a denial of a NARROWER form or of an unrelated
+  // worry without the clause-scoping problem that made the old marker list unusable. Ideation only —
+  // self-harm has no equivalent naming vocabulary, so it stays purely denial-driven.
+  //
+  // This floor is a HEURISTIC BACKSTOP over the model's own structured riskLevel, not a parser.
+  // ACCEPTED RESIDUAL CLASS (captain decision, not chased further): a deeply compound value where a
+  // denial and a named disclosure interleave in ways lexical rules cannot scope may mis-tier at the
+  // margin — a value that endorses ideation without naming it while carrying an unrelated bare denial
+  // ("Endorsed; denied to spouse"), or a trailing screening-status clause ("Passive ideation reported;
+  // safety plan deferred"). Every realistic model row value is handled, the floor only ever RAISES,
+  // and the clinician reads and signs every note.
   const isDisclosed = (s: string) => !!s && !isNotAssessed(s) && !deniesRisk(s);
-  const ideationDisclosed = !!ideation && !isNotAssessed(ideation) && (affirmsQualifiedIdeation(ideation) || !deniesRisk(ideation));
+  const ideationDisclosed = !!ideation && !isNotAssessed(ideation) && (affirmsIdeation(ideation) || !deniesRisk(ideation));
   const selfHarmDisclosed = isDisclosed(selfHarm);
 
   if (ideationDisclosed) return 'acute';
