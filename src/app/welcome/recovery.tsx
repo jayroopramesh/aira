@@ -26,7 +26,7 @@ function plainCode(words: string[]) {
 
 /** A numbered, human-readable file body, for the Save affordance. */
 function fileBody(words: string[]) {
-  return `Aira recovery code — keep this private.\n\n${words.map((w, i) => `${String(i + 1).padStart(2, '0')}. ${w}`).join('\n')}\n`;
+  return `Airava recovery code — keep this private.\n\n${words.map((w, i) => `${String(i + 1).padStart(2, '0')}. ${w}`).join('\n')}\n`;
 }
 
 /**
@@ -253,7 +253,7 @@ export default function WelcomeRecovery() {
       <AuthSubmit title={R.recoveryEnterCta} onPress={enter} disabled={!saved} style={{ maxWidth: 300 }} />
       <View style={{ height: 6 }} />
       <AppText variant="small" tint={INK2} center style={{ fontSize: 11, opacity: 0.6 }}>
-        On this device only · the code is never sent to Aira.
+        On this device only · the code is never sent to Airava.
       </AppText>
     </AuthScaffold>
   );

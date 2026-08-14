@@ -161,7 +161,7 @@ export default function ReviewNote() {
   if (!draft) {
     return (
       <Screen maxWidth={760}>
-        <PageHeader eyebrow="Session" title="No note to review" subtitle="Capture a session and Aira will draft a note here for you to review and sign." />
+        <PageHeader eyebrow="Session" title="No note to review" subtitle="Capture a session and Airava will draft a note here for you to review and sign." />
         <ZeroState
           mood="thinking"
           title="Nothing drafted yet"
@@ -749,7 +749,7 @@ function TranscriptPane({
 function OtherPane({ tab }: { tab: Tab }) {
   const copy: Record<string, string> = {
     Context:
-      'Prior-session context Aira grounded the draft against: last plan, latest measures, and standing safety items. Companion-app journal entries are shown separately and never blended with clinical scores.',
+      'Prior-session context Airava grounded the draft against: last plan, latest measures, and standing safety items. Companion-app journal entries are shown separately and never blended with clinical scores.',
     '+ Screening tools':
       'Generated outputs (e.g. a PHQ-9 / GAD-7 screening summary) appear here as sibling tabs on the same session — added on demand, never overwriting the note.',
   };

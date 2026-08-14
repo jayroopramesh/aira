@@ -77,7 +77,7 @@ export function MascotMood({
   const translateY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -8] });
 
   return (
-    <Animated.View style={{ transform: [{ translateY }] }} accessibilityRole="image" accessibilityLabel="Aira mascot">
+    <Animated.View style={{ transform: [{ translateY }] }} accessibilityRole="image" accessibilityLabel="Airava mascot">
       <Image source={MOOD_ART[mood]} style={[{ width: size, height: size, resizeMode: 'contain' }, style]} />
     </Animated.View>
   );

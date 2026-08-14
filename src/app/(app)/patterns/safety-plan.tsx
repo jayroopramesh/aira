@@ -81,7 +81,7 @@ export default function SafetyPlan() {
               {safety.lastRiskNote}
             </AppText>
             <AppText variant="small" color="ink3" style={{ marginTop: 12, lineHeight: 17 }}>
-              Coping steps and trusted-contact detail live in the signed risk notes above — Aira never
+              Coping steps and trusted-contact detail live in the signed risk notes above — Airava never
               summarises a safety plan into anything you didn’t write and sign.
             </AppText>
           </Card>

@@ -1,0 +1,29 @@
+Atkinson Hyperlegible Mono — License
+====================================
+
+Font: Atkinson Hyperlegible Mono Medium (AtkinsonHyperlegibleMono-Medium.ttf)
+Version 2.001
+Copyright © 2020, 2024 Braille Institute of America, Inc., a 501(c)(3)
+Charitable Organization.
+
+Designed by: Applied Design Works, Letters from Sweden
+(Elliott Scott, Megan Eiswerth, Linus Boman, Theodore Petrosky,
+Letters from Sweden)
+
+License
+-------
+Braille Institute of America, Inc. provides Atkinson Hyperlegible for use,
+without derivatives or alteration, to the public free of charge for all
+non-commercial and commercial work. No attribution required.
+
+More information: https://www.BrailleInstitute.org/
+
+Note on provenance
+------------------
+The vendor archive (Atkinson Hyperlegible Mono_Final.zip) ships no standalone
+license or readme file; the license above is the exact text embedded in the
+font's `name` table (nameID 13 "License Description", with the copyright from
+nameID 0 and the URL from nameID 14), transcribed verbatim.
+
+This project embeds the font file UNMODIFIED (no derivatives or alteration),
+which the license permits for both commercial and non-commercial use.

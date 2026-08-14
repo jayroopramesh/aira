@@ -51,21 +51,21 @@ export function TopBar({
         {transparent ? (
           <Row gap={9}>
             <MascotMood mood={mood} size={30} />
-            <AppText variant="h2" tint={ink} style={{ fontSize: 21 }}>
-              Aira
+            <AppText variant="h2" tint={ink} style={{ fontSize: 21, fontFamily: theme.brandFont }}>
+              Airava
             </AppText>
           </Row>
         ) : (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Aira — go to your day board"
+            accessibilityLabel="Airava — go to your day board"
             onPress={() => router.navigate('/(app)/today')}
             style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
           >
             <Row gap={9}>
               <MascotMood mood={mood} size={30} />
-              <AppText variant="h2" tint={ink} style={{ fontSize: 21 }}>
-                Aira
+              <AppText variant="h2" tint={ink} style={{ fontSize: 21, fontFamily: theme.brandFont }}>
+                Airava
               </AppText>
             </Row>
           </Pressable>
