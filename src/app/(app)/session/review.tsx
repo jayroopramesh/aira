@@ -146,8 +146,16 @@ export default function ReviewNote() {
   const signed = draft?.status === 'signed';
   const signedAt = (signed ? draft?.signedAt : null) ?? null;
   const signedByName = (signed ? draft?.signedBy : null) ?? clinician;
+  // Sections register a flush here while they hold an uncommitted edit. Signing runs them FIRST, so a
+  // correction typed but not "Done"-ed still lands in the note that gets signed instead of being
+  // silently dropped — the clinician pressed Sign off, not Discard. Each flush persists through the
+  // same seam, and `persist` advances the provider's snapshot synchronously, so the sign write that
+  // follows in this same tick already carries the edit.
+  const pendingEdits = useRef(new Map<string, () => void>());
   const sign = () => {
-    if (clientId) signNote(clientId, noteIndex, clinician, formatSignedAt(new Date()));
+    if (!clientId) return;
+    pendingEdits.current.forEach((flush) => flush());
+    signNote(clientId, noteIndex, clinician, formatSignedAt(new Date()));
   };
 
   if (!draft) {
@@ -224,7 +232,7 @@ export default function ReviewNote() {
             <View style={{ height: theme.spacing.lg }} />
 
             {tab === 'Note' ? (
-              <NotePane key={noteKey} draft={draft} signed={signed} clientId={clientId} noteIndex={noteIndex} />
+              <NotePane key={noteKey} draft={draft} signed={signed} clientId={clientId} noteIndex={noteIndex} pendingEdits={pendingEdits} />
             ) : tab === 'Transcript' ? (
               <TranscriptPane
                 transcript={draft.transcript}
@@ -316,11 +324,13 @@ function NotePane({
   signed,
   clientId,
   noteIndex,
+  pendingEdits,
 }: {
   draft: DraftNote;
   signed: boolean;
   clientId?: string;
   noteIndex: number;
+  pendingEdits: React.MutableRefObject<Map<string, () => void>>;
 }) {
   const theme = useTheme();
   const c = theme.colors;
@@ -382,13 +392,13 @@ function NotePane({
       </Row>
 
       {format === 'SOAP' ? (
-        draft.sections.map((s) => <Section key={s.id} section={s} measures={draft.measures} editable={editable} onSave={saveSection} />)
+        draft.sections.map((s) => <Section key={s.id} section={s} measures={draft.measures} editable={editable} onSave={saveSection} pendingEdits={pendingEdits} />)
       ) : (
         <>
           {subjective && objective ? <DataSection subjective={subjective} objective={objective} measures={draft.measures} /> : null}
-          {risk ? <Section key={risk.id} section={risk} measures={draft.measures} editable={editable} onSave={saveSection} /> : null}
-          {assessment ? <Section key={assessment.id} section={assessment} measures={draft.measures} editable={editable} onSave={saveSection} /> : null}
-          {plan ? <Section key={plan.id} section={plan} measures={draft.measures} editable={editable} onSave={saveSection} /> : null}
+          {risk ? <Section key={risk.id} section={risk} measures={draft.measures} editable={editable} onSave={saveSection} pendingEdits={pendingEdits} /> : null}
+          {assessment ? <Section key={assessment.id} section={assessment} measures={draft.measures} editable={editable} onSave={saveSection} pendingEdits={pendingEdits} /> : null}
+          {plan ? <Section key={plan.id} section={plan} measures={draft.measures} editable={editable} onSave={saveSection} pendingEdits={pendingEdits} /> : null}
         </>
       )}
     </View>
@@ -449,11 +459,13 @@ function Section({
   measures,
   editable,
   onSave,
+  pendingEdits,
 }: {
   section: NoteSection;
   measures: DraftNote['measures'];
   editable: boolean;
   onSave: (sectionId: string, body: string[], bullets?: string[]) => void;
+  pendingEdits: React.MutableRefObject<Map<string, () => void>>;
 }) {
   const theme = useTheme();
   const c = theme.colors;
@@ -479,6 +491,40 @@ function Section({
     const cut = Math.min(section.body.length, blocks.length);
     onSave(section.id, blocks.slice(0, cut), blocks.slice(cut));
   };
+
+  // Every exit from the editor must persist, not just "Done": blur, unmount, and the sign-off flush
+  // all route through here. `touched` makes it write once per edit session and, once flushed, become a
+  // no-op — so a flush arriving after the note is signed can never rewrite a signed record.
+  const touched = useRef(false);
+  const flush = () => {
+    if (!touched.current) return;
+    touched.current = false;
+    commitEdit();
+  };
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
+
+  const edit = (t: string) => {
+    touched.current = true;
+    setText(t);
+  };
+
+  useEffect(() => {
+    const registry = pendingEdits.current;
+    const id = section.id;
+    registry.set(id, () => flushRef.current());
+    return () => {
+      flushRef.current();
+      registry.delete(id);
+    };
+  }, [pendingEdits, section.id]);
+
+  // Editability can be lost underneath an open editor (signing from the bottom bar while a section is
+  // being edited). The pending text is already captured by the sign-off flush, so all that remains is
+  // to close the box — a signed note must never carry a live text input.
+  useEffect(() => {
+    if (!editable) setEditing(false);
+  }, [editable]);
 
   return (
     <View
@@ -509,7 +555,7 @@ function Section({
         {editable ? (
           <Pressable
             onPress={() => {
-              if (editing) commitEdit();
+              if (editing) flush();
               setEditing((e) => !e);
             }}
             accessibilityRole="button"
@@ -547,11 +593,12 @@ function Section({
         </View>
       ) : null}
 
-      {editing ? (
+      {editing && editable ? (
         <TextInput
           multiline
           value={text}
-          onChangeText={setText}
+          onChangeText={edit}
+          onBlur={flush}
           style={{
             fontFamily: theme.type.body.fontFamily,
             fontSize: 15,

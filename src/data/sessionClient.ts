@@ -47,27 +47,32 @@ export function riskFromNote(note: DraftNote): RiskLevel {
   return floor && RISK_ORDER[floor] > RISK_ORDER[note.riskLevel] ? floor : note.riskLevel;
 }
 
+const IDEATION_LABEL = /ideation|suicid/;
+const SELF_HARM_LABEL = /self[- ]?harm/;
 /** Ideation cues, used to find the ideation ROW when the model labelled it something unexpected. */
 const IDEATION_CUE =
   /suicid|ideation|thoughts of (?:dying|death|suicide|not being here|being better off)|kill (?:my|her|him|them)sel|end (?:my|her|his|their) life|better off (?:dead|gone|not here)|\bsi\b|\bsi\/hi\b/;
 const SELF_HARM_CUE = /self[- ]?harm|cutting|hurt (?:my|her|him|them)sel/;
 
 /**
- * Does this risk-row VALUE deny the risk it describes? A denial verb, a bare denial word standing as
- * the whole value ("Nil", "Absent"), or a negation BOUND to an ideation/self-harm/state anchor within
- * a few tokens ("no SI/HI", "not currently present", "none currently reported").
+ * Does this risk-row VALUE deny the risk it describes? A denial verb, a standalone denial word
+ * ("Nil for this session", "Screening negative", "Absent this session"), or a negation BOUND to an
+ * ideation/self-harm/state anchor within a few tokens ("no SI/HI", "not currently present",
+ * "none currently reported", "no acute concerns").
  *
- * Binding is what keeps this honest in both directions. Exact bigrams ('not present') missed every
- * phrasing with a word inserted, reading routine denials as disclosures. Generic anchors ('concerns',
- * 'risk') went the other way: "Active with a plan; no other risk factors" read as a denial of the
- * ideation itself and cancelled the floor on the most severe row there is. So only ideation/self-harm
- * and state words anchor a negation.
+ * Both looseness and tightness have burned this before. Exact bigrams ('not present') missed every
+ * phrasing with a word inserted; requiring a denial word to be the WHOLE value missed every phrasing
+ * with a word appended — both read a routine denial as a disclosure and pin a benign client to acute.
+ * Generic anchors ('risk', 'factors') fail the other way: "Active with a plan; no other risk factors"
+ * would read as a denial of the ideation itself and cancel the floor on the most severe row there is.
+ * So denial words match anywhere, and a negation only binds an ideation/self-harm/state/concern word.
  */
 function deniesRisk(s: string): boolean {
   return (
     /\b(?:denied|denies|denying)\b/.test(s) ||
-    /^\s*(?:nil|none|negative|absent|no)\s*\.?\s*$/.test(s) ||
-    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b[\s\w'/-]{0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|present|reported|endorsed|noted|raised|current|si|hi)\b/.test(s)
+    /\b(?:nil|negative|absent)\b/.test(s) ||
+    /none reported|not present|no ideation|no concerns|not endorsed/.test(s) ||
+    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b[\s\w'/-]{0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|present|reported|endorsed|noted|raised|current|concerns?|si|hi)\b/.test(s)
   );
 }
 
@@ -93,13 +98,19 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
   const rows = risk?.rows ?? [];
 
   const has = (s: string, ...kws: string[]) => kws.some((k) => s.includes(k));
-  // Match on the LABEL or the VALUE: a row the model labelled 'Risk' or 'SI/HI' must never hide a
-  // disclosure just because the label didn't use the word we expected.
-  const valueFor = (labelRe: RegExp, valueRe: RegExp) =>
-    rows.find((r) => labelRe.test(r.label.toLowerCase()) || valueRe.test(r.value.toLowerCase()))?.value?.toLowerCase() ?? '';
+  // A correctly LABELLED row always wins. The value-cue fallback exists so a row the model labelled
+  // 'Risk' or 'SI/HI' can't hide a disclosure — but it must never outrank the row actually about the
+  // topic, or a row that merely mentions the other topic ("Ideation: denied; no self-harm reported")
+  // shadows the real one ("Self-harm: endorsed cutting this week") and swallows its tier. The fallback
+  // therefore also skips rows labelled for the OTHER topic.
+  const valueFor = (labelRe: RegExp, valueRe: RegExp, otherLabelRe: RegExp) =>
+    (
+      rows.find((r) => labelRe.test(r.label.toLowerCase())) ??
+      rows.find((r) => valueRe.test(r.value.toLowerCase()) && !otherLabelRe.test(r.label.toLowerCase()))
+    )?.value?.toLowerCase() ?? '';
 
-  const ideation = valueFor(/ideation|suicid/, IDEATION_CUE);
-  const selfHarm = valueFor(/self[- ]?harm/, SELF_HARM_CUE);
+  const ideation = valueFor(IDEATION_LABEL, IDEATION_CUE, SELF_HARM_LABEL);
+  const selfHarm = valueFor(SELF_HARM_LABEL, SELF_HARM_CUE, IDEATION_LABEL);
   const allText = rows.map((r) => `${r.label} ${r.value}`.toLowerCase()).join(' | ');
 
   // "Not raised / not disclosed / not addressed" are NEUTRAL: the topic simply didn't come up. They are
@@ -109,12 +120,15 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
   const isNotAssessed = (s: string) =>
     has(s, 'not assessed', 'not captured', 'unable to assess', 'not evaluated', 'review required', 'deferred', 'not raised', 'not disclosed', 'not reported', 'not explicitly addressed', 'not addressed', 'not discussed');
   // A row like "Passive ideation reported; denies plan or intent" DISCLOSES even though it also
-  // contains a denial verb — a positive-disclosure marker outranks the denial of a plan/means.
-  // Negated forms ("none reported", "not present") are scrubbed first so they never read as disclosure.
+  // contains a denial verb — a positive-disclosure marker outranks the denial of a plan/means. Plain
+  // STATE words count as markers too ("Present; denies plan or intent", "Active thoughts, denies
+  // intent"): the same clinical fact written without a fancier adjective must not lose the floor.
+  // Negated forms ("not currently present", "no active ideation") are scrubbed first — every marker
+  // that can be negated appears in the scrub's trailing group as well.
   const discloses = (s: string) => {
-    const scrubbed = s.replace(/\b(?:none|not|no|nothing|denies|denied|without)\s+(?:[\w-]+\s+){0,2}(?:reported|endorsed|present|noted)\b/g, '');
+    const scrubbed = s.replace(/\b(?:none|not|no|nothing|denies|denied|without)\s+(?:[\w-]+\s+){0,2}(?:reported|endorsed|present|noted|active|ongoing|positive)\b/g, '');
     return (
-      has(scrubbed, 'passive', 'transient', 'fleeting', 'intermittent', 'endorsed', 'reported', 'noted', 'thoughts of', 'better off', 'not wanting to be') ||
+      has(scrubbed, 'passive', 'transient', 'fleeting', 'intermittent', 'endorsed', 'reported', 'noted', 'thoughts of', 'better off', 'not wanting to be', 'present', 'active', 'ongoing', 'positive') ||
       /(?:ideation|thoughts?|urges?)\s+present/.test(scrubbed)
     );
   };

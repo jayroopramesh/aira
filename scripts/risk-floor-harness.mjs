@@ -44,6 +44,34 @@ const cases = [
   { name: 'live: "Active, with a plan" ideation row, level=watch → acute', in: note({ level: 'watch', rows: ideationRow('Active, with a plan') }), want: 'acute' },
   // A denial of OVERALL risk sitting in the ideation row must not cancel the floor on the disclosure.
   { name: 'live: disclosed ideation carrying a generic "no other risk" clause still floors to acute', in: note({ level: 'watch', rows: ideationRow('Active with a plan; no other risk factors') }), want: 'acute' },
+  // A plain state word is a disclosure; a denial of the PLAN must not cancel it. Written with a
+  // fancier adjective ("Passive ideation reported; denies plan") this already floored — the same
+  // clinical fact in plainer words must not silently lose the floor.
+  { name: 'live: "Present; denies plan or intent" floors to acute', in: note({ level: 'watch', rows: ideationRow('Present; denies plan or intent') }), want: 'acute' },
+  { name: 'live: "Active thoughts, denies intent" floors to acute', in: note({ level: 'watch', rows: ideationRow('Active thoughts, denies intent') }), want: 'acute' },
+  // A row mentioning the OTHER topic must not shadow the row actually about it.
+  {
+    name: 'live: an ideation row mentioning self-harm does not shadow the real self-harm row',
+    in: note({
+      level: 'watch',
+      rows: [
+        { label: 'Suicidal ideation', value: 'Denied; no self-harm reported' },
+        { label: 'Self-harm', value: 'Endorsed cutting this week' },
+      ],
+    }),
+    want: 'elevated',
+  },
+  {
+    name: 'live: a safety-plan row mentioning ideation does not shadow the real ideation row',
+    in: note({
+      level: 'watch',
+      rows: [
+        { label: 'Safety plan', value: 'Reviewed; client denies needing it, no suicidal thoughts' },
+        { label: 'Suicidal ideation', value: 'Passive, reported' },
+      ],
+    }),
+    want: 'acute',
+  },
   // A row the model labelled something else must not hide the disclosure.
   { name: 'live: ideation detected by VALUE cue despite a non-ideation label → acute', in: note({ level: 'watch', rows: [{ label: 'Risk', value: 'Active suicidal ideation with a plan' }] }), want: 'acute' },
 
@@ -56,6 +84,13 @@ const cases = [
   { name: 'live: bare "Nil" stays clear', in: note({ level: 'clear', rows: ideationRow('Nil') }), want: 'clear' },
   { name: 'live: bare "Absent" stays clear', in: note({ level: 'clear', rows: ideationRow('Absent') }), want: 'clear' },
   { name: 'live: fully denied, level=clear stays clear', in: note({ level: 'clear', rows: [{ label: 'Suicidal ideation', value: 'Denied' }, { label: 'Self-harm', value: 'Denied' }] }), want: 'clear' },
+  // A denial word with words appended is still a denial — requiring it to be the whole value read
+  // every one of these as a disclosure and pinned a benign client to acute.
+  { name: 'live: "Absent this session" stays clear', in: note({ level: 'clear', rows: ideationRow('Absent this session') }), want: 'clear' },
+  { name: 'live: "Screening negative" stays clear', in: note({ level: 'clear', rows: ideationRow('Screening negative') }), want: 'clear' },
+  { name: 'live: "Nil for this session" stays clear', in: note({ level: 'clear', rows: ideationRow('Nil for this session') }), want: 'clear' },
+  { name: 'live: "No acute concerns" stays clear', in: note({ level: 'clear', rows: ideationRow('No acute concerns') }), want: 'clear' },
+  { name: 'live: "Nothing of concern" stays clear', in: note({ level: 'clear', rows: ideationRow('Nothing of concern') }), want: 'clear' },
 
   // --- A benign risk SUMMARY never drives the tier, whatever it says -------------------------------
   { name: 'summary: "nothing of concern was raised" over denied rows stays clear', in: note({ level: 'clear', rows: [{ label: 'Suicidal ideation', value: 'Denied' }, { label: 'Self-harm', value: 'Denied' }], summary: 'Suicidal ideation and self-harm were screened; nothing of concern was raised this session.' }), want: 'clear' },
