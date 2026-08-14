@@ -24,6 +24,7 @@
  */
 
 import { env, hasGroq } from '../config/env';
+import { CloudSessionRequiredError } from './cloudSession';
 import { getAccessToken } from './supabase';
 
 export type WhisperModelId = 'small.en' | 'base.en' | 'large-v3-turbo-q5_0' | 'whisper-large-v3';
@@ -133,9 +134,11 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
  * departure from the on-device story, disclosed by the app's demo-mode banner. No model is
  * downloaded — it runs server-side — so `ensureModel` is a no-op and `requiresDevBuild` is false.
  *
- * Not signed in (no session token) degrades to the on-device mock rather than crashing — the proxy
- * requires a signed-in counselor, so with no token there is no cloud path to take. In practice a
- * configured deployment reaches the capture screen only after a real Supabase sign-in.
+ * Not signed in (no session token) REJECTS with a CloudSessionRequiredError — it never falls back to
+ * the mock. The proxy requires a signed-in counselor, so with no token there is no cloud path to
+ * take; substituting the mock's canned transcript for a real recording would attach fabricated
+ * clinical content to the session and leave the note claiming a cloud hop that never ran. The
+ * capture screen catches this and offers the calm "sign in, or paste the transcript" recovery.
  *
  * There is NO on-device de-identification hop in demo mode (that needs the native OpenMed model),
  * so `deidentified` is false; the summarizer's clinical prompt is instructed to avoid echoing
@@ -144,8 +147,6 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
 export class GroqTranscriptionService implements TranscriptionService {
   readonly defaultModel: WhisperModelId = 'whisper-large-v3';
   readonly requiresDevBuild = false;
-
-  private readonly mock = new MockTranscriptionService(1);
 
   constructor(
     private readonly proxyUrl: string,
@@ -167,8 +168,10 @@ export class GroqTranscriptionService implements TranscriptionService {
     opts?: { model?: WhisperModelId; onStage?: (stage: 'preparing' | 'transcribing' | 'deidentifying') => void; signal?: AbortSignal },
   ): Promise<Transcript> {
     const token = await this.getToken();
-    // No signed-in session → no server-side cloud path. Degrade to the mock, never crash.
-    if (!token) return this.mock.transcribe(audio, opts);
+    // No signed-in session → no server-side cloud path. Reject rather than fabricate a transcript.
+    if (!token) {
+      throw new CloudSessionRequiredError('Sign in to use cloud transcription — there is no active session.');
+    }
 
     opts?.onStage?.('preparing');
 

@@ -6,8 +6,10 @@
  * produces SOAP sections + a routine risk & safety check + plan items (which feed the Prescriptions
  * rail). This is a CLOUD hop over the transcript text — disclosed by the demo-mode banner. It reaches
  * Groq through the server-side groq-proxy Edge Function (the Groq key is a Supabase secret, not a
- * client var). With no proxy configured, or no one signed in, it degrades to a deterministic
- * on-device mock so the flow still demos.
+ * client var). With no proxy configured the app-wide handle is a deterministic on-device mock so the
+ * flow still demos; with a proxy configured but nobody signed in, the cloud service REJECTS rather
+ * than quietly mocking, so a real transcript is never drafted into stub sections behind the
+ * clinician's back.
  *
  * The transcript (plus a bare session number) is the only thing sent — never the client's name,
  * never audio, never stored records. The prompt instructs
@@ -15,6 +17,7 @@
  */
 
 import { env, hasGroq } from '../config/env';
+import { CloudSessionRequiredError } from './cloudSession';
 import { getAccessToken } from './supabase';
 import { DraftNote, NoteSection, PrepItem, ReviewCode, RiskLevel } from '../data/types';
 
@@ -84,12 +87,12 @@ Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY this shape
  * Function, NOT Groq directly: the Groq key is a Supabase secret and never ships in the bundle. The
  * transcript text is POSTed to the proxy with the counselor's Supabase session token; only the
  * transcript + a bare session number are sent — never the client's name (the proxy also rejects any
- * payload that carries a client identifier). Not signed in (no token) degrades to the on-device mock
- * rather than crashing, since the proxy requires a signed-in counselor.
+ * payload that carries a client identifier). Not signed in (no token) REJECTS with a
+ * CloudSessionRequiredError — never a silent mock draft, which would attach stub clinical sections to
+ * a real transcript while the note still claimed the cloud drafting hop. Because this is the only way
+ * the configured path can succeed, a returned draft always means the cloud draft really ran.
  */
 export class GroqSummarizationService implements SummarizationService {
-  private readonly mock = new MockSummarizationService();
-
   constructor(
     private readonly proxyUrl: string,
     private readonly getToken: () => Promise<string | null>,
@@ -98,8 +101,10 @@ export class GroqSummarizationService implements SummarizationService {
 
   async summarize(input: SummaryInput, opts?: { signal?: AbortSignal }): Promise<DraftNote> {
     const token = await this.getToken();
-    // No signed-in session → no server-side cloud path. Degrade to the mock, never crash.
-    if (!token) return this.mock.summarize(input);
+    // No signed-in session → no server-side cloud path. Reject rather than fabricate a draft.
+    if (!token) {
+      throw new CloudSessionRequiredError('Sign in to use cloud drafting — there is no active session.');
+    }
 
     const userPrompt = [
       input.sessionNumber ? `Session number: ${input.sessionNumber}.` : '',
@@ -137,7 +142,9 @@ export class GroqSummarizationService implements SummarizationService {
     } catch {
       parsed = JSON.parse(stripFences(content)) as LlmDraft;
     }
-    return buildDraft(parsed, input);
+    // Reaching here means the proxy call succeeded with a real session token, so the cloud drafting
+    // hop demonstrably happened — that, not the build-time config, is what the note records.
+    return buildDraft(parsed, input, true);
   }
 }
 
@@ -166,7 +173,7 @@ export class MockSummarizationService implements SummarizationService {
       },
       reviewCodes: [{ code: 'F41.1', label: 'Generalized anxiety (working)', relevance: 'med' }],
     };
-    return buildDraft(draft, input);
+    return buildDraft(draft, input, false);
   }
 }
 
@@ -305,7 +312,7 @@ function nonEmpty(items?: string[]): string[] | null {
   return filtered.length ? filtered : null;
 }
 
-function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
+function buildDraft(d: LlmDraft, input: SummaryInput, draftedInCloud: boolean): DraftNote {
   const sections: NoteSection[] = [];
 
   sections.push({
@@ -363,16 +370,17 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
   const sessionLabel = input.sessionNumber ? `Session ${input.sessionNumber}` : 'New session';
 
   // Transcription and drafting are independent hops: the audio can stay on-device (sample audio, no
-  // live mic) while the transcript text is still drafted in the cloud. Report each from its own truth
-  // — per-note capture provenance for transcription, the configured summarizer for drafting — and only
-  // promise "nothing was sent anywhere" when both stayed here.
+  // live mic) while the transcript text is still drafted in the cloud. Report each from what ACTUALLY
+  // ran for this note — per-note capture provenance for transcription, and which summarizer produced
+  // this very draft for drafting, never the build-time config, which can claim a hop that never
+  // happened. Only promise "nothing was sent anywhere" when both stayed here.
   const cloudTranscribed = input.transcribedInCloud === true;
   const where = (cloud: boolean) => (cloud ? 'in demo mode (cloud)' : 'on this device');
   const hops =
-    cloudTranscribed === hasGroq
-      ? `transcribed and drafted ${where(hasGroq)}`
-      : `transcribed ${where(cloudTranscribed)}, drafted ${where(hasGroq)}`;
-  const tail = !cloudTranscribed && !hasGroq ? 'nothing was sent anywhere' : 'for your review';
+    cloudTranscribed === draftedInCloud
+      ? `transcribed and drafted ${where(draftedInCloud)}`
+      : `transcribed ${where(cloudTranscribed)}, drafted ${where(draftedInCloud)}`;
+  const tail = !cloudTranscribed && !draftedInCloud ? 'nothing was sent anywhere' : 'for your review';
   const provenance = `${hops} · ${tail}`;
 
   return {
@@ -381,6 +389,8 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
       ? `From a ${durMin}-min voice note · ${provenance}`
       : provenance.charAt(0).toUpperCase() + provenance.slice(1),
     status: 'draft',
+    transcribedInCloud: cloudTranscribed,
+    draftedInCloud,
     riskLevel: toRiskLevel(d.riskSafety?.level),
     sections,
     measures: [],

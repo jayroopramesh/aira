@@ -33,8 +33,10 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   behind the `groq-proxy` Edge Function (`supabase/functions/groq-proxy/index.ts`), which proxies both
   Groq calls (`/transcriptions` whisper-large-v3 multipart, `/chat/completions` llama-3.3-70b JSON).
   The function verifies the caller's Supabase user JWT (anon key / anonymous → 401), reads
-  `GROQ_API_KEY` from its own env, rate-limits per user (best-effort in-memory, documented), rejects
-  payloads carrying a client identifier/name (400), and relays upstream errors faithfully.
+  `GROQ_API_KEY` from its own env, **pins the models server-side** (a caller-supplied `model` is
+  overwritten, never honoured), rate-limits per user (best-effort in-memory, documented), rejects
+  payloads carrying a client identifier/name (400), and relays upstream errors faithfully (including
+  `Retry-After` / `x-ratelimit-*`).
   `verify_jwt=false` in `supabase/config.toml` on purpose — we verify in-code so the anon key (a valid
   JWT) is rejected. Deploy + the honest residency note (Supabase global edge; project ap-south-1;
   Azure in-region for prod) are in `README.md` → "Groq proxy (Edge Function)". Never reintroduce
@@ -43,7 +45,15 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   **summarization — Groq llama-3.3-70b** (`src/services/summarization.ts` → a `DraftNote`), both via
   the proxy above with the session token. Web audio via `src/services/audioCapture.ts` (MediaRecorder
   + file-picker fallback; native falls back to the mock). The `mock://` sample-audio path always uses
-  the mock transcriber. No proxy configured or not signed in → the on-device mock (never a crash).
+  the mock transcriber. No proxy configured → the on-device mock. Proxy configured but NOT signed in →
+  the cloud services **throw** `CloudSessionRequiredError` (`src/services/cloudSession.ts`); they never
+  silently swap in the mock, because canned prose standing in for a real recording is fabricated
+  clinical content. The capture screen catches it into a calm "sign in, or paste the transcript"
+  recovery — never a crash.
+- **Provenance is observed, never configured**: `transcribedInCloud` is state in
+  `src/app/(app)/session/index.tsx` set only after a token-backed cloud transcribe returns, and
+  `draftedInCloud` is stamped by `buildDraft` from the summarizer that actually produced the draft.
+  Neither is derived from `hasGroq`, so a note can never claim a hop that did not happen.
 - **Blank boot + device-local data**: a fresh install starts EMPTY. Caseload state is a reactive
   context (`src/data/DataProvider.tsx`, hooks `useClients`/`useClient`/`useDayDashboard`/etc.) persisted
   through `ClientRepository` → `VaultStorage` (`LocalVaultStorage` → `deviceStore`: localStorage on web,

@@ -23,6 +23,7 @@ flowchart TB
 
   subgraph DEMO["☁️ Demo services (free tiers, no client PII by design)"]
     SUPA["Supabase Auth\naccounts: email+password\ncreate-account · recovery code"]
+    PROXY["Supabase Edge Function · groq-proxy\nholds GROQ_API_KEY as a server secret\nverifies the counselor's session JWT\npins models · rate-limits · rejects identifiers"]
     GROQW["Groq · whisper-large-v3\ntranscription (demo)"]
     GROQL["Groq · llama-3.3-70b\nSOAP draft generation (demo)"]
   end
@@ -42,9 +43,12 @@ flowchart TB
   end
 
   UI -- "sign in / sign up" --> SUPA
-  REC -- "audio (demo only)" --> GROQW
-  GROQW -- "transcript" --> GROQL
-  GROQL -- "SOAP draft → counselor signs" --> VAULT
+  REC -- "audio (demo only) + session JWT" --> PROXY
+  PROXY -- "audio + server-side Groq key" --> GROQW
+  GROQW -- transcript --> PROXY
+  PROXY -- "transcript text + server-side Groq key" --> GROQL
+  GROQL -- "SOAP draft" --> PROXY
+  PROXY -- "SOAP draft → counselor signs" --> VAULT
   REC -. "prod: audio never leaves" .-> WHIS
   WHIS -. transcript .-> OMED
   OMED -. "de-identified text only" .-> PC
@@ -64,6 +68,8 @@ flowchart TB
 **The one rule the diagram encodes:** identity lives with Supabase (and later Azure UAE), thinking
 happens wherever the model runs (Groq today, your GPU or Azure tomorrow), but **what the client
 said and what the counselor signed exists only on the device**. Demo mode's honest exceptions are the
-two Groq hops the diagram shows — the audio to transcribe, then the transcript text to draft from.
-Both are temporary and labeled in-app on the note itself, and they disappear as transcription moves
-on-device and drafting moves to the parked production path.
+two Groq hops the diagram shows — the audio to transcribe, then the transcript text to draft from —
+and neither one talks to Groq directly: both go through the `groq-proxy` Edge Function, which holds
+the Groq key server-side and only serves a signed-in counselor. Both hops are temporary and labeled
+in-app on the note itself, and they disappear as transcription moves on-device and drafting moves to
+the parked production path.

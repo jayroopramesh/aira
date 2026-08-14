@@ -13,8 +13,13 @@
 //
 // Guarantees:
 //   • Only signed-in counselors spend quota. The Authorization bearer must be a valid *user* session
-//     token (role "authenticated"); the anon publishable key and anonymous callers are rejected 401.
+//     token (role "authenticated", not an anonymous sign-in); the anon publishable key and anonymous
+//     callers are rejected 401. Note the honest limit: signup is open with the public anon key and
+//     email confirmation is OFF, so a valid user JWT proves "someone registered", not "an authorized
+//     counselor" — restricting signup is a production concern (see README).
 //   • The Groq key is read from GROQ_API_KEY (a Supabase secret), never from an EXPO_PUBLIC_ var.
+//   • The models are PINNED server-side (CHAT_MODEL / TRANSCRIPTION_MODEL); a caller-supplied `model`
+//     is ignored, so no one can point the quota at an arbitrary, more expensive Groq model.
 //   • A per-caller rate limit (see RATE_LIMIT_* below) — best-effort, honestly documented.
 //   • A server-side identifier guard: any payload carrying a client/patient identifier or name is
 //     rejected with a clear error (never silently stripped), backing the "identifiers never leave the
@@ -34,9 +39,23 @@ const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") ?? "";
 const GROQ_BASE_URL = (Deno.env.get("GROQ_BASE_URL") ?? "https://api.groq.com/openai/v1").replace(/\/$/, "");
 
+// The models this proxy is allowed to spend quota on. PINNED SERVER-SIDE: the caller's own `model`
+// is ignored and overwritten, so a rogue account (signup is open — see README) cannot point the
+// project's Groq quota at an arbitrary, more expensive model.
+const CHAT_MODEL = "llama-3.3-70b-versatile";
+const TRANSCRIPTION_MODEL = "whisper-large-v3";
+
 // Per-caller rate limit. Best-effort in-memory fixed window, keyed by Supabase user id.
-const RATE_LIMIT_MAX = Number(Deno.env.get("RATE_LIMIT_MAX") ?? "20");
-const RATE_LIMIT_WINDOW_MS = Number(Deno.env.get("RATE_LIMIT_WINDOW_MS") ?? "60000");
+// A malformed secret must never silently disable the limit (Number("abc") is NaN and every
+// comparison against it is false), so anything not a positive finite number falls back to the
+// documented default.
+function positiveNumberEnv(name: string, fallback: number): number {
+  const parsed = Number(Deno.env.get(name));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const RATE_LIMIT_MAX = positiveNumberEnv("RATE_LIMIT_MAX", 20);
+const RATE_LIMIT_WINDOW_MS = positiveNumberEnv("RATE_LIMIT_WINDOW_MS", 60_000);
 
 // LIMITATION (documented honestly): this counter lives in the isolate's memory. Edge Functions are
 // horizontally scaled and cold-start, so the window is per-isolate and resets when an isolate is
@@ -48,16 +67,35 @@ const hits = new Map<string, number[]>();
 function rateLimited(userId: string): boolean {
   const now = Date.now();
   const windowStart = now - RATE_LIMIT_WINDOW_MS;
-  const recent = (hits.get(userId) ?? []).filter((t) => t > windowStart);
+
+  // Prune EVERY stale entry, not just this caller's: pruning only the caller in hand would still keep
+  // an array alive for the lifetime of the isolate for every user id that ever called and never came
+  // back. The map now holds only callers seen within the current window.
+  for (const [id, times] of hits) {
+    const live = times.filter((t) => t > windowStart);
+    if (live.length === 0) hits.delete(id);
+    else hits.set(id, live);
+  }
+
+  const recent = hits.get(userId) ?? [];
+  // A REJECTED request is not recorded. Counting it would keep the window permanently full for a
+  // client that keeps retrying, so the 429's Retry-After would be a promise the limiter never keeps.
+  if (recent.length >= RATE_LIMIT_MAX) return true;
   recent.push(now);
   hits.set(userId, recent);
-  return recent.length > RATE_LIMIT_MAX;
+  return false;
 }
+
+// Back-off headers we relay from Groq. A browser caller can only READ them cross-origin when they are
+// also exposed, so Access-Control-Expose-Headers below is part of the same promise.
+const RELAYED_HEADERS = new Set(["retry-after"]);
+const RELAYED_HEADER_PREFIXES = ["x-ratelimit-", "ratelimit-"];
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, content-type, apikey, x-client-info",
+  "Access-Control-Expose-Headers": "retry-after, x-ratelimit-limit-requests, x-ratelimit-limit-tokens, x-ratelimit-remaining-requests, x-ratelimit-remaining-tokens, x-ratelimit-reset-requests, x-ratelimit-reset-tokens",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -79,9 +117,12 @@ async function verifyUser(authHeader: string | null): Promise<string | null> {
       headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
     });
     if (!res.ok) return null;
-    const user = (await res.json()) as { id?: string; role?: string };
+    const user = (await res.json()) as { id?: string; role?: string; is_anonymous?: boolean };
     // GoTrue returns the user only for an authenticated session; role must not be "anon".
     if (!user?.id || user.role === "anon") return null;
+    // A Supabase anonymous sign-in carries role "authenticated" but is not a signed-in counselor;
+    // reject it here so enabling that provider later can't quietly open the quota.
+    if (user.is_anonymous === true) return null;
     return user.id;
   } catch {
     return null;
@@ -118,14 +159,23 @@ function findForbiddenKey(value: unknown): string | null {
   return null;
 }
 
-/** Faithfully relay a Groq upstream response — same status, JSON body preserved when possible. */
+/** Faithfully relay a Groq upstream response — same status, JSON body preserved when possible, plus
+ *  the back-off headers (Retry-After, x-ratelimit-*) a caller needs to actually retry correctly on a
+ *  429. Other upstream headers are dropped: they describe Groq's connection to us, not ours to the
+ *  caller. */
 async function relayUpstream(upstream: Response): Promise<Response> {
   const text = await upstream.text();
-  const contentType = upstream.headers.get("content-type") ?? "application/json";
-  return new Response(text, {
-    status: upstream.status,
-    headers: { ...CORS_HEADERS, "Content-Type": contentType },
-  });
+  const headers: Record<string, string> = {
+    ...CORS_HEADERS,
+    "Content-Type": upstream.headers.get("content-type") ?? "application/json",
+  };
+  for (const [name, value] of upstream.headers) {
+    const key = name.toLowerCase();
+    if (RELAYED_HEADERS.has(key) || RELAYED_HEADER_PREFIXES.some((p) => key.startsWith(p))) {
+      headers[name] = value;
+    }
+  }
+  return new Response(text, { status: upstream.status, headers });
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -167,6 +217,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
           return json({ error: `Rejected: request carried a client identifier field ("${key}"). Identifiers must not leave the device.` }, 400);
         }
       }
+      // Pin the model server-side — whatever the caller asked for is discarded.
+      form.set("model", TRANSCRIPTION_MODEL);
       const upstream = await fetch(`${GROQ_BASE_URL}/audio/transcriptions`, {
         method: "POST",
         headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
@@ -187,14 +239,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
       } catch {
         return json({ error: "Invalid JSON body." }, 400);
       }
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return json({ error: "Chat completions expects a JSON object body." }, 400);
+      }
       const forbidden = findForbiddenKey(body);
       if (forbidden) {
         return json({ error: `Rejected: request carried a client identifier field ("${forbidden}"). Identifiers must not leave the device.` }, 400);
       }
+      // Pin the model server-side — messages/response_format/temperature are the caller's, the model
+      // is not. Forward the re-serialized payload, not `raw`, so the pin cannot be bypassed.
+      const payload = { ...(body as Record<string, unknown>), model: CHAT_MODEL };
       const upstream = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
         method: "POST",
         headers: { Authorization: `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
-        body: raw,
+        body: JSON.stringify(payload),
       });
       return await relayUpstream(upstream);
     }

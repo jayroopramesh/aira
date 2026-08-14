@@ -213,11 +213,19 @@ The function proxies both Groq calls — `POST /groq-proxy/transcriptions` (mult
 whisper-large-v3) and `POST /groq-proxy/chat/completions` (JSON messages → llama-3.3-70b) — and:
 
 - **Verifies the caller.** The `Authorization: Bearer` must be a valid *user* session JWT (role
-  `authenticated`, checked against GoTrue `/auth/v1/user`). Anonymous callers and the anon publishable
-  key are rejected **401** — only signed-in counselors spend quota. (`verify_jwt` is disabled in
-  `supabase/config.toml` on purpose: we verify in-code so the anon key — itself a valid JWT — is
-  rejected and errors come back as clear JSON.)
+  `authenticated` and not an anonymous sign-in, checked against GoTrue `/auth/v1/user`). Anonymous
+  callers and the anon publishable key are rejected **401** — only signed-in counselors spend quota.
+  (`verify_jwt` is disabled in `supabase/config.toml` on purpose: we verify in-code so the anon key —
+  itself a valid JWT — is rejected and errors come back as clear JSON.)
+  *What this does **not** prove, stated plainly:* signup is open from the client with the public anon
+  key and email confirmation is **OFF**, so a valid user JWT proves **"someone registered"**, not
+  **"an authorized counselor"**. Real signup restriction — an allowlist or a custom claim check —
+  defers to production/Azure; for the demo the pinned models and the rate limit are what bound the
+  damage a registered stranger can do.
 - **Reads `GROQ_API_KEY` from the function environment** (a Supabase secret), never from a client var.
+- **Pins the models server-side.** `whisper-large-v3` for transcription, `llama-3.3-70b-versatile` for
+  chat; a caller-supplied `model` is **overwritten, not honoured**, so no one can aim the project's
+  quota at an arbitrary, more expensive Groq model.
 - **Rate-limits per caller.** A best-effort **in-memory fixed window** (default 20 req / 60 s per user
   id; tune with `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS`). *Honest limits:* the counter lives in the
   isolate's memory, so it is per-isolate and resets on cold start — an abuse backstop, **not** a hard
@@ -226,12 +234,19 @@ whisper-large-v3) and `POST /groq-proxy/chat/completions` (JSON messages → lla
 - **Guards identifiers.** Any payload carrying a client/patient identifier or name (a set of forbidden
   JSON keys / form fields — `clientName`, `client_id`, `mrn`, …) is rejected **400** with a clear
   error, never silently stripped — a server-side backing for "identifiers never leave the device".
-- **Passes upstream Groq errors through faithfully** (status code + body preserved).
+- **Passes upstream Groq errors through faithfully** (status code + body preserved, plus `Retry-After`
+  and `x-ratelimit-*` so a caller can actually back off — those are CORS-exposed for browser callers).
 
-**Honest degradation.** With no proxy URL configured, or no one signed in (no session token), the app
-degrades to the on-device mocks with the calm "demo services not configured" notice — it never
-crashes. Because the proxy authenticates with the Supabase session, Groq features require Supabase
-accounts to be configured too (`hasGroq = hasSupabase && proxy URL set`).
+**Honest degradation.** With no proxy URL configured the app runs the on-device mocks with the calm
+"demo services not configured" notice. With the proxy configured but **nobody signed in**, the cloud
+services **fail loudly** instead of quietly mocking: a missing session token rejects, and the capture
+screen shows a calm "sign in again, or paste the transcript" recovery. It never crashes, and it never
+substitutes canned clinical prose for a real recording — a mocked transcript would attach fabricated
+findings to a real session and the note would still claim a cloud hop that never ran. Provenance is
+recorded from what actually happened (the transcription hop from a successful token-backed call, the
+drafting hop from the summarizer that really produced the draft), never from build-time config.
+Because the proxy authenticates with the Supabase session, Groq features require Supabase accounts to
+be configured too (`hasGroq = hasSupabase && proxy URL set`).
 
 **Residency.** Supabase Edge Functions run on Supabase's **global edge** (Deno Deploy), not
 necessarily in-region; this project is **ap-south-1 (Mumbai)**. For production the **same proxy

@@ -10,6 +10,7 @@ import { useClient, useData } from '../../../data/DataProvider';
 import { DraftNote } from '../../../data/types';
 import { ActiveRecording, isRecordingSupported, isUploadSupported, pickAudioFile, startRecording } from '../../../services/audioCapture';
 import { hasGroq } from '../../../config/env';
+import { isCloudSessionRequiredError } from '../../../services/cloudSession';
 import { summarizationService } from '../../../services/summarization';
 import { CaptureRef, MockTranscriptionService, transcriptionService } from '../../../services/transcription';
 import { useTheme } from '../../../theme/ThemeProvider';
@@ -522,27 +523,33 @@ function Analysing({
   const [error, setError] = useState<string | null>(null);
   const [clinicalWarnDismissed, setClinicalWarnDismissed] = useState(false);
   const controller = useRef(new AbortController());
-  // Single source of truth for how this capture is routed: it decides both which transcriber runs and
-  // what the note may later claim about where the audio went — the two can't drift apart.
   const isMockCapture = capture.uri.startsWith('mock://');
-  const transcribedInCloud = hasGroq && !isMockCapture;
-  // The drafting hop is separate: the summarizer is Groq-backed exactly when keys are configured, with
-  // no per-capture override, so a capture kept on-device can still have its text drafted in the cloud.
-  const draftedInCloud = hasGroq;
+  // What the note may claim about where the audio went is recorded from what ACTUALLY happened, never
+  // from build-time config: it only turns true once a token-backed cloud transcription has returned.
+  // A mock capture, a failed cloud call (including "no session"), or a hand-pasted transcript all
+  // leave it false, so routing and the note's claim can never drift apart.
+  const [transcribedInCloud, setTranscribedInCloud] = useState(false);
 
   useEffect(() => {
     const ctrl = controller.current;
     // The "sample audio" path can't be sent to the cloud (there's no real clip) — transcribe it
     // with the on-device mock so it yields a real canned transcript for the summarizer.
+    const wentToCloud = hasGroq && !isMockCapture;
     const service = isMockCapture ? new MockTranscriptionService(1) : transcriptionService;
     (async () => {
+      setTranscribedInCloud(false);
       try {
         const result = await service.transcribe(capture, { onStage: setStage, signal: ctrl.signal });
         setTranscript(result.text || '');
+        setTranscribedInCloud(wentToCloud);
         setStage('ready');
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
-        setError('Transcription failed — type or paste the transcript below, then draft the note.');
+        setError(
+          isCloudSessionRequiredError(e)
+            ? 'Cloud transcription needs a signed-in session — this capture stayed on this device. Sign in again, or type or paste the transcript below, then draft the note.'
+            : 'Transcription failed — type or paste the transcript below, then draft the note.',
+        );
         setStage('ready');
       }
     })();
@@ -577,12 +584,17 @@ function Analysing({
       // Persist the real transcript alongside the note (the exact text the clinician reviewed and drafted
       // from) so the review screen's Transcript tab can show the actual session — not placeholder prose —
       // and a clinician can later check the note against it. Rides on the note through the vault seam,
-      // together with how this capture was actually transcribed and drafted, so every provenance line
+      // together with how this capture was actually transcribed and drafted (the summarizer stamps the
+      // drafting hop itself, from the service that really produced this draft), so every provenance line
       // on the review screen stays true for this note however the app is configured when it is read.
-      onDrafted({ ...note, transcript: trimmed, transcribedInCloud, draftedInCloud });
+      onDrafted({ ...note, transcript: trimmed, transcribedInCloud });
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
-      setError('Drafting failed — nothing was drafted. Check your connection, review the transcript below, and try again.');
+      setError(
+        isCloudSessionRequiredError(e)
+          ? 'Drafting failed — cloud drafting needs a signed-in session, so nothing was drafted and nothing was sent. Sign in again and try, or review the transcript below.'
+          : 'Drafting failed — nothing was drafted. Check your connection, review the transcript below, and try again.',
+      );
       setStage('ready');
     }
   };
@@ -620,7 +632,7 @@ function Analysing({
             <View style={{ flex: 1 }}>
               <AppText variant="bodyStrong">{stage === 'drafting' ? 'Drafting clinical sections…' : 'Analysing transcript…'}</AppText>
               <AppText variant="small" color="ink3" style={{ marginTop: 2 }}>
-                {label} · {hasGroq ? 'demo mode (cloud)' : 'on-device mock'}
+                {label} · {hasGroq && !isMockCapture ? 'demo mode (cloud)' : 'on-device mock'}
               </AppText>
             </View>
           </Row>
