@@ -50,26 +50,35 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   the proxy above with the session token. Web audio via `src/services/audioCapture.ts` (MediaRecorder
   + file-picker fallback; native falls back to the mock). The `mock://` sample-audio path always uses
   the mock transcriber. No proxy configured → the on-device mock for both.
-- **The fabrication line (why the two seams degrade differently)**: fabrication is the app INVENTING
-  clinical text — a canned transcript standing in for a real recording. Drafting the clinician's own
-  typed/pasted words on-device invents nothing. So with the proxy configured but NOT signed in,
-  **transcription throws** `CloudSessionRequiredError` (`src/services/cloudSession.ts`) while
-  **drafting falls back** to `MockSummarizationService` over the same text, stamped
-  `draftedInCloud: false`. That keeps the capture screen's paste-the-transcript recovery a real route
-  to a note instead of a dead end. Never make transcription fall back, never make drafting throw.
-  That fallback uses the stub's **`deriveOnly` mode**, because it runs over a REAL session: it emits
-  only what the clinician's words support (subjective/objective/risk scan) and leaves assessment,
-  plan, prescriptions and codes at `NOT_CAPTURED`. The full walkthrough note — canned assessment,
-  plan bullets, the `F41.1` chip — is for the UNCONFIGURED demo over the `mock://` sample only; never
-  let it reach a real client's note.
+- **The fabrication line — canned content belongs to the `mock://` sample and to nothing else, on
+  EVERY build.** Fabrication is the app INVENTING clinical text; drafting the clinician's own
+  typed/pasted words on-device invents nothing. So the gate is *whose session it is*, never how the
+  build is configured:
+  - `MockTranscriptionService.transcribe` replays `MOCK_TRANSCRIPT_TEXT` only for a `mock://` uri and
+    otherwise throws `TranscriptionUnavailableError` (`transcription.ts`). An unconfigured build has
+    no automatic transcription for a real recording — it must not answer one with the sample's words
+    ("Denies passive ideation on screening today" is a safety finding nobody made).
+  - `MockSummarizationService` emits the full walkthrough note (canned assessment, plan bullets, the
+    `F41.1` chip) only when `input.sampleCapture === true`; every other session gets derive-only
+    output (subjective/objective from the clinician's words + the risk scan, everything else left at
+    `NOT_CAPTURED`). The flag defaults to absent = safe mode.
+  - With the proxy configured but NOT signed in, **transcription throws** `CloudSessionRequiredError`
+    (`cloudSession.ts`) while **drafting falls back** to the stub over the same text, stamped
+    `draftedInCloud: false`. Never make transcription fall back, never make drafting throw — that is
+    what keeps the paste-the-transcript recovery a real route to a note instead of a dead end.
+  Proved by `scripts/provenance-harness.mjs`; the two error kinds are distinct because signing in
+  fixes one and cannot fix the other, so only `CloudSessionRequiredError` shows the sign-in action.
 - **Provenance is observed, never configured — and it is THREE facts, never one**:
   `audioLeftDevice` (the upload was ISSUED; set on the cloud transcriber's `transcribing` stage, which
   fires immediately before the POST, because a 429/5xx arrives after the audio has already left),
   `transcriptFromCloud` (the stored text IS whisper's output — only on a successful transcription, so
   text typed after a failed upload is never presented as machine-transcribed), and `draftedInCloud`
   (stamped by `buildDraft` from the summarizer that actually ran). Collapsing the first two back into
-  one boolean is how a note came to claim whisper produced the clinician's own typing. None derive
-  from `hasGroq`, so a note can never claim — or deny — a hop that did not match reality.
+  one boolean is how a note came to claim whisper produced the clinician's own typing. A 200 carrying
+  `{text: ""}` is not a transcript either, so `transcriptFromCloud` needs non-empty text. None derive
+  from `hasGroq`, so a note can never claim — or deny — a hop that did not match reality. `buildDraft`
+  owns all three; the `sourceLine` expression they feed is proved by `scripts/provenance-harness.mjs`,
+  which exists because it was re-derived wrongly in three successive fix rounds.
 - **Cloud reachability is a runtime question**: `cloudSessionReady()` (`cloudSession.ts`) = proxy
   configured AND a live token. The capture screen asks it before the mic opens and says plainly when
   the cloud is unreachable; it never gates recording. Signing in cannot rescue a capture already

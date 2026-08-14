@@ -37,6 +37,12 @@ export type SummaryInput = {
    * `sourceLine` reports each one from its own truth rather than collapsing them.
    */
   transcriptFromCloud?: boolean;
+  /**
+   * Is this the built-in `mock://` demo clip rather than a session with a real person in it? Only the
+   * sample may receive the on-device stub's canned walkthrough content; see `MockSummarizationService`.
+   * Absent → treated as a real session, so the safe mode is the default.
+   */
+  sampleCapture?: boolean;
 };
 
 export interface SummarizationService {
@@ -91,15 +97,16 @@ Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY this shape
  * transcript text is POSTed to the proxy with the counselor's Supabase session token; only the
  * transcript + a bare session number are sent — never the client's name (the proxy also rejects any
  * payload that carries a client identifier). Not signed in (no token) DELEGATES to the on-device
- * MockSummarizationService in its `deriveOnly` mode over the same text. That is not fabrication: it
- * restates the clinician's own typed/pasted words and leaves every section it cannot derive — the
- * assessment, the plan, the prescriptions, the diagnosis chips — as "review required" rather than
- * inventing them. Inventing a transcript is transcription's job to refuse (see
+ * MockSummarizationService over the same text, which for a real session means its derive-only mode.
+ * That is not fabrication: it restates the clinician's own typed/pasted words and leaves every
+ * section it cannot derive — the assessment, the plan, the prescriptions, the diagnosis chips — as
+ * "review required" rather than inventing them. Inventing a transcript is transcription's job to
+ * refuse (see
  * `GroqTranscriptionService`, which still rejects). Because the fallback runs `buildDraft` with
  * `draftedInCloud: false`, a note drafted this way says so, and says a keyword stub wrote it.
  */
 export class GroqSummarizationService implements SummarizationService {
-  private readonly mock = new MockSummarizationService(true);
+  private readonly mock = new MockSummarizationService();
 
   constructor(
     private readonly proxyUrl: string,
@@ -164,22 +171,20 @@ export class GroqSummarizationService implements SummarizationService {
  * only when nothing was raised), so a real dictated transcript that discloses ideation is never rated
  * "clear" here.
  *
- * TWO MODES, because the same stub now serves two very different situations:
- *  • `deriveOnly: false` (default) — the no-keys DEMO. Nothing is configured, the transcript is the
- *    canned `mock://` sample, and nobody is documenting a real client, so it fills a complete
- *    walkthrough note: a placeholder assessment, plan bullets and a working code chip. That content is
- *    scaffolding for a demo, not a finding about anyone.
- *  • `deriveOnly: true` — the CONFIGURED-but-signed-out fallback, which runs over a REAL session the
- *    clinician typed or pasted. Here the same scaffolding would be invented clinical content attached
- *    to a real client — an anxiety code and prescriptions nobody derived from the session — so this
- *    mode emits ONLY what the transcript supports (subjective, objective, the risk scan) and leaves
- *    assessment, plan, prescriptions and codes to `NOT_CAPTURED` for the clinician to complete. The
- *    note's source line says a keyword stub wrote it, so "drafted on this device" is never mistaken
- *    for an on-device model.
+ * WHAT IT MAY WRITE depends on WHOSE session it is — decided per call from `input.sampleCapture`, not
+ * from how the build is configured, because both configurations can hand it either kind of session:
+ *  • The built-in `mock://` SAMPLE (`sampleCapture: true`) is a demo clip with no real person in it,
+ *    so the stub fills a complete walkthrough note — a placeholder assessment, plan bullets and a
+ *    working code chip. That content is scaffolding for a demo, not a finding about anyone.
+ *  • ANY OTHER session is real, whatever the build. The same scaffolding there would be invented
+ *    clinical content attached to a real client — an anxiety code and prescriptions nobody derived
+ *    from the session — so the stub emits ONLY what the transcript supports (subjective, objective,
+ *    the risk scan) and leaves assessment, plan, prescriptions and codes at `NOT_CAPTURED` for the
+ *    clinician to complete. The note's source line says a keyword stub wrote it, so "drafted on this
+ *    device" is never mistaken for an on-device model.
+ * Defaulting the flag to absent means a caller that forgets it gets the safe mode.
  */
 export class MockSummarizationService implements SummarizationService {
-  constructor(private readonly deriveOnly = false) {}
-
   async summarize(input: SummaryInput): Promise<DraftNote> {
     const t = input.transcript.replace(/\s+/g, ' ').trim();
     const sentences = t ? t.split(/(?<=[.!?])\s+/).slice(0, 8) : [];
@@ -187,7 +192,7 @@ export class MockSummarizationService implements SummarizationService {
     const rest = sentences.slice(3, 6).join(' ');
     const riskSafety = scanTranscriptRisk(t);
 
-    if (this.deriveOnly) {
+    if (input.sampleCapture !== true) {
       const draft: LlmDraft = {
         subjective: { body: first ? [first] : [], quote: '' },
         objective: { body: rest ? [rest] : [] },

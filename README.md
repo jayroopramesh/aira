@@ -238,25 +238,28 @@ whisper-large-v3) and `POST /groq-proxy/chat/completions` (JSON messages → lla
   and `x-ratelimit-*` so a caller can actually back off — those are CORS-exposed for browser callers).
 
 **Honest degradation — the line it draws.** *Fabrication* is the app **inventing clinical text**:
-standing a canned transcript in for a session that was actually recorded. That is never acceptable.
+standing canned words in for a session that was actually recorded. That is never acceptable.
 *Drafting the clinician's own typed or pasted words on-device* invents nothing, and is the accepted
-no-keys degradation. The two seams therefore behave differently on purpose:
+no-keys degradation. What decides which content a note may carry is therefore **whose session it is**,
+not how the build is configured:
 
-| | no proxy configured | proxy configured, **no live session** |
+| | built-in `mock://` sample clip | any **real** capture (mic or uploaded file) |
 |---|---|---|
-| **Transcription** | on-device mock (nothing was recorded to misrepresent) | **rejects** — never a canned transcript for a real recording |
-| **Drafting** | on-device mock, full demo note | on-device mock in **`deriveOnly`** mode, stamped `draftedInCloud: false` |
+| **Transcription** | replays the walkthrough transcript | a real transcript, or **rejects** — never canned words. Cloud with no session → `CloudSessionRequiredError`; no engine in this build → `TranscriptionUnavailableError` |
+| **Drafting** | full walkthrough note (placeholder assessment, plan bullets, the `F41.1` chip) | **derive-only**: subjective/objective from the clinician's own words + the risk scan; assessment, plan, prescriptions and codes left at *"review required"* |
+
+Both rules hold on **every** build, configured or not. An unconfigured build has no automatic
+transcription at all, so the record button still works but the transcript is yours to type — the
+canned sample text is never offered as a recording of a real person. Likewise the walkthrough's
+working diagnosis and prescriptions can only ever attach to the sample clip. The note's source line
+says a **keyword stub** wrote a derive-only draft, so "drafted on this device" is not mistaken for an
+on-device model.
 
 So the paste-the-transcript recovery is a **real, working route to a note**: type or paste the
 session text and Airava drafts it on this device, with nothing sent anywhere. It never crashes.
 
-`deriveOnly` matters because that fallback runs over a **real** session. The stub restates only what
-the clinician's own words support — subjective, objective, and the conservative risk scan — and leaves
-the assessment, plan, prescriptions and diagnosis codes as *"review required"*. It never attaches a
-working diagnosis or prescriptions nobody derived from the session, and the note's source line says a
-**keyword stub** wrote it so "drafted on this device" is not mistaken for an on-device model. The
-unconfigured no-keys demo, which runs over the canned sample and documents nobody, keeps its complete
-walkthrough note.
+Both rules are executable: `node scripts/provenance-harness.mjs` runs the real services and asserts
+them, alongside the source-line combinations below.
 
 **Provenance records three separate facts**, each from what actually happened rather than from
 build-time config, because they come apart:

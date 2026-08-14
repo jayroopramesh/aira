@@ -12,7 +12,13 @@ import { ActiveRecording, isRecordingSupported, isUploadSupported, pickAudioFile
 import { hasGroq } from '../../../config/env';
 import { cloudSessionReady, isCloudSessionRequiredError } from '../../../services/cloudSession';
 import { summarizationService } from '../../../services/summarization';
-import { CaptureRef, MockTranscriptionService, transcriptionService } from '../../../services/transcription';
+import {
+  CaptureRef,
+  MockTranscriptionService,
+  isSampleCapture,
+  isTranscriptionUnavailableError,
+  transcriptionService,
+} from '../../../services/transcription';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 type Phase = 'precapture' | 'recording' | 'analysing';
@@ -184,7 +190,7 @@ function PreCapture({
       <AppText variant="body" color="ink2" center style={{ marginTop: 10, maxWidth: 460 }}>
         {hasGroq
           ? 'In demo mode Airava transcribes and drafts in the cloud (Groq). You review and sign every note; the draft and transcript stay on this device.'
-          : 'Airava transcribes then drafts a note. You review and sign every note. (Demo services aren’t configured — this runs on a sample transcript.)'}
+          : 'Demo services aren’t configured, so this build has no automatic transcription. You can still record: type or paste the transcript afterwards and Airava drafts the note on this device, with nothing sent anywhere. “Use sample audio” runs the full walkthrough on a built-in demo clip.'}
       </AppText>
 
       {cloudSignedOut ? (
@@ -618,7 +624,7 @@ function Analysing({
     };
   }, []);
   const controller = useRef(new AbortController());
-  const isMockCapture = capture.uri.startsWith('mock://');
+  const isMockCapture = isSampleCapture(capture.uri);
   // TWO separate facts, both observed rather than configured, because they come apart. The upload is
   // disclosed from the moment it is ISSUED — the cloud transcriber POSTs the audio and only then sees
   // a 429/5xx, so a failure after that point still means the recording left this device. The
@@ -648,18 +654,26 @@ function Analysing({
           },
           signal: ctrl.signal,
         });
-        setTranscript(result.text || '');
+        // A 200 carrying no text is not a transcript: whisper answers a silent or badly-encoded clip
+        // with `{text: ""}`. The upload still happened, but there is nothing of the model's in the
+        // note, so only the disclosure flips — anything the clinician then types stays their own.
+        const cloudText = (result.text ?? '').trim();
+        setTranscript(cloudText);
         setAudioLeftDevice(wentToCloud);
-        setTranscriptFromCloud(wentToCloud);
+        setTranscriptFromCloud(wentToCloud && cloudText.length > 0);
         setStage('ready');
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
         const noSession = isCloudSessionRequiredError(e);
+        // Signing in fixes a missing session; it cannot conjure an engine that isn't in this build,
+        // so the sign-in affordance stays off for that one.
         setNeedsSignIn(noSession);
         setError(
           noSession
             ? 'Cloud transcription needs a live sign-in — nothing was sent and this recording stayed on this device. Type or paste the transcript below and Airava will draft the note on this device. Signing in enables cloud transcription for your next capture; it can’t transcribe the recording you just made, and leaving this screen discards it.'
-            : 'Transcription failed — type or paste the transcript below, then draft the note.',
+            : isTranscriptionUnavailableError(e)
+              ? 'This build has no automatic transcription, so nothing was transcribed and nothing was sent anywhere. Type or paste the transcript below and Airava will draft the note on this device.'
+              : 'Transcription failed — type or paste the transcript below, then draft the note.',
         );
         setStage('ready');
       }
@@ -692,6 +706,7 @@ function Analysing({
       durationMs: capture.durationMs,
       audioLeftDevice,
       transcriptFromCloud,
+      sampleCapture: isMockCapture,
     };
     try {
       const note = await summarizationService.summarize(input, { signal: controller.current.signal });
