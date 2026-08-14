@@ -81,6 +81,31 @@ export type DraftNote = {
    * phrasing of disclosed ideation can't be under-rated. Absent (mock/older notes) → derived.
    */
   riskLevel?: RiskLevel;
+  /**
+   * The real session transcript this note was drafted from — the Groq-transcribed (or clinician-typed)
+   * text, persisted device-local alongside the note through ClientRepository/VaultStorage and shown in
+   * the review screen's Transcript tab. HONESTY INVARIANT: this is only ever the actual captured text,
+   * never fabricated. Absent for sample fixtures and older notes captured before transcripts were
+   * stored — the Transcript tab then says so plainly rather than passing placeholder prose off as the
+   * session.
+   */
+  transcript?: string;
+  /**
+   * True iff THIS note's transcript was produced by the cloud transcription hop (Groq) rather than the
+   * on-device mock transcriber. Drives the honest provenance caption in the review screen's Transcript
+   * tab, so the caption reports what actually happened to this capture instead of the app-wide config.
+   * Absent for sample fixtures and older notes — treated as on-device, because a cloud hop we can't
+   * prove is never claimed.
+   */
+  transcribedInCloud?: boolean;
+  /**
+   * True iff THIS note was drafted by the cloud summarizer (Groq) rather than the on-device mock — the
+   * hop that sends the transcript TEXT away, independent of where the audio was transcribed. Recorded
+   * at draft time so a note viewed later, under a build configured differently, still reports what
+   * actually happened to it. Absent for sample fixtures and older notes — then nothing is claimed
+   * either way, because a cloud hop we can't prove is never claimed and neither is its absence.
+   */
+  draftedInCloud?: boolean;
   sections: NoteSection[];
   measures: { measure: string; today: string; prev: string; band: string }[];
   reviewCodes: ReviewCode[];

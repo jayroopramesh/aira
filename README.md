@@ -30,10 +30,12 @@ approved click-through prototype. Expo **replaces** the earlier SvelteKit plan a
 > (see [Locked v1 constraints](#locked-v1-constraints)).
 
 <p align="center">
-  <img src="docs/screenshots/r4r5-welcome-light.png" alt="Welcome onboarding with mascot hero (light)" width="32%" />
-  <img src="docs/screenshots/r4r5-patterns-phq-dark.png" alt="Client patterns — multi-scale stoic chart (dark)" width="32%" />
-  <img src="docs/screenshots/r4r5-review-dap-light.png" alt="Session note with SOAP/DAP switcher (light)" width="32%" />
+  <img src="docs/screenshots/mobile/01-onboarding-light.png" alt="Welcome onboarding with mascot hero, phone (light)" width="32%" />
+  <img src="docs/screenshots/mobile/06-patterns-dark.png" alt="Client patterns — Amara's multi-scale longitudinal chart, phone (dark)" width="32%" />
+  <img src="docs/screenshots/mobile/07-soap-note-light.png" alt="Session note with SOAP/DAP switcher, phone (light)" width="32%" />
 </p>
+
+<p align="center"><sub>Phone-dimension captures (390×844 @2×), light + dark — see <a href="docs/screenshots/mobile/"><code>docs/screenshots/mobile/</code></a>.</sub></p>
 
 ---
 
@@ -46,7 +48,7 @@ Five workflows, built to the s4 prototype's steps and phone-adapted:
 | **Welcome** (boots here when signed out) | onboarding (post-session "personal scribe" framing; endowed setup progress bar, prefilled 20% → 45% → 72% → 100%) → create account (Emirates ID + "why?", phone, name, email, password) → one-time recovery code (reveal once, copy/save, "I saved it" gate) → login |
 | **Unlock** | login (username + password, "Encrypted with your login", HIPAA-aligned trust note) → calm wrong-password state (inline recovery-code fallback) → decrypt transition |
 | **Get ready** | day dashboard (countdown, session cards) → client drawer (scores, timeline, last plan, editable patient-details card that persists device-local, mock SALAMA/EHR connection card with a persistent no-external-system disclaimer) → read-only prep reminder → ready state |
-| **Session summary** | pre-capture (read-only reminders; record, upload a clip, or use sample audio) → recording (waveform + timer, timestamp-synced comment-card strip with a dotted add-first card, trust note; transcription is one-shot on stop — no live readout) → analysing (editable transcript; a silent/near-empty capture is refused rather than drafted, and a dismissible banner flags a transcript that doesn't read like clinical text) → note with SOAP/DAP format switcher (SOAP: S · O · Risk & Safety · A · P; DAP merges S+O into one D — Data section, derived so content never diverges; three-pane on web, stacked on phone) → per-section edit/regenerate → Prescriptions rail → sign-off (attributed to the signed-in clinician, stamped when they sign) → audio-trust moment (delete-by-default, keep toggle). Up to **3 notes per client** are retained, newest first — the session rail switches between them. |
+| **Session summary** | pre-capture (read-only reminders; record, upload a clip, or use sample audio) → recording (waveform + timer, timestamp-synced comment-card strip with a dotted add-first card, trust note; transcription is one-shot on stop — no live readout) → analysing (editable transcript; a silent/near-empty capture is refused rather than drafted, and a dismissible banner flags a transcript that doesn't read like clinical text) → note with SOAP/DAP format switcher (SOAP: S · O · Risk & Safety · A · P; DAP merges S+O into one D — Data section, derived so content never diverges; three-pane on web, stacked on phone) → per-section edit/regenerate → Prescriptions rail → sign-off (attributed to the signed-in clinician, stamped when they sign) → audio-trust moment (delete-by-default, keep toggle). The reviewed transcript is saved **with** the note (same device-local vault seam, same retention), and the note's **Transcript** tab shows that real text; a note with no stored transcript — sample data, or notes captured before transcripts were saved — says so plainly rather than standing in placeholder prose. Up to **3 notes per client** are retained, newest first — the session rail switches between them. |
 | **Patterns** | caseload table (search, status chips, sparklines with a dashed first-reading baseline, sober risk column carried over from each note's risk tier, Outreach mailto templates that grey out once used; tiles computed from the caseload itself) → client patterns (plain-language headline *before* charts; multi-scale tabs PHQ-9 · GAD-7 · MHI-5 · DASS-21 with a muted dashed "Caseload avg" comparison stroke + legend; sparse ≤2-reading dot-strip rule kept per scale; companion-app journal box) → history timeline (with the retained notes) → acute-risk review → safety-plan viewer |
 
 The standing calm **Escalate** affordance sits on every screen (never alarm-red, never modal — a
@@ -58,8 +60,9 @@ mood set — hero moods on the welcome/login/recovery screens, a per-workflow mo
 wordmark, which also returns you to the day board) appears only on human surfaces; it is banned from charts, tables, the risk queue, and the in-session capture
 content (see `src/components/mascotMoods.tsx`).
 
-Rendered captures of the workflows (light + dark; the current set is `r4r5-`) live in
-[`docs/screenshots/`](./docs/screenshots).
+Rendered captures of the workflows (light + dark) live in
+[`docs/screenshots/`](./docs/screenshots) — the current signature set is the phone-dimension
+[`mobile/`](./docs/screenshots/mobile) captures; the earlier `r4r5-` web renders are kept alongside.
 
 ---
 
@@ -169,9 +172,13 @@ report which are live). Configuration is `EXPO_PUBLIC_*` in `.env.local`, read v
 | **Transcription** | Groq **whisper-large-v3** over recorded/uploaded audio (`GroqTranscriptionService`). Web capture via MediaRecorder + a file-picker fallback (`services/audioCapture.ts`). | `MockTranscriptionService` (canned transcript) |
 | **Summarization** | Groq **llama-3.3-70b** → SOAP sections + risk/safety + plan → `DraftNote` (`services/summarization.ts`) | `MockSummarizationService` |
 
-Transcription + summarization are a **cloud hop over the session text** — the demo banner says so
-plainly so the on-device trust copy never overclaims. Notes, transcripts and prescriptions still
-persist **device-local** behind the vault seam.
+Transcription + summarization are two **separate cloud hops** over the session — the audio to
+transcribe, then the transcript text to draft from — and the demo banner says so plainly so the
+on-device trust copy never overclaims. Each is recorded on the note as it happens (a capture can stay
+on-device, e.g. the sample audio, and still be drafted in the cloud), so the note's source line and
+Transcript tab report what actually happened to *that* note rather than how the app is configured
+when it is read back. Notes, transcripts and prescriptions still persist **device-local** behind the
+vault seam.
 
 **Blank boot.** A fresh install starts EMPTY — no clients, zero-states everywhere. Caseload state is a
 reactive context (`src/data/DataProvider.tsx`) persisted through `ClientRepository` → `VaultStorage`

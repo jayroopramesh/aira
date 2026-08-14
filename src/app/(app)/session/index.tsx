@@ -522,12 +522,19 @@ function Analysing({
   const [error, setError] = useState<string | null>(null);
   const [clinicalWarnDismissed, setClinicalWarnDismissed] = useState(false);
   const controller = useRef(new AbortController());
+  // Single source of truth for how this capture is routed: it decides both which transcriber runs and
+  // what the note may later claim about where the audio went — the two can't drift apart.
+  const isMockCapture = capture.uri.startsWith('mock://');
+  const transcribedInCloud = hasGroq && !isMockCapture;
+  // The drafting hop is separate: the summarizer is Groq-backed exactly when keys are configured, with
+  // no per-capture override, so a capture kept on-device can still have its text drafted in the cloud.
+  const draftedInCloud = hasGroq;
 
   useEffect(() => {
     const ctrl = controller.current;
     // The "sample audio" path can't be sent to the cloud (there's no real clip) — transcribe it
     // with the on-device mock so it yields a real canned transcript for the summarizer.
-    const service = capture.uri.startsWith('mock://') ? new MockTranscriptionService(1) : transcriptionService;
+    const service = isMockCapture ? new MockTranscriptionService(1) : transcriptionService;
     (async () => {
       try {
         const result = await service.transcribe(capture, { onStage: setStage, signal: ctrl.signal });
@@ -540,7 +547,7 @@ function Analysing({
       }
     })();
     return () => ctrl.abort();
-  }, [capture]);
+  }, [capture, isMockCapture]);
 
   const draftAndContinue = async () => {
     const trimmed = transcript.trim();
@@ -563,10 +570,16 @@ function Analysing({
       clientName: client?.name ?? name,
       sessionNumber: client?.sessionNumber ?? 1,
       durationMs: capture.durationMs,
+      transcribedInCloud,
     };
     try {
       const note = await summarizationService.summarize(input, { signal: controller.current.signal });
-      onDrafted(note);
+      // Persist the real transcript alongside the note (the exact text the clinician reviewed and drafted
+      // from) so the review screen's Transcript tab can show the actual session — not placeholder prose —
+      // and a clinician can later check the note against it. Rides on the note through the vault seam,
+      // together with how this capture was actually transcribed and drafted, so every provenance line
+      // on the review screen stays true for this note however the app is configured when it is read.
+      onDrafted({ ...note, transcript: trimmed, transcribedInCloud, draftedInCloud });
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
       setError('Drafting failed — nothing was drafted. Check your connection, review the transcript below, and try again.');

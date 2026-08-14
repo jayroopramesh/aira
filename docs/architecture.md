@@ -63,6 +63,7 @@ flowchart TB
 
 **The one rule the diagram encodes:** identity lives with Supabase (and later Azure UAE), thinking
 happens wherever the model runs (Groq today, your GPU or Azure tomorrow), but **what the client
-said and what the counselor signed exists only on the device**. Demo mode's single honest
-exception — audio to Groq for transcription — is temporary, labeled in-app, and disappears when
-transcription moves on-device.
+said and what the counselor signed exists only on the device**. Demo mode's honest exceptions are the
+two Groq hops the diagram shows — the audio to transcribe, then the transcript text to draft from.
+Both are temporary and labeled in-app on the note itself, and they disappear as transcription moves
+on-device and drafting moves to the parked production path.

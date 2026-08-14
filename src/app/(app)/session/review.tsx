@@ -132,7 +132,18 @@ export default function ReviewNote() {
 
             <View style={{ height: theme.spacing.lg }} />
 
-            {tab === 'Note' ? <NotePane key={noteKey} draft={draft} signed={signed} /> : <OtherPane tab={tab} />}
+            {tab === 'Note' ? (
+              <NotePane key={noteKey} draft={draft} signed={signed} />
+            ) : tab === 'Transcript' ? (
+              <TranscriptPane
+                transcript={draft.transcript}
+                transcribedInCloud={draft.transcribedInCloud}
+                draftedInCloud={draft.draftedInCloud}
+                signed={signed}
+              />
+            ) : (
+              <OtherPane tab={tab} />
+            )}
 
             {/* On phone, the note-switcher and the rail (prescriptions / codes / sign-off) stack
                 below the note — earlier retained notes must stay reachable on narrow too (C4). */}
@@ -489,11 +500,65 @@ function MeasureTable({ measures }: { measures: DraftNote['measures'] }) {
   );
 }
 
+/**
+ * The Transcript tab shows the REAL session transcript persisted with the note (device-local, through
+ * the vault seam) — the exact text the clinician reviewed and drafted from, so they can check the note
+ * against it later. HONESTY INVARIANT: when a note has no stored transcript (sample fixtures, or notes
+ * captured before transcripts were saved) it says so plainly and never renders placeholder prose as if
+ * it were the session. The caption reports the two cloud hops separately, each from the value recorded
+ * on THIS note when it was drafted — never from the app-wide config, which can differ by the time the
+ * note is read back. Only the both-recorded-on-device branch may say nothing was sent anywhere: with
+ * keys configured the transcript text goes to Groq to draft even when the audio never left the device.
+ * When a hop wasn't recorded (older notes) nothing is claimed about it in either direction.
+ */
+function TranscriptPane({
+  transcript,
+  transcribedInCloud,
+  draftedInCloud,
+  signed,
+}: {
+  transcript?: string;
+  transcribedInCloud?: boolean;
+  draftedInCloud?: boolean;
+  signed: boolean;
+}) {
+  const text = transcript?.trim();
+
+  if (!text) {
+    return (
+      <Card tone="sunken" elevation="none" radius="md">
+        <AppText variant="body" color="ink2">
+          No transcript is stored for this note. Sample data and notes captured before transcripts were
+          saved don’t include the session text — nothing is shown here rather than standing in a placeholder
+          for the real session.
+        </AppText>
+      </Card>
+    );
+  }
+
+  return (
+    <View>
+      <AppText variant="small" color="ink3" style={{ marginBottom: 10 }}>
+        {(transcribedInCloud === true
+          ? 'The transcript of this session, kept on this device. The audio was sent to the cloud (Groq) to transcribe, then deleted — only this text remains. There is no on-device de-identification hop in demo mode.'
+          : transcribedInCloud === false && draftedInCloud === true
+            ? 'The transcript of this session, produced and kept on this device — the audio was never sent for transcription. The note was drafted in the cloud, so this text was sent to Groq to draft from (see the demo banner). There is no on-device de-identification hop in demo mode.'
+            : transcribedInCloud === false && draftedInCloud === false
+              ? 'The transcript of this session, produced and kept on this device — nothing was sent anywhere, and no de-identification step runs.'
+              : 'The transcript of this session, kept on this device. This note doesn’t record where it was transcribed or drafted, so nothing is claimed either way.') +
+          (signed ? '' : ' Check the note against it before signing.')}
+      </AppText>
+      <Card tone="sunken" elevation="none" radius="md">
+        <AppText variant="body" color="ink2" selectable style={{ lineHeight: 22 }}>
+          {text}
+        </AppText>
+      </Card>
+    </View>
+  );
+}
+
 function OtherPane({ tab }: { tab: Tab }) {
   const copy: Record<string, string> = {
-    Transcript: hasGroq
-      ? 'The transcript lives here on this device. In demo mode the audio was sent to the cloud (Groq) to transcribe; the audio is deleted afterwards and only this reviewed text remains — there is no on-device de-identification hop in demo mode.'
-      : 'This is a sample transcript — the demo services aren’t configured, so nothing was sent anywhere and no de-identification step runs. It stays on this device.',
     Context:
       'Prior-session context Aira grounded the draft against: last plan, latest measures, and standing safety items. Companion-app journal entries are shown separately and never blended with clinical scores.',
     '+ Screening tools':
@@ -530,7 +595,7 @@ function ReviewRail({
       <Divider />
       <ReviewCodes draft={draft} />
       <Divider />
-      {signed ? <AudioTrust /> : null}
+      {signed ? <AudioTrust transcribedInCloud={draft.transcribedInCloud} /> : null}
       <SignOff signed={signed} onSign={onSign} clinician={clinician} signedAt={signedAt} />
     </View>
   );
@@ -688,11 +753,16 @@ function ReviewCodes({ draft }: { draft: DraftNote }) {
  * Audio-trust moment (round-2 change #7). Deletion is the DEFAULT — the honest copy says the
  * recording is already gone. A visible "Keep the audio" toggle lets the clinician retain it;
  * kept, the copy is equally honest and notes that replay-with-notes becomes available.
+ *
+ * This card speaks about the AUDIO, so it reads the same recorded transcription provenance the
+ * Transcript tab does — the two can never disagree about the same note. Legacy signed notes drafted
+ * before provenance was recorded carry no value; those fall back to the build's configuration.
  */
-function AudioTrust() {
+function AudioTrust({ transcribedInCloud }: { transcribedInCloud?: boolean }) {
   const theme = useTheme();
   const c = theme.colors;
   const [kept, setKept] = useState(false);
+  const audioWentToCloud = transcribedInCloud ?? hasGroq;
 
   const tint = kept ? c.brand : c.positive;
   const bg = kept ? c.brandBg : c.positiveBg;
@@ -708,14 +778,14 @@ function AudioTrust() {
         </AppText>
       </Row>
       <AppText variant="small" color="ink2" style={{ marginTop: 8, lineHeight: 18 }}>
-        {/* Honest audio provenance (F9): in demo mode the audio was sent to the cloud to transcribe,
-            so we must not claim it "never left this device". */}
+        {/* Honest audio provenance (F9): when the audio was sent to the cloud to transcribe, we must
+            not claim it "never left this device". */}
         {kept
-          ? hasGroq
-            ? 'You chose to keep this recording. In demo mode a copy was sent to the cloud (Groq) to transcribe; the copy you kept stays on this device and makes replay-with-notes possible for this session.'
+          ? audioWentToCloud
+            ? 'You chose to keep this recording. A copy was sent to the cloud (Groq) to transcribe; the copy you kept stays on this device and makes replay-with-notes possible for this session.'
             : 'You chose to keep this recording. It stays on this device and never leaves it. Keeping the audio is what makes replay-with-notes possible for this session.'
-          : hasGroq
-            ? 'In demo mode this recording was sent to the cloud (Groq) to transcribe, then deleted — deletion is the default after every session. Only the draft you reviewed remains.'
+          : audioWentToCloud
+            ? 'This recording was sent to the cloud (Groq) to transcribe, then deleted — deletion is the default after every session. Only the draft you reviewed remains.'
             : 'The recording never left this device, and it’s now gone — deletion is the default after every session. Only the draft you reviewed remains.'}
       </AppText>
 
