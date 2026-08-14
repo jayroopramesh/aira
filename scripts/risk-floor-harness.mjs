@@ -55,7 +55,6 @@ const cases = [
   { name: 'live: "Endorsed ideation; no plan reported" floors to acute', in: note({ level: 'watch', rows: ideationRow('Endorsed ideation; no plan reported') }), want: 'acute' },
   { name: 'live: "Active thoughts; no intent reported" floors to acute', in: note({ level: 'watch', rows: ideationRow('Active thoughts; no intent reported') }), want: 'acute' },
   { name: 'live: "Endorsed; no means noted" floors to acute', in: note({ level: 'watch', rows: ideationRow('Endorsed; no means noted') }), want: 'acute' },
-  { name: 'live: "Present; nothing further of concern" floors to acute', in: note({ level: 'watch', rows: ideationRow('Present; nothing further of concern') }), want: 'acute' },
   // …and with no structured level the derivation must agree (floor == derivation).
   { name: 'asymmetry: "Present; no current plan or intent", no level → acute', in: note({ level: undefined, rows: ideationRow('Present; no current plan or intent') }), want: 'acute' },
   { name: 'asymmetry: "Endorsed; no means noted", no level → acute', in: note({ level: undefined, rows: ideationRow('Endorsed; no means noted') }), want: 'acute' },
@@ -144,6 +143,17 @@ const cases = [
   { name: 'live: "Nil for this session" stays clear', in: note({ level: 'clear', rows: ideationRow('Nil for this session') }), want: 'clear' },
   { name: 'live: "No acute concerns" stays clear', in: note({ level: 'clear', rows: ideationRow('No acute concerns') }), want: 'clear' },
   { name: 'live: "Nothing of concern" stays clear', in: note({ level: 'clear', rows: ideationRow('Nothing of concern') }), want: 'clear' },
+  // A concern-denial answers the row wherever it sits, not only when it opens the value — these are
+  // ordinary ways to write a benign screening row, and each derived a permanent acute while the
+  // concern anchor was leading-only.
+  { name: 'live: "Screened; no acute concerns" stays clear', in: note({ level: 'clear', rows: ideationRow('Screened; no acute concerns') }), want: 'clear' },
+  { name: 'live: "Screened this session, no safety concerns" stays clear', in: note({ level: 'clear', rows: ideationRow('Screened this session, no safety concerns') }), want: 'clear' },
+  { name: 'live: "Discussed openly; no immediate concerns" stays clear', in: note({ level: 'clear', rows: ideationRow('Discussed openly; no immediate concerns') }), want: 'clear' },
+  { name: 'live: "Asked directly; no further concerns" stays clear', in: note({ level: 'clear', rows: ideationRow('Asked directly; no further concerns') }), want: 'clear' },
+  // ACCEPTED RESIDUAL: a trailing concern-denial is indistinguishable from the benign rows above
+  // without a positive-marker test on the leading clause, so a disclosure written this way reads as
+  // denied. It leaves the model's own tier standing (here: watch); a false acute never comes back down.
+  { name: 'residual: "Present; nothing further of concern" reads as denied → keeps the model tier', in: note({ level: 'watch', rows: ideationRow('Present; nothing further of concern') }), want: 'watch' },
   // A NEGATED disclosure marker is a denial, not a disclosure. The summarizer's own prompt teaches this
   // vocabulary ("passive, transient, fleeting, better off"), so these are ordinary, not exotic.
   { name: 'live: "Denies thoughts of self-harm or suicide" stays clear', in: note({ level: undefined, rows: ideationRow('Denies thoughts of self-harm or suicide') }), want: 'clear' },

@@ -59,18 +59,25 @@ const SELF_HARM_CUE = /self[- ]?harm|cutting|hurt (?:my|her|him|them)sel/;
  * Does this risk-row VALUE deny the risk it describes? Five readings, any of which is a denial:
  * a denial VERB that isn't denying the plan/means ("Denied", "Denies thoughts of suicide" — but NOT
  * the "denies plan or intent" that follows a disclosure); a negation BOUND to an ideation/self-harm
- * TOPIC word ("no SI/HI", "no current ideation"); a negation bound to a STATE word ("not currently
- * present", "none currently reported"); a LEADING denial of concerns ("No acute concerns", "Nothing
- * of concern"); a LEADING terse denial ("None", "No", "None this session"); or a fixed denial word
- * ("Nil for this session", "Screening negative", "Absent this session").
+ * TOPIC word ("no SI/HI", "no current ideation"); a negation bound to a STATE or concern word ("not
+ * currently present", "none currently reported", "Screened; no acute concerns"); a LEADING terse
+ * denial ("None", "No", "None this session"); or a fixed denial word ("Nil for this session",
+ * "Screening negative", "Absent this session").
  *
  * A negation only denies the ROW when its object is the row's own topic or state. What the clinician
  * denied is decided by what the negation REACHES, so the bound-negation gap cannot cross a
  * plan/intent/means noun: "Present; no current plan or intent" and "Endorsed; no means noted" deny
  * the plan, not the ideation, and reading them as row denials silently drops the acute floor on a
  * documented disclosure — the one direction this floor exists to prevent. The denial-verb branch
- * carries the same scoping as a lookahead, and "concerns" is generic enough that it only counts when
- * it LEADS the value (as the row's answer), never as a trailing "…; nothing further of concern".
+ * carries the same scoping as a lookahead.
+ *
+ * "Concerns" is a genuine denial anchor wherever it sits, because "Screened; no acute concerns" is an
+ * ordinary way to answer the row and reading it as a disclosure pins a benign client to acute forever.
+ * The cost is that a trailing concern-denial cannot be told apart from that: "Present; nothing further
+ * of concern" has the identical shape and now reads as denied. Separating them would need a
+ * positive-marker test on the leading clause — the unscoped-substring approach that produced false
+ * acutes for six rounds. An under-rate leaves the model's own structured tier standing; a false acute
+ * can never be lowered, so the tie breaks toward the denial.
  *
  * The leading-denial branch answers the row, so it holds however the phrase is finished — UNLESS the
  * value goes on to name the risk itself ("No plan, but active ideation present"), which is a
@@ -88,8 +95,7 @@ function deniesRisk(s: string): boolean {
   return (
     /\b(?:denied|denies|denying)\b(?!\s+(?:to\s+\w+\s+)?(?:a\s+|any\s+|the\s+)?(?:plan|intent|means|access|method|specific)\b)/.test(s) ||
     /\b(?:no|not|none|without|nil|negative|absent|nothing)\b(?:(?!\b(?:plan|intent|means|method|access)\b)[\s\w'/-]){0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|si|hi)\b/.test(s) ||
-    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b(?:(?!\b(?:plan|intent|means|method|access)\b)[\s\w'/-]){0,20}?\b(?:present|reported|endorsed|noted|raised)\b/.test(s) ||
-    /^\s*(?:no|not|none|without|nil|negative|absent|nothing)\b[\s\w'/-]{0,20}?\bconcerns?\b/.test(s) ||
+    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b(?:(?!\b(?:plan|intent|means|method|access)\b)[\s\w'/-]){0,20}?\b(?:present|reported|endorsed|noted|raised|concerns?)\b/.test(s) ||
     /^\s*(?:no|none|nil|negative|absent|denied|denies|nad|n\/?a)\b(?![\s\w'/-]{0,30}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|plan|intent|endorsed|present|active|passive|reported)\b)/.test(s) ||
     /\b(?:nil|negative|absent)\b|none reported|not present|no ideation|no concerns|nothing of concern|not endorsed/.test(s)
   );

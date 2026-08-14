@@ -67,7 +67,7 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   floor only ever raises. The floor is **row-based** — the free-text risk *summary* does not drive the
   tier: judging a whole sentence repeatedly produced false acutes (a disclosure marker from one clause
   overriding a denial in another), and nothing can lower a tier once set. Within a row the test is
-  `deniesRisk`-only — a row discloses when it is present, not-assessed and not denied — with **no**
+  `deniesRisk`-only — a row discloses when it is present, neither not-assessed nor denied — with **no**
   positive-marker override, for the same reason: a marker substring can't be scoped to its clause
   ("Denied; protective factors noted" read as a disclosure). The one exception is a **contiguous
   severity-qualified ideation phrase** ("passive/chronic/fleeting … ideation|SI", `affirmsQualifiedIdeation`):
@@ -77,9 +77,11 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   reaches is the topic or its state — the bound-negation gap never crosses a plan/intent/means noun,
   so "Present; no current plan or intent" stays a disclosure. Accepted residuals: a value that
   endorses ideation *and* carries an unrelated bare denial ("Endorsed; denied to spouse") or a
-  trailing screening-status clause ("…; safety plan deferred") can under-rate; and a negation
-  separated from its phrase by punctuation ("denies, on direct questioning, any passive ideation")
-  over-rates. All rare, and far cheaper than a permanent false acute. `client.risk` is likewise a
+  trailing screening-status clause ("…; safety plan deferred") can under-rate; a trailing
+  concern-denial reads as a row denial ("Present; nothing further of concern"), since it is
+  indistinguishable from the benign "Screened; no acute concerns" without the positive-marker test
+  that caused the false acutes; and a negation separated from its phrase by punctuation ("denies, on
+  direct questioning, any passive ideation") over-rates. All rare, and far cheaper than a permanent false acute. `client.risk` is likewise a
   capture-time signal: it is NOT re-derived from later manual edits to a note's risk narrative (see
   `updateNoteSection`). See `scanNoteRisk` / `riskFromNote` / `appendSessionToClient` in
   `src/data/sessionClient.ts`, proved by `scripts/risk-floor-harness.mjs`.
