@@ -28,7 +28,11 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
 - **Accounts — Supabase** (`src/services/supabase.ts`, `SupabaseAuthService` in `auth.ts`): real
   signup/login (email confirmation OFF; identity fields → user metadata). The one-time recovery-code
   moment stays app-side (local vault key path). `getAccessToken()` (supabase.ts) yields the signed-in
-  session JWT the Groq proxy verifies.
+  session JWT the Groq proxy verifies. **Only email/password `signIn` mints that token** — recovery-code
+  unlock opens the vault but holds no Supabase credentials, and native reloads drop the session
+  (`persistSession` is web-only), so those paths reach capture with no cloud. That is by design; the
+  capture screen offers a "Sign in to enable cloud transcription" action (routing through
+  `/unlock?next=<in-app route>`, validated by `safeNext`) plus the paste fallback. See `README.md`.
 - **Groq is server-side** — the Groq API key is NO LONGER a client var. It lives as a Supabase secret
   behind the `groq-proxy` Edge Function (`supabase/functions/groq-proxy/index.ts`), which proxies both
   Groq calls (`/transcriptions` whisper-large-v3 multipart, `/chat/completions` llama-3.3-70b JSON).

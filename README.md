@@ -240,13 +240,26 @@ whisper-large-v3) and `POST /groq-proxy/chat/completions` (JSON messages → lla
 **Honest degradation.** With no proxy URL configured the app runs the on-device mocks with the calm
 "demo services not configured" notice. With the proxy configured but **nobody signed in**, the cloud
 services **fail loudly** instead of quietly mocking: a missing session token rejects, and the capture
-screen shows a calm "sign in again, or paste the transcript" recovery. It never crashes, and it never
-substitutes canned clinical prose for a real recording — a mocked transcript would attach fabricated
-findings to a real session and the note would still claim a cloud hop that never ran. Provenance is
-recorded from what actually happened (the transcription hop from a successful token-backed call, the
-drafting hop from the summarizer that really produced the draft), never from build-time config.
-Because the proxy authenticates with the Supabase session, Groq features require Supabase accounts to
-be configured too (`hasGroq = hasSupabase && proxy URL set`).
+screen shows a calm recovery — a "Sign in to enable cloud transcription" action alongside the
+paste-the-transcript path. It never crashes, and it never substitutes canned clinical prose for a real
+recording — a mocked transcript would attach fabricated findings to a real session and the note would
+still claim a cloud hop that never ran. Provenance is recorded from what actually happened (the
+transcription hop from a successful token-backed call, the drafting hop from the summarizer that
+really produced the draft), never from build-time config. Because the proxy authenticates with the
+Supabase session, Groq features require Supabase accounts to be configured too
+(`hasGroq = hasSupabase && proxy URL set`).
+
+**A live email/password session is what unlocks the cloud — recovery-code unlock is not.** This is a
+deliberate consequence of the recovery-key model, not a bug. Signing in with email + password
+(`authService.signIn` → Supabase `signInWithPassword`) is the only path that mints a session token,
+and that token is what the proxy verifies. **Recovery-code unlock opens the local vault but not the
+cloud**: it holds no Supabase credentials and cannot mint a session by design — the whole point of
+the recovery code is that it never carries the account password. The same applies after a native app
+reload, where the session is kept in memory only (`persistSession` is web-only in
+`src/services/supabase.ts`). On those paths capture does not fail silently: it says plainly that a
+signed-in session is needed, offers the sign-in action (which returns to the capture screen via the
+unlock screen's `next` route param), and keeps the paste-the-transcript fallback so a note can still
+be written entirely on-device.
 
 **Residency.** Supabase Edge Functions run on Supabase's **global edge** (Deno Deploy), not
 necessarily in-region; this project is **ap-south-1 (Mumbai)**. For production the **same proxy

@@ -97,7 +97,13 @@ export default function SessionCapture() {
         />
       )}
       {phase === 'analysing' && (
-        <Analysing capture={capture.current ?? mockCaptureRef()} client={client ?? undefined} name={name} onDrafted={onDrafted} />
+        <Analysing
+          capture={capture.current ?? mockCaptureRef()}
+          client={client ?? undefined}
+          name={name}
+          onDrafted={onDrafted}
+          returnTo={client ? `/(app)/session?clientId=${client.id}` : '/(app)/session'}
+        />
       )}
     </Screen>
   );
@@ -510,17 +516,23 @@ function Analysing({
   client,
   name,
   onDrafted,
+  returnTo,
 }: {
   capture: CaptureRef;
   client: ReturnType<typeof useClient>;
   name: string;
   onDrafted: (note: DraftNote) => void;
+  returnTo: string;
 }) {
   const theme = useTheme();
   const c = theme.colors;
+  const router = useRouter();
   const [stage, setStage] = useState<Stage>('preparing');
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Only the missing-Supabase-session case, so the sign-in affordance below tells the counselor what
+  // to DO — a generic transcription/drafting failure gets the message alone.
+  const [needsSignIn, setNeedsSignIn] = useState(false);
   const [clinicalWarnDismissed, setClinicalWarnDismissed] = useState(false);
   const controller = useRef(new AbortController());
   const isMockCapture = capture.uri.startsWith('mock://');
@@ -538,6 +550,7 @@ function Analysing({
     const service = isMockCapture ? new MockTranscriptionService(1) : transcriptionService;
     (async () => {
       setTranscribedInCloud(false);
+      setNeedsSignIn(false);
       try {
         const result = await service.transcribe(capture, { onStage: setStage, signal: ctrl.signal });
         setTranscript(result.text || '');
@@ -545,9 +558,11 @@ function Analysing({
         setStage('ready');
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
+        const noSession = isCloudSessionRequiredError(e);
+        setNeedsSignIn(noSession);
         setError(
-          isCloudSessionRequiredError(e)
-            ? 'Cloud transcription needs a signed-in session — this capture stayed on this device. Sign in again, or type or paste the transcript below, then draft the note.'
+          noSession
+            ? 'Cloud transcription needs a signed-in session — this capture stayed on this device and nothing was sent. Sign in with your email and password to enable it, or type or paste the transcript below and draft on this device.'
             : 'Transcription failed — type or paste the transcript below, then draft the note.',
         );
         setStage('ready');
@@ -563,6 +578,7 @@ function Analysing({
     // transcript first (F11). Editing the text below to real content clears this.
     const quality = transcriptQuality(trimmed);
     if (quality !== 'ok') {
+      setNeedsSignIn(false);
       setError(
         quality === 'too-short'
           ? 'This capture is too short to draft a reliable note. Check the recording or upload, or paste the session transcript below, then draft.'
@@ -571,6 +587,7 @@ function Analysing({
       return;
     }
     setError(null);
+    setNeedsSignIn(false);
     setStage('drafting');
     const input = {
       transcript: trimmed,
@@ -590,9 +607,11 @@ function Analysing({
       onDrafted({ ...note, transcript: trimmed, transcribedInCloud });
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
+      const noSession = isCloudSessionRequiredError(e);
+      setNeedsSignIn(noSession);
       setError(
-        isCloudSessionRequiredError(e)
-          ? 'Drafting failed — cloud drafting needs a signed-in session, so nothing was drafted and nothing was sent. Sign in again and try, or review the transcript below.'
+        noSession
+          ? 'Drafting failed — cloud drafting needs a signed-in session, so nothing was drafted and nothing was sent. Sign in with your email and password, then draft again. The transcript below is kept until you leave this screen.'
           : 'Drafting failed — nothing was drafted. Check your connection, review the transcript below, and try again.',
       );
       setStage('ready');
@@ -614,6 +633,13 @@ function Analysing({
             ? 'Transcript ready — review before drafting'
             : 'Preparing…';
 
+  // The sublabel names the hop the CURRENT stage is running, because the two hops route
+  // independently: a `mock://` capture is transcribed on-device yet its transcript text is still
+  // drafted in the cloud whenever the proxy is configured. Claiming "on-device mock" while the
+  // transcript is in flight to Groq would under-disclose a real cloud hop.
+  const cloudHop =
+    stage === 'drafting' ? hasGroq : stage === 'ready' ? transcribedInCloud : hasGroq && !isMockCapture;
+
   const working = stage === 'preparing' || stage === 'transcribing' || stage === 'deidentifying' || stage === 'drafting';
   const transcriptEmpty = transcript.trim().length === 0;
   // C3: a non-blocking nudge when the transcript doesn't read like clinical/session content.
@@ -632,7 +658,7 @@ function Analysing({
             <View style={{ flex: 1 }}>
               <AppText variant="bodyStrong">{stage === 'drafting' ? 'Drafting clinical sections…' : 'Analysing transcript…'}</AppText>
               <AppText variant="small" color="ink3" style={{ marginTop: 2 }}>
-                {label} · {hasGroq && !isMockCapture ? 'demo mode (cloud)' : 'on-device mock'}
+                {label} · {cloudHop ? 'demo mode (cloud)' : 'on-device mock'}
               </AppText>
             </View>
           </Row>
@@ -640,14 +666,31 @@ function Analysing({
       </Card>
 
       {error ? (
-        <Row gap={9} style={{ alignItems: 'flex-start', marginTop: theme.spacing.md }}>
-          <View style={{ marginTop: 1 }}>
-            <AlertTriangleIcon size={15} color={c.caution} />
-          </View>
-          <AppText variant="small" tint={c.caution} style={{ flex: 1, lineHeight: 17 }}>
-            {error}
-          </AppText>
-        </Row>
+        <View style={{ marginTop: theme.spacing.md }}>
+          <Row gap={9} style={{ alignItems: 'flex-start' }}>
+            <View style={{ marginTop: 1 }}>
+              <AlertTriangleIcon size={15} color={c.caution} />
+            </View>
+            <AppText variant="small" tint={c.caution} style={{ flex: 1, lineHeight: 17 }}>
+              {error}
+            </AppText>
+          </Row>
+          {needsSignIn ? (
+            <Pressable
+              onPress={() => router.push(`/unlock?next=${encodeURIComponent(returnTo)}`)}
+              accessibilityRole="button"
+              accessibilityLabel="Sign in to enable cloud transcription"
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, marginTop: 10, marginLeft: 24 })}
+            >
+              <Row gap={7}>
+                <ShieldIcon size={14} color={c.brand} />
+                <AppText variant="bodyStrong" tint={c.brand} style={{ fontSize: 13 }}>
+                  Sign in to enable cloud transcription
+                </AppText>
+              </Row>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
 
       {working && stage !== 'drafting' ? (
