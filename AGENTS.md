@@ -61,10 +61,14 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   crisis line falls back to local emergency services and never invents a mental-health number).
 - A note's risk reaches the caseload as a structured tier: the summarizer emits `riskLevel` and it is
   trusted for the ordinary case — never re-derived *down* by sniffing note prose. But `riskFromNote`
-  applies an **up-only safety floor**: if the note's own risk rows/summary disclose ideation (or
+  applies an **up-only safety floor**: if the note's own structured risk **rows** disclose ideation (or
   self-harm) it never lets the model's tier fall below acute (or elevated), so the "any disclosed
   ideation → acute, never auto-downgrade" rule holds on the live path exactly as in the mock. The
-  floor only ever raises. See `scanNoteRisk` / `riskFromNote` / `appendSessionToClient` in
+  floor only ever raises. The floor is **row-based** — the free-text risk *summary* does not drive the
+  tier: judging a whole sentence repeatedly produced false acutes (a disclosure marker from one clause
+  overriding a denial in another), and nothing can lower a tier once set. `client.risk` is likewise a
+  capture-time signal: it is NOT re-derived from later manual edits to a note's risk narrative (see
+  `updateNoteSection`). See `scanNoteRisk` / `riskFromNote` / `appendSessionToClient` in
   `src/data/sessionClient.ts`, proved by `scripts/risk-floor-harness.mjs`.
 - Sparse series (≤ 2 readings) render as a dot-strip with no trend line.
 - Login + recovery copy is isolated in `src/strings/recovery.ts`; the recovery-key policy is

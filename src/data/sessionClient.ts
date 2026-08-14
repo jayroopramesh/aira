@@ -23,9 +23,9 @@ function initialsOf(name: string): string {
  * "clear", and never UNDER-rated on an unseen phrasing.
  *
  * The summarizer emits a structured `riskLevel`; we trust it for the ordinary case (no prose-sniffing
- * to RE-derive a lower tier). But the model may contradict itself — disclose ideation in the rows or
- * summary while returning a `watch`/`clear` `level`. So we apply an UP-ONLY safety floor: derive what
- * the note's own risk TEXT discloses (`scanNoteRisk`) and never let the structured tier fall BELOW an
+ * to RE-derive a lower tier). But the model may contradict itself — disclose ideation in the risk
+ * ROWS while returning a `watch`/`clear` `level`. So we apply an UP-ONLY safety floor: derive what
+ * those rows disclose (`scanNoteRisk`) and never let the structured tier fall BELOW an
  * acute/elevated disclosure. This makes the "any disclosed ideation ⇒ acute, never auto-downgrade"
  * invariant hold on the live path exactly as it does in the mock — the floor only ever RAISES the
  * tier, so it cannot reintroduce the under-rating that motivated trusting the structured field, and a
@@ -47,12 +47,42 @@ export function riskFromNote(note: DraftNote): RiskLevel {
   return floor && RISK_ORDER[floor] > RISK_ORDER[note.riskLevel] ? floor : note.riskLevel;
 }
 
+/** Ideation cues, used to find the ideation ROW when the model labelled it something unexpected. */
+const IDEATION_CUE =
+  /suicid|ideation|thoughts of (?:dying|death|suicide|not being here|being better off)|kill (?:my|her|him|them)sel|end (?:my|her|his|their) life|better off (?:dead|gone|not here)|\bsi\b|\bsi\/hi\b/;
+const SELF_HARM_CUE = /self[- ]?harm|cutting|hurt (?:my|her|him|them)sel/;
+
 /**
- * Derive, from a note's own risk TEXT (structured rows + the risk-summary sentence), the tier that
- * text documents: ANY suicidal ideation that isn't explicitly denied/​not-assessed is ACUTE, endorsed
- * self-harm is ELEVATED, un-assessed risk is WATCH (never a false "clear"). Errs toward over-, never
- * under-, rating. This matches the app's own convention (Leah, whose last session had passive
- * ideation, is "Acute · review").
+ * Does this risk-row VALUE deny the risk it describes? A denial verb, a bare denial word standing as
+ * the whole value ("Nil", "Absent"), or a negation BOUND to an ideation/self-harm/state anchor within
+ * a few tokens ("no SI/HI", "not currently present", "none currently reported").
+ *
+ * Binding is what keeps this honest in both directions. Exact bigrams ('not present') missed every
+ * phrasing with a word inserted, reading routine denials as disclosures. Generic anchors ('concerns',
+ * 'risk') went the other way: "Active with a plan; no other risk factors" read as a denial of the
+ * ideation itself and cancelled the floor on the most severe row there is. So only ideation/self-harm
+ * and state words anchor a negation.
+ */
+function deniesRisk(s: string): boolean {
+  return (
+    /\b(?:denied|denies|denying)\b/.test(s) ||
+    /^\s*(?:nil|none|negative|absent|no)\s*\.?\s*$/.test(s) ||
+    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b[\s\w'/-]{0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|present|reported|endorsed|noted|raised|current|si|hi)\b/.test(s)
+  );
+}
+
+/**
+ * Derive, from a note's STRUCTURED risk rows, the tier the note documents: disclosed suicidal ideation
+ * is ACUTE, disclosed self-harm is ELEVATED, un-assessed risk is WATCH (never a false "clear"). Errs
+ * toward over-, never under-, rating. This matches the app's own convention (Leah, whose last session
+ * had passive ideation, is "Acute · review").
+ *
+ * ROWS ONLY — the free-text risk summary deliberately does NOT influence the tier. Judging a whole
+ * sentence cost four rounds of false acutes: a disclosure marker belonging to one clause ("Client
+ * reported improved mood; … screened and denied") kept overriding a correct denial, and a benign
+ * sentence the system prompt itself invites ("nothing of concern was raised") matched no denial
+ * pattern at all — each one pinning an ordinary client to acute permanently, since no path lowers a
+ * tier. A row value is already scoped to its topic, so the same predicates are sound there.
  *
  * There is deliberately ONE derivation: it is both the tier when no structured level exists and the
  * source of the up-only floor when one does. Two separate ladders drifted apart before — the strict
@@ -61,26 +91,17 @@ export function riskFromNote(note: DraftNote): RiskLevel {
 function scanNoteRisk(note: DraftNote): RiskLevel {
   const risk = note.sections.find((s) => s.isRisk);
   const rows = risk?.rows ?? [];
-  // The model can disclose ideation only in the summary sentence, not as a labeled row, so scan it too.
-  const summary = (risk?.body ?? []).join(' ').toLowerCase();
 
-  const valueFor = (kw: string) => rows.find((r) => r.label.toLowerCase().includes(kw))?.value?.toLowerCase() ?? '';
   const has = (s: string, ...kws: string[]) => kws.some((k) => s.includes(k));
+  // Match on the LABEL or the VALUE: a row the model labelled 'Risk' or 'SI/HI' must never hide a
+  // disclosure just because the label didn't use the word we expected.
+  const valueFor = (labelRe: RegExp, valueRe: RegExp) =>
+    rows.find((r) => labelRe.test(r.label.toLowerCase()) || valueRe.test(r.value.toLowerCase()))?.value?.toLowerCase() ?? '';
 
-  const ideation = valueFor('ideation') || valueFor('suicid');
-  const selfHarm = valueFor('self-harm') || valueFor('self harm');
+  const ideation = valueFor(/ideation|suicid/, IDEATION_CUE);
+  const selfHarm = valueFor(/self[- ]?harm/, SELF_HARM_CUE);
   const allText = rows.map((r) => `${r.label} ${r.value}`.toLowerCase()).join(' | ');
 
-  // A denial is either a denial token, or a negation BINDING a risk topic ("no suicidal ideation",
-  // "without any thoughts of self-harm"). The bound form matters: a fixed 'no ideation' token misses
-  // every ordinary phrasing that puts a word between the negation and the topic — including the mock
-  // summarizer's own benign sentence — which then reads as a disclosure and pins the client to acute.
-  // The anchors are deliberately ideation/self-harm SPECIFIC: a generic "no other risk factors" or
-  // "no concerns about X" says nothing about the ideation itself, and letting it bind would cancel the
-  // safety floor on the most severe row there is ("Active with a plan; no other risk factors").
-  const isDenial = (s: string) =>
-    has(s, 'denied', 'denies', 'none reported', 'not present', 'no ideation', 'nil', 'negative', 'no concerns', 'absent') ||
-    /\b(?:no|not|without)\s+(?:[\w'-]+\s+){0,3}(?:ideation|suicid\w*|self[- ]?harm|thoughts of)\b/.test(s);
   // "Not raised / not disclosed / not addressed" are NEUTRAL: the topic simply didn't come up. They are
   // neither a disclosure nor a clinical denial, so they must land on "watch" — without them the
   // not-denied branch below would read a benign mock row ("Not raised this session", or the
@@ -88,7 +109,7 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
   const isNotAssessed = (s: string) =>
     has(s, 'not assessed', 'not captured', 'unable to assess', 'not evaluated', 'review required', 'deferred', 'not raised', 'not disclosed', 'not reported', 'not explicitly addressed', 'not addressed', 'not discussed');
   // A row like "Passive ideation reported; denies plan or intent" DISCLOSES even though it also
-  // contains a denial token — a positive-disclosure marker outranks the denial of a plan/means.
+  // contains a denial verb — a positive-disclosure marker outranks the denial of a plan/means.
   // Negated forms ("none reported", "not present") are scrubbed first so they never read as disclosure.
   const discloses = (s: string) => {
     const scrubbed = s.replace(/\b(?:none|not|no|nothing|denies|denied|without)\s+(?:[\w-]+\s+){0,2}(?:reported|endorsed|present|noted)\b/g, '');
@@ -98,34 +119,15 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
     );
   };
 
-  // A summary sentence can disclose ideation even when it wasn't structured as a row, so scan it with
-  // the mock summarizer's ideation cues (see `scanTranscriptRisk` in summarization.ts).
-  const summaryIdeationCues = [
-    'suicid', 'ideation', 'kill myself', 'end my life', 'end it all', 'better off dead', 'better off not here',
-    'better off gone', "don't want to be here", 'do not want to be here', "don't want to be alive",
-    'not want to be alive', 'not worth living', 'thoughts of dying', 'thoughts of death',
-  ];
-  // The summary is judged on cue + not-assessed + not-denied ONLY. `discloses()` is deliberately NOT
-  // applied here: its markers are bare substrings, so in free prose they match words that belong to a
-  // different clause ("Client reported improved mood…", "…denied any thoughts of suicide") and would
-  // override a correct denial — a false acute the caseload can never come back down from. Scoping a
-  // substring marker to the ideation clause is not something this can do reliably, so the
-  // disclosure-despite-a-plan-denial case is delegated to the structured ideation ROW below, where the
-  // text being tested is already scoped to ideation.
-  const hasIdeationCue = summaryIdeationCues.some((k) => summary.includes(k));
-  const summaryDiscloses = hasIdeationCue && !isNotAssessed(summary) && !isDenial(summary);
+  const ideationDisclosed = !!ideation && !isNotAssessed(ideation) && (discloses(ideation) || !deniesRisk(ideation));
+  const selfHarmDisclosed = !!selfHarm && !isNotAssessed(selfHarm) && (discloses(selfHarm) || !deniesRisk(selfHarm));
 
-  // No risk rows AND no summary means nothing was assessed — "watch", never a false "clear".
-  if (!rows.length && !summary.trim()) return 'watch';
-  // ANY disclosed (non-denied, actually-assessed) suicidal ideation → acute. `!isDenial` is what makes
-  // the plainest phrasings ("Present", "Active, with a plan and means") count without needing to be on
-  // a hand-maintained marker list.
-  if (ideation && !isNotAssessed(ideation) && (discloses(ideation) || !isDenial(ideation))) return 'acute';
-  if (summaryDiscloses) return 'acute';
-  // Self-harm currently endorsed → elevated.
-  if (selfHarm && !isNotAssessed(selfHarm) && (discloses(selfHarm) || !isDenial(selfHarm))) return 'elevated';
-  // Risk simply not assessed (silence/failed capture, or model omission) → watch, never false "clear".
-  if ((ideation && isNotAssessed(ideation)) || isNotAssessed(allText)) return 'watch';
+  if (ideationDisclosed) return 'acute';
+  if (selfHarmDisclosed) return 'elevated';
+  // Nothing assessed at all, or a row that says so outright (including buildDraft's "Not captured in
+  // this draft — review required" stand-in) → watch, never a false "clear".
+  if (!rows.length) return 'watch';
+  if ((ideation && isNotAssessed(ideation)) || (selfHarm && isNotAssessed(selfHarm)) || isNotAssessed(allText)) return 'watch';
   // Explicit denial / nothing of concern raised → clear.
   return 'clear';
 }

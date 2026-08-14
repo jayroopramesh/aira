@@ -79,6 +79,11 @@ type DataContextValue = {
    * Persist a clinician's inline edit to ONE note section, so the review screen's per-section Edit is a
    * real edit rather than a throwaway text box (no-dead-promise). Only the section prose moves — the
    * sign-off (status/signedBy/signedAt) and the structured riskLevel are never touched here.
+   *
+   * It deliberately does NOT re-derive `client.risk`. The caseload tier is a CAPTURE-TIME signal read
+   * from the note's structured risk ROWS (`riskFromNote`), not from the free-text risk narrative, so
+   * editing that narrative neither can nor should move the tier. Lowering a tier stays a deliberate
+   * act elsewhere — never an automatic downgrade.
    */
   updateNoteSection: (clientId: string, noteIndex: number, sectionId: string, body: string[], bullets?: string[]) => Promise<void>;
 };
