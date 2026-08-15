@@ -94,6 +94,40 @@ function nameAgrees(cl: Client, typedName: string): boolean {
   return normalizeName(cl.name) === normalizeName(typedName);
 }
 
+/** What the counselor typed, only when it is a real name — a blank or the placeholder signals nothing. */
+function realTypedName(raw?: string): string {
+  const typed = raw?.trim() ?? '';
+  return typed && !isPlaceholderName(typed) ? typed : '';
+}
+
+/** Prior CAPTURED records ('s-' ids) filed under the same real name. */
+function sameNamedCaptured(clients: Client[], typedName: string): Client[] {
+  return typedName ? clients.filter((cl) => isCapturedNameMatch(cl, typedName)) : [];
+}
+
+/**
+ * The lone same-named record a NEW Emirates ID may attach to — the "first time I typed this patient's
+ * ID" case, which is the ordinary one on rollout since no record captured before the field existed
+ * carries an id.
+ *
+ * ABSENCE OF AN ID IS NEW INFORMATION, NOT DISAGREEMENT. A record holding no Emirates ID contradicts
+ * nothing, so the counselor naming their own established patient and supplying that patient's id is a
+ * match — the id attaches to the record they already have rather than forking them. Every way the
+ * evidence could be less than conclusive rules the adoption out:
+ *   • the key already has a holder — Step A owns that capture (fold, or the mis-entry warning);
+ *   • MORE THAN ONE record shares the name — ambiguity; there is no way to tell which patient this is;
+ *   • the lone record already holds its own valid id — disagreement, plainly a namesake.
+ * Both of those fork instead, so the app still never merges on ambiguity or on disagreement. And since
+ * the key is unclaimed here, adopting it keeps one key with exactly one holder.
+ */
+function adoptionCandidate(clients: Client[], key: string, typedName: string): Client | undefined {
+  if (!key || !typedName) return undefined;
+  if (clients.some((cl) => holdsIdKey(cl, key))) return undefined;
+  const sameName = sameNamedCaptured(clients, typedName);
+  if (sameName.length !== 1) return undefined;
+  return emiratesIdKey(sameName[0].emiratesId) ? undefined : sameName[0];
+}
+
 /**
  * The record already holding this capture's Emirates ID under a MATERIALLY DIFFERENT name. Undefined
  * when there is nothing to warn about: no valid id, no typed name, no record holding that id, or the
@@ -133,28 +167,32 @@ export function emiratesIdForNewClient(clients: Client[], opts: { name?: string;
 }
 
 /**
- * The same-named captured client this capture was NOT folded into, because the capture carries a valid
- * Emirates ID that no record on the caseload holds. Undefined when there is nothing to explain: no
- * valid Emirates ID supplied, no same-named captured client, or an id that DOES match a record (that
- * folds through `matchExistingClient` and is no conflict at all).
- *
- * It fires in BOTH directions — the same-named record storing a different id, and the one storing none
- * — because a valid id vetoes the name fold against either, and each is equally a moment where the
- * counselor is about to see two identical-looking rows.
+ * The same-named captured client this capture was NOT folded into, although its Emirates ID is held by
+ * no record. It fires on exactly the two readings the app refuses to resolve:
+ *   • AMBIGUITY — more than one record already carries this name;
+ *   • DISAGREEMENT — the lone same-named record holds its own, different, valid Emirates ID.
+ * It stays quiet when there is nothing to explain: no valid id, no real typed name, no same-named
+ * record, an id that DOES reach a record (that is Step A — a fold, or the sharper `findIdNameMismatch`
+ * warning), or the adoption case, which is a MATCH rather than a refusal.
  *
  * Minting a separate record is the SAFE outcome — merging two different patients is unrecoverable
- * (notes, plan, timeline and a risk tier nothing lowers) — but it must not be a SILENT one: a mistyped
- * digit otherwise forks a client with no explanation. So the review screen says plainly what happened.
- * Device-local only; it says nothing about anyone outside this caseload.
+ * (notes, plan, timeline and a risk tier nothing lowers) — but it must not be a SILENT one: an
+ * unexplained second identical-looking row is how a caseload quietly fragments. So the review screen
+ * says plainly what happened. Device-local only; it says nothing about anyone outside this caseload.
+ *
+ * Built on the SAME predicates as `matchExistingClient`, so the two are exact complements: a capture
+ * that branch declines to fold is precisely one this can explain.
  */
 export function findNameConflict(clients: Client[], opts: { name?: string; emiratesId?: string }): Client | undefined {
   const key = emiratesIdKey(opts.emiratesId);
-  const typedName = opts.name?.trim();
+  const typedName = realTypedName(opts.name);
   if (!key || !typedName) return undefined;
   // A capture whose id reaches a record is not a name conflict — it either folds into it or, when the
   // names disagree, is the sharper `findIdNameMismatch` warning instead.
   if (clients.some((cl) => holdsIdKey(cl, key))) return undefined;
-  return clients.find((cl) => isCapturedNameMatch(cl, typedName));
+  // The lone id-less namesake is a MATCH (the id attaches to them), not a refusal to explain.
+  if (adoptionCandidate(clients, key, typedName)) return undefined;
+  return sameNamedCaptured(clients, typedName)[0];
 }
 
 /**
@@ -169,19 +207,22 @@ export function findNameConflict(clients: Client[], opts: { name?: string; emira
  * Returns undefined when nothing matches (the caller mints a fresh client). An explicit clientId that
  * no longer exists returns undefined too, so the caller can keep the note under that id.
  *
- * THE GOVERNING RULE: a strong identifier, when present and well-formed, always decides; a weak one
- * never merges two patients; and two strong signals that DISAGREE are a warning, never a match. So a
- * capture carrying a valid Emirates ID resolves by that id ALONE — it folds into the record holding the
- * same id, or it mints its own. The name branch is vetoed entirely for such a capture, in BOTH
- * directions: against a record storing a different id (plainly a different person) and against one
- * storing none (the counselor typed the id precisely to distinguish them, and folding would merge
- * strangers' notes, plan and timeline and carry one patient's risk tier onto the other, which nothing
- * ever lowers). A malformed entry is not an identifier at all, so it falls through to the name fold
- * exactly as a blank one does.
+ * THE GOVERNING RULE: merge when nothing disagrees; never merge on ambiguity or on disagreement. A
+ * capture carrying a valid Emirates ID resolves in two steps:
  *
- * The id fold itself requires the names to AGREE. An id reaching a record filed under a materially
- * different name is far more likely a mis-entry than a match, and folding on it is the same
- * unrecoverable merge from the opposite direction — so that capture mints its own record too.
+ *   STEP A — some record already HOLDS that id. Names agreeing (or none typed) is the duplicate-patient
+ *     fold. A record filed under a materially different REAL name is a warning, not a match: an id
+ *     reaching another patient's record is far likelier a mis-entry — a clipboard carried over, a
+ *     transposed digit landing on a real id — than the same person renamed, so that capture mints its
+ *     own record and `findIdNameMismatch` explains it.
+ *   STEP B — NO record holds that id, so the id itself contradicts nothing. Exactly one same-named
+ *     record that holds NO id of its own is the same patient having their id recorded for the first
+ *     time: it folds, and the id is ADOPTED onto that record (`adoptEmiratesId`). More than one
+ *     namesake (ambiguity), or a lone namesake holding a different valid id (disagreement), forks
+ *     instead — carrying the id, which is unclaimed — and `findNameConflict` explains it.
+ *
+ * A malformed entry is not an identifier at all, so it falls through to the name fold exactly as a
+ * blank one does, and it is never stored as an identity.
  *
  * Every veto is reported, never silent — the caller pairs this with `findNameConflict` and
  * `findIdNameMismatch`, each an exact complement of the branch that declined, so the app can never
@@ -190,7 +231,7 @@ export function findNameConflict(clients: Client[], opts: { name?: string; emira
 export function matchExistingClient(
   clients: Client[],
   opts: { clientId?: string; name?: string; emiratesId?: string },
-): { client: Client; matchedBy: 'id' | 'emiratesId' | 'name' } | undefined {
+): { client: Client; matchedBy: 'id' | 'emiratesId' | 'name'; adoptEmiratesId?: string } | undefined {
   if (opts.clientId) {
     const byId = clients.find((cl) => cl.id === opts.clientId);
     return byId ? { client: byId, matchedBy: 'id' } : undefined;
@@ -199,7 +240,10 @@ export function matchExistingClient(
   const key = emiratesIdKey(opts.emiratesId);
   if (key) {
     const byEmid = clients.find((cl) => holdsIdKey(cl, key) && nameAgrees(cl, typedName));
-    return byEmid ? { client: byEmid, matchedBy: 'emiratesId' } : undefined;
+    if (byEmid) return { client: byEmid, matchedBy: 'emiratesId' };
+    const adopt = adoptionCandidate(clients, key, realTypedName(typedName));
+    // Stored verbatim as typed, exactly as on the mint path — comparison normalises, storage preserves.
+    return adopt ? { client: adopt, matchedBy: 'emiratesId', adoptEmiratesId: opts.emiratesId?.trim() } : undefined;
   }
   if (typedName) {
     const byName = clients.find((cl) => isCapturedNameMatch(cl, typedName));
@@ -491,11 +535,11 @@ export function clientFromSession(
  * timeline entry, and raises risk from the newest note — a client's standing risk tier is never
  * auto-DOWNGRADED by a calmer session (captain ruling); lowering it is a deliberate clinician act.
  *
- * It deliberately writes NO Emirates ID onto the record. A capture carrying a valid one never reaches
- * here by name — it resolves by that id alone and otherwise mints its own record — so the only folds
- * that land here are an id MATCH (the record already holds that identity) or a name continuation with
- * no identifier to record. Backfilling from a name fold is exactly how one patient's id came to be
- * stamped onto another's record.
+ * It writes an Emirates ID onto the record ONLY when the caller passes one it has already resolved as
+ * an ADOPTION — `matchExistingClient` matched this record as the lone same-named holder of no id, for
+ * an id no record holds. It is never a blanket backfill from whatever the capture happened to carry:
+ * that is exactly how one patient's id came to be stamped onto another's record. An id already stored
+ * is never overwritten either, so a record can only ever gain the key it was matched on.
  *
  * It DOES upgrade a placeholder name. A record captured with the name field blank is filed under the
  * app's own label; when a later session for the same identity finally supplies a real name, that name
@@ -505,16 +549,18 @@ export function clientFromSession(
 export function appendSessionToClient(
   existing: Client,
   note: DraftNote,
-  opts: { sessionNumber: number; dateLabel: string; name?: string },
+  opts: { sessionNumber: number; dateLabel: string; name?: string; adoptEmiratesId?: string },
 ): Client {
   const subjective = note.sections.find((s) => s.marker === 'S');
   const summary = subjective?.body?.[0] ?? existing.summaryLine;
   const noteRisk = riskFromNote(note);
   const typedName = opts.name?.trim();
   const upgradedName = typedName && isPlaceholderName(existing.name) ? typedName : undefined;
+  const adopted = opts.adoptEmiratesId?.trim();
 
   return {
     ...existing,
+    emiratesId: adopted && !emiratesIdKey(existing.emiratesId) ? adopted : existing.emiratesId,
     name: upgradedName ?? existing.name,
     initials: upgradedName ? initialsOf(upgradedName) : existing.initials,
     risk: RISK_ORDER[noteRisk] > RISK_ORDER[existing.risk] ? noteRisk : existing.risk,

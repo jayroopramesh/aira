@@ -202,10 +202,10 @@ export default function ReviewNote() {
   // Two strong signals disagreeing is a mis-entry far more often than a match, so a separate record was
   // minted rather than merging two patients — and the counselor is told to check the id before signing.
   const idOnFileUnderAnotherName = !foldedIntoExisting && idconflict === '1';
-  // The mirror case: a client of the same name is already on the caseload, but this capture's Emirates
-  // ID does not resolve to them. A supplied identifier decides, so a separate record was minted
-  // deliberately — said plainly here, because an unexplained second identical-looking row is how a
-  // mistyped digit silently forks a client.
+  // The app could not tell which patient this is: a namesake holds a different Emirates ID, or more
+  // than one client shares the name. Ambiguity is never resolved by merging, so a separate record was
+  // minted deliberately — said plainly here, because an unexplained second identical-looking row is how
+  // a caseload quietly fragments.
   const mintedDespiteSameName = !foldedIntoExisting && !idOnFileUnderAnotherName && conflict === '1';
   // Up to 3 notes are retained per client (C4); `note` selects which retained note to review (newest = 0).
   const notes = useClientNotes(clientId);
@@ -315,10 +315,10 @@ export default function ReviewNote() {
             ) : null}
 
             {mintedDespiteSameName ? (
-              <IdentityNotice tone="caution" heading="This looks like a different person.">
+              <IdentityNotice tone="caution" heading="Check whether this is the same client.">
                 {client?.name ? `A client named ${client.name}` : 'A client with this name'} is already on your
-                caseload, but not under the Emirates ID you entered, so a new record was created for this
-                session rather than adding it to theirs.
+                caseload — under a different Emirates ID, or more than one client shares this name — so this
+                session was saved as a separate record rather than added to theirs.
               </IdentityNotice>
             ) : null}
 

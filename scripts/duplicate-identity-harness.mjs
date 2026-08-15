@@ -13,9 +13,10 @@
  *      creates nothing; a novel one creates a new client; the raw typed value is stored verbatim. The
  *      governing rule is that a strong identifier decides a MATCH, a weak one never merges two patients,
  *      and two strong signals that DISAGREE are a warning rather than a match — so a valid id resolves
- *      by id ALONE (the name fold is vetoed in BOTH directions: against a record storing a different id
- *      and against one storing none), an id reaching a record filed under another NAME does not fold
- *      either, every veto is REPORTED rather than silently forking the caseload, and a malformed entry
+ *      by id ALONE, EXCEPT that an id no record holds attaches to the lone same-named record holding
+ *      none (absence of an id is new information, not disagreement). Ambiguity (two namesakes) and
+ *      disagreement (a namesake with a different id, or an id on file under another name) never merge;
+ *      every fork is REPORTED rather than silently splitting the caseload; and a malformed entry
  *      ("N/A", a partial number) is no identity at all: it is neither stored nor matched on, and the
  *      capture falls back to name folding.
  *
@@ -385,31 +386,64 @@ const NOTE = {
   );
 }
 
-// --- 6. The MIRROR direction: a valid id never folds into a same-named record holding none ---------
-// The counselor typed the id precisely to distinguish two people who share a name. Folding would merge
-// strangers' notes/plan/timeline and carry one patient's risk tier onto the other.
+// --- 6. ADOPTION: an unclaimed id attaches to the lone same-named record that has none --------------
+// The ordinary rollout case — an established client, captured before the field existed, having their
+// Emirates ID recorded for the first time. Nothing disagrees, so this is a match, not a fork.
 {
   const first = clientFromSession('s-1', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE });
-  check('mirror: the earlier capture stored no Emirates ID', first.emiratesId === undefined, String(first.emiratesId));
-  const before = JSON.stringify(first);
+  check('adopt: the earlier capture stored no Emirates ID', first.emiratesId === undefined, String(first.emiratesId));
 
   const emid = '784-1988-1234567-1';
   const match = matchExistingClient([first], { name: 'Sam Ali', emiratesId: emid });
-  check('mirror: the name fold is VETOED (a new record would be minted)', match === undefined, JSON.stringify(match));
-  check('mirror: the existing client is left untouched', JSON.stringify(first) === before, 'existing record mutated');
-  const conflict = findNameConflict([first], { name: 'Sam Ali', emiratesId: emid });
-  check('mirror: the notice fires so the second row is explained', conflict?.id === 's-1', JSON.stringify(conflict));
+  check('adopt: the capture FOLDS onto the existing client', match?.client?.id === 's-1', JSON.stringify(match));
+  check('adopt: it is reported as the same client', match?.matchedBy === 'emiratesId', String(match?.matchedBy));
+  check('adopt: the id is carried through for adoption, verbatim', match?.adoptEmiratesId === emid, String(match?.adoptEmiratesId));
+  check('adopt: no conflict notice is raised', findNameConflict([first], { name: 'Sam Ali', emiratesId: emid }) === undefined, 'warned about a match');
 
-  // The identity takes hold through the record this capture MINTS, not by writing onto someone else's:
-  // a later capture with that id — under any spelling of the name — resolves to it.
-  const minted = clientFromSession('s-2', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE, emiratesId: emid });
-  const later = matchExistingClient([first, minted], { name: 'Sam Ali', emiratesId: ' 784 1988 1234567 1 ' });
-  check('mirror: a later same-id capture resolves by Emirates ID', later?.matchedBy === 'emiratesId', JSON.stringify(later));
-  check('mirror: it lands on the id-carrying record, not the ID-less namesake', later?.client?.id === 's-2', String(later?.client?.id));
+  // The fold records the id onto that record, so the next capture resolves by id alone.
+  const folded = appendSessionToClient(first, NOTE, { sessionNumber: 2, dateLabel: DATE, name: 'Sam Ali', adoptEmiratesId: match?.adoptEmiratesId });
+  check('adopt: the record now holds the Emirates ID', folded.emiratesId === emid, String(folded.emiratesId));
+  const later = matchExistingClient([folded], { name: 'Sam Ali', emiratesId: ' 784 1988 1234567 1 ' });
+  check('adopt: a later capture resolves by that id, however it is formatted', later?.client?.id === 's-1', JSON.stringify(later));
+  // ...and by the id alone once the name field is left blank.
+  const blank = matchExistingClient([folded], { emiratesId: '784-1988-1234567-1' });
+  check('adopt: and by that id alone with no name typed', blank?.client?.id === 's-1', JSON.stringify(blank));
 
-  // Folding writes no Emirates ID onto a record — that is how one patient's id got stamped on another's.
-  const folded = appendSessionToClient(first, NOTE, { sessionNumber: 2, dateLabel: DATE });
-  check('mirror: a name-fold never records an Emirates ID', folded.emiratesId === undefined, String(folded.emiratesId));
+  // A plain name fold (no id supplied) still records nothing — adoption is never a blanket backfill.
+  const plain = appendSessionToClient(first, NOTE, { sessionNumber: 2, dateLabel: DATE, name: 'Sam Ali' });
+  check('adopt: a name fold with no id records none', plain.emiratesId === undefined, String(plain.emiratesId));
+  // ...and a record that already holds a key never has it overwritten.
+  const kept = appendSessionToClient(folded, NOTE, { sessionNumber: 3, dateLabel: DATE, adoptEmiratesId: '784-9999-9999999-9' });
+  check('adopt: a stored Emirates ID is never overwritten', kept.emiratesId === emid, String(kept.emiratesId));
+}
+
+// --- 6a. AMBIGUITY and DISAGREEMENT still fork — the app never guesses which patient this is --------
+{
+  const emid = '784-1988-1234567-1';
+  // Two namesakes, neither with an id: nothing tells them apart.
+  const twinA = clientFromSession('s-1', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE });
+  const twinB = clientFromSession('s-2', NOTE, { name: 'sam  ali', sessionNumber: 1, dateLabel: DATE });
+  const twins = [twinA, twinB];
+  const before = JSON.stringify(twins);
+  check('ambiguity: two namesakes never adopt', matchExistingClient(twins, { name: 'Sam Ali', emiratesId: emid }) === undefined, 'adopted under ambiguity');
+  check('ambiguity: the fork is explained', findNameConflict(twins, { name: 'Sam Ali', emiratesId: emid })?.id === 's-1', 'no notice');
+  check('ambiguity: neither existing record is touched', JSON.stringify(twins) === before, 'a record was mutated');
+
+  // A lone namesake holding a DIFFERENT valid id is a disagreement, not a match.
+  const other = [clientFromSession('s-1', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE, emiratesId: '784-1988-7654321-9' })];
+  const otherBefore = JSON.stringify(other);
+  check('disagreement: a namesake with another id never adopts', matchExistingClient(other, { name: 'Sam Ali', emiratesId: emid }) === undefined, 'adopted over a stored id');
+  check('disagreement: the fork is explained', findNameConflict(other, { name: 'Sam Ali', emiratesId: emid })?.id === 's-1', 'no notice');
+  check('disagreement: the stored id is left alone', JSON.stringify(other) === otherBefore, 'the stored id was changed');
+
+  // A capture with no real name supplies nothing to match on, so it simply mints.
+  check('no name: nothing to adopt onto', matchExistingClient([twinA], { emiratesId: emid }) === undefined, 'adopted with no name');
+  check('no name: and nothing to explain', findNameConflict([twinA], { emiratesId: emid }) === undefined, 'notice without a name');
+  check(
+    'placeholder name: the app’s own label never adopts',
+    matchExistingClient([twinA], { name: UNNAMED_CLIENT_NAME, emiratesId: emid }) === undefined,
+    'the placeholder acted as a name',
+  );
 }
 
 // --- 6b. The forked record must NOT carry the id the app just ruled belongs to someone else --------
@@ -582,10 +616,38 @@ const NOTE = {
   check('save: a later blank-name capture folds by Emirates ID', blankName.isDuplicate === true, JSON.stringify(blankName));
   check('save: it lands on the ORIGINAL holder, not the fork', blankName.clientId === first.clientId, blankName.clientId);
 
-  // A same-named client the id vetoed folding into is the other, calmer warning.
-  const namesake = capture(noIdFirst.snapshot, { name: 'Dana Farouk', emiratesId: '784-1988-7654321-9' });
-  check('save: a valid id never folds by name', namesake.clientId !== noIdFirst.clientId, namesake.clientId);
-  check('save: the same-name fork is reported', namesake.nameConflict === true && namesake.idNameConflict === false, JSON.stringify(namesake));
+  // ADOPTION through the real save path: Dana was captured with no id; this session records hers.
+  const Y = '784-1988-7654321-9';
+  const adopt = capture(noIdAgain.snapshot, { name: 'Dana Farouk', emiratesId: Y });
+  check('save: adoption creates NO second record', adopt.snapshot.clients.length === 1, String(adopt.snapshot.clients.length));
+  check('save: it folds onto the existing client', adopt.clientId === noIdFirst.clientId, adopt.clientId);
+  check(
+    'save: the id is saved onto THAT record, verbatim',
+    adopt.snapshot.clients.find((cl) => cl.id === noIdFirst.clientId)?.emiratesId === Y,
+    String(adopt.snapshot.clients.find((cl) => cl.id === noIdFirst.clientId)?.emiratesId),
+  );
+  check('save: the counselor is told it is the same client', adopt.isDuplicate === true && adopt.nameConflict === false, JSON.stringify(adopt));
+  const afterAdopt = capture(adopt.snapshot, { emiratesId: ' 784 1988 7654321 9 ' });
+  check('save: the adopted key resolves the next capture by id alone', afterAdopt.clientId === noIdFirst.clientId && afterAdopt.snapshot.clients.length === 1, afterAdopt.clientId);
+
+  // AMBIGUITY through the real save path: two namesakes, so the app refuses to guess.
+  const twinA = capture(EMPTY, { name: 'Omar Said' });
+  const twinB = { ...twinA.snapshot, clients: [clientFromSession('s-twin', NOTE, { name: 'Omar Said', sessionNumber: 1, dateLabel: DATE }), ...twinA.snapshot.clients] };
+  const ambiguous = capture(twinB, { name: 'Omar Said', emiratesId: '784-1988-3333333-3' });
+  check('save: ambiguity forks rather than guessing', ambiguous.snapshot.clients.length === 3, String(ambiguous.snapshot.clients.length));
+  check('save: the ambiguous fork is reported', ambiguous.nameConflict === true && ambiguous.idNameConflict === false, JSON.stringify(ambiguous));
+  check(
+    'save: neither namesake adopted the id',
+    ambiguous.snapshot.clients.filter((cl) => cl.emiratesId).length === 1,
+    'an existing namesake was written to',
+  );
+  check('save: the forked record carries the unclaimed id', ambiguous.snapshot.clients.find((cl) => cl.id === ambiguous.clientId).emiratesId === '784-1988-3333333-3', 'the unclaimed id was withheld');
+
+  // DISAGREEMENT through the real save path: the namesake already has an id of their own.
+  const disagree = capture(adopt.snapshot, { name: 'Dana Farouk', emiratesId: '784-1988-4444444-4' });
+  check('save: a namesake with another id forks', disagree.clientId !== noIdFirst.clientId, disagree.clientId);
+  check('save: the disagreement is reported', disagree.nameConflict === true, JSON.stringify(disagree));
+  check('save: the original keeps its own id', disagree.snapshot.clients.find((cl) => cl.id === noIdFirst.clientId).emiratesId === Y, 'the stored id was changed');
 
   // Blank name + valid id mints under the placeholder; the next session names the patient.
   const unnamed = capture(EMPTY, { emiratesId: '784-1988-5555555-5' });

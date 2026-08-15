@@ -64,9 +64,10 @@ export type SessionSaveResult = {
  * accumulate, the session history stays reachable, and the note's risk reaches the caseload on EVERY
  * capture path (F4). The match rules (id → Emirates ID → captured-client name) live in
  * `matchExistingClient`: a VALID Emirates ID is the local uniqueness key, so a capture supplying one
- * already on the caseload — under an agreeing name — opens that record instead of creating a second.
- * Otherwise a separate record is minted, and the two shapes of refusal are reported rather than left
- * silent: a same-named client the id vetoed folding into, and an id already on file under another name.
+ * already on the caseload — under an agreeing name — opens that record instead of creating a second,
+ * and an id no record holds attaches to the lone same-named record that has none. Otherwise a separate
+ * record is minted, and both shapes of refusal are reported rather than left silent: a namesake the app
+ * could not tell apart, and an id already on file under another name.
  */
 export function applySessionNote(
   snapshot: CaseloadSnapshot,
@@ -83,7 +84,12 @@ export function applySessionNote(
   if (match) {
     const existing = match.client;
     const sessionNumber = existing.sessionNumber + 1;
-    const updated = appendSessionToClient(existing, note, { sessionNumber, dateLabel, name: typedName });
+    const updated = appendSessionToClient(existing, note, {
+      sessionNumber,
+      dateLabel,
+      name: typedName,
+      adoptEmiratesId: match.adoptEmiratesId,
+    });
     const noteForClient: DraftNote = { ...note, sessionLabel: `Session ${sessionNumber} — ${dateLabel}` };
     return {
       snapshot: {
