@@ -39,3 +39,17 @@ jobs:
 
       - name: Web build
         run: npx expo export --platform web
+
+      - name: Every exported page is noindex (invite-only beta preview)
+        run: |
+          html_files=$(find dist -name '*.html')
+          if [ -z "$html_files" ]; then
+            echo "no HTML files found in dist/ — web export produced nothing to check" >&2
+            exit 1
+          fi
+          for f in $html_files; do
+            if ! grep -q '<meta name="robots" content="noindex, nofollow"' "$f"; then
+              echo "missing noindex robots meta: $f" >&2
+              exit 1
+            fi
+          done

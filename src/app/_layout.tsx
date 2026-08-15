@@ -6,6 +6,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { EscalateProvider } from '../components/Escalate';
+import { WipBanner } from '../components/WipBanner';
 import { ThemeProvider, useTheme } from '../theme/ThemeProvider';
 
 export const unstable_settings = {
@@ -18,6 +19,7 @@ function RootStack() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
       <StatusBar style={theme.mode === 'dark' ? 'light' : 'dark'} />
+      <WipBanner />
       <Stack
         screenOptions={{
           headerShown: false,
