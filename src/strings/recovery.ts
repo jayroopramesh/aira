@@ -60,7 +60,7 @@ export const recoveryStrings = {
   onboard1Eyebrow: 'Welcome to Airava',
   onboard1Title: 'Your sessions, understood — and kept only by you',
   onboard1Lede:
-    'Airava is your personal scribe for after the session — not another ear in the room. You capture the conversation on your device; Airava drafts the clinical note once you’re done, and shows what’s changing over time. Everything private stays on your device.',
+    'Airava is your personal scribe for after the session — not another ear in the room. You capture the conversation on your device; Airava drafts the clinical note once you’re done, and shows what’s changing over time. Your notes and client records are stored only on this device.',
   onboard1Chips: ['Stored on your device', 'Notes drafted for you', 'Patterns over time'],
   onboard1Cta: 'Get started',
   onboardSkip: 'Skip — I already have an account',
@@ -72,7 +72,16 @@ export const recoveryStrings = {
     { title: 'Sign your note', body: 'Airava drafts a SOAP note. You review, edit, and sign — nothing is final until you say so.' },
     { title: 'See patterns', body: 'Scores and themes build over time, so change is visible across visits.' },
   ],
-  onboard2Privacy: 'Your notes stay on this device — Airava keeps no copy on a server, and nothing is shared without your say-so.',
+  // Onboarding runs BEFORE `DemoBanner` (mounted in `(app)/_layout`) exists to disclose the cloud
+  // hop, so this is the one privacy line that has to carry that disclosure itself — otherwise a
+  // clinician reads the beat above ("Airava transcribes it and drafts your note") and concludes
+  // nothing reaches a server. Branched on the observed build the same way the unlock subtitles are:
+  // the claim is scoped to STORAGE (which is genuinely device-local either way) and the cloud
+  // variant says plainly that session audio and text leave the device to be processed.
+  onboard2PrivacyCloud:
+    'Your notes and client records are stored only on this device. Transcription and drafting run in the cloud, so session audio and text leave this device for those steps — nothing else is shared without your say-so.',
+  onboard2PrivacyLocal:
+    'Your notes and client records are stored only on this device, and transcription and drafting run here too — nothing is shared without your say-so.',
   onboard2Cta: 'Create your account',
 
   // Welcome · create account

@@ -24,9 +24,14 @@ const POINT_MIN_GAP = 13;
  *
  * Points that land closer than `POINT_MIN_GAP` (a real clustering, e.g. two readings the same week)
  * are pushed apart so they stay distinguishable. The floor is capped at what equal-index spacing
- * would already grant, so it can never make a series MORE crowded than the layout it replaced. If
- * the push would run past the plot's right edge, every position is scaled back down to fit — still
- * ordered, still inside the plot.
+ * would already grant, so it can never make a series MORE crowded than the layout it replaced — and
+ * that cap is also what guarantees the whole run fits, since `(n - 1) * minGap <= plotW`.
+ *
+ * If the rightward push runs past the plot's right edge, the tail is pulled back LEFT rather than
+ * the whole run being scaled down: scaling multiplies every gap by the same factor, which shrinks
+ * the very separation the push just bought (a late cluster would collapse back into one blob, the
+ * exact state the floor exists to prevent). Translating instead keeps every gap at or above the
+ * floor — still ordered, still inside the plot.
  */
 export function dateProportionalX(dates: (string | undefined)[], plotW: number, padL: number): number[] | null {
   if (dates.length < 2) return null;
@@ -42,12 +47,12 @@ export function dateProportionalX(dates: (string | undefined)[], plotW: number, 
   for (let i = 1; i < adjusted.length; i++) {
     if (adjusted[i] - adjusted[i - 1] < minGap) adjusted[i] = adjusted[i - 1] + minGap;
   }
-  const overflow = adjusted[adjusted.length - 1] - plotW;
-  if (overflow > 0) {
-    const scale = plotW / adjusted[adjusted.length - 1];
-    for (let i = 0; i < adjusted.length; i++) adjusted[i] *= scale;
+  const last = adjusted.length - 1;
+  if (adjusted[last] > plotW) {
+    adjusted[last] = plotW;
+    for (let i = last - 1; i >= 0; i--) adjusted[i] = Math.min(adjusted[i], adjusted[i + 1] - minGap);
   }
-  return adjusted.map((x) => padL + x);
+  return adjusted.map((x) => padL + Math.max(0, x));
 }
 
 /**

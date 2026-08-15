@@ -78,15 +78,35 @@ const PHQ9_DATES = ['2026-01-12', '2026-01-26', '2026-02-09', '2026-02-23', '202
   check('the far-out reading still lands last, inside the plot', x[3] > x[2] && x[3] <= PAD_L + PLOT_W + 0.01, JSON.stringify(x));
 }
 
-// The push can only overflow the right edge when the cluster sits AT that edge; everything then
-// rescales to fit rather than drawing outside the plot.
+// The push can only overflow the right edge when the cluster sits AT that edge. Fitting it back in
+// must not undo the separation the push just bought — the marker is ~12.4 across (r=5 circle + 2.4
+// stroke), so every surviving gap has to clear that, not merely "most of it".
+const MARKER_W = 12.4;
 {
   const trailing = ['2026-01-01', '2026-06-01', '2026-06-02'];
   const x = dateProportionalX(trailing, PLOT_W, PAD_L);
   check('an edge cluster does not push the last point past the plot', Math.abs(x[2] - (PAD_L + PLOT_W)) < 0.01, JSON.stringify(x));
-  check('the rescale keeps the edge cluster separated', x[2] - x[1] >= 12, `${(x[2] - x[1]).toFixed(2)}px`);
-  check('the rescale keeps positions ordered and in bounds', x[0] >= PAD_L && x[1] > x[0] && x[2] > x[1], JSON.stringify(x));
-  check('the long first interval still dominates the width after rescale', x[1] - x[0] > (x[2] - x[1]) * 10, JSON.stringify(x));
+  check('the edge cluster stays a full marker width apart', x[2] - x[1] >= MARKER_W, `${(x[2] - x[1]).toFixed(2)}px`);
+  check('fitting back in keeps positions ordered and in bounds', x[0] >= PAD_L && x[1] > x[0] && x[2] > x[1], JSON.stringify(x));
+  check('the long first interval still dominates the width', x[1] - x[0] > (x[2] - x[1]) * 10, JSON.stringify(x));
+}
+
+// The case a proportional rescale gets badly wrong: one old reading, then a long dense run crowded
+// at the far edge. Scaling every position by plotW/total shrinks the pushed-open gaps along with
+// everything else, collapsing the run into an unreadable blob. Pulling the tail LEFT instead keeps
+// each gap at the floor.
+{
+  const dense = ['2026-01-01'];
+  for (let i = 0; i < 30; i++) dense.push(new Date(Date.UTC(2026, 5, 1) + i * 6 * 3600000).toISOString().slice(0, 10));
+  const x = dateProportionalX(dense, PLOT_W, PAD_L);
+  let tightest = Infinity;
+  for (let i = 1; i < x.length; i++) tightest = Math.min(tightest, x[i] - x[i - 1]);
+  check('a dense tail keeps every marker separated', tightest >= MARKER_W, `tightest gap = ${tightest.toFixed(2)}px across ${x.length} readings`);
+  check('a dense tail still ends at the plot edge', Math.abs(x[x.length - 1] - (PAD_L + PLOT_W)) < 0.01, String(x[x.length - 1]));
+  check('a dense tail never drifts left of the plot', x[0] >= PAD_L - 0.01, String(x[0]));
+  let ordered = true;
+  for (let i = 1; i < x.length; i++) if (x[i] <= x[i - 1]) ordered = false;
+  check('a dense tail stays strictly ordered', ordered, JSON.stringify(x));
 }
 
 // Degenerate/unusable input falls back to the caller's equal-index spacing (returns null).
