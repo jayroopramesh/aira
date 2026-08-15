@@ -41,11 +41,13 @@ const { deviceStore } = await import('../src/services/deviceStore.ts');
 const {
   appendSessionToClient,
   clientFromSession,
+  emiratesIdForNewClient,
   findIdNameMismatch,
   findNameConflict,
   isValidEmiratesId,
   matchExistingClient,
   normalizeEmiratesId,
+  UNNAMED_CLIENT_NAME,
 } = await import('../src/data/sessionClient.ts');
 
 let failed = 0;
@@ -407,6 +409,80 @@ const NOTE = {
   // Folding writes no Emirates ID onto a record — that is how one patient's id got stamped on another's.
   const folded = appendSessionToClient(first, NOTE, { sessionNumber: 2, dateLabel: DATE });
   check('mirror: a name-fold never records an Emirates ID', folded.emiratesId === undefined, String(folded.emiratesId));
+}
+
+// --- 6b. The forked record must NOT carry the id the app just ruled belongs to someone else --------
+// Otherwise TWO records hold the same "unique" key, and the next capture entering that id with the
+// name left blank folds into whichever comes first — the merge the fork existed to prevent.
+{
+  const emid = '784-1988-1234567-1';
+  const sam = clientFromSession('s-1', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE, emiratesId: emid });
+
+  // The clipboard case: a genuinely different patient, that patient's id pasted in.
+  const mismatch = findIdNameMismatch([sam], { name: 'Fatima Noor', emiratesId: emid });
+  check('forked record: the mis-entry is detected', mismatch?.id === 's-1', JSON.stringify(mismatch));
+
+  // The rule saveSessionNote applies when it mints: the id stays with its original holder.
+  check(
+    'forked record: the mint is denied the ruled-out id',
+    emiratesIdForNewClient([sam], { name: 'Fatima Noor', emiratesId: emid }) === undefined,
+    String(emiratesIdForNewClient([sam], { name: 'Fatima Noor', emiratesId: emid })),
+  );
+  check(
+    'forked record: an unclaimed id is still kept, verbatim',
+    emiratesIdForNewClient([sam], { name: 'Fatima Noor', emiratesId: '784-1988-7654321-9' }) === '784-1988-7654321-9',
+    String(emiratesIdForNewClient([sam], { name: 'Fatima Noor', emiratesId: '784-1988-7654321-9' })),
+  );
+  const forked = clientFromSession('s-2', NOTE, {
+    name: 'Fatima Noor',
+    sessionNumber: 1,
+    dateLabel: DATE,
+    emiratesId: emiratesIdForNewClient([sam], { name: 'Fatima Noor', emiratesId: emid }),
+  });
+  check('forked record: carries NO Emirates ID', forked.emiratesId === undefined, String(forked.emiratesId));
+
+  // Newest-first, exactly as the caseload stores it.
+  const caseload = [forked, sam];
+  check(
+    'forked record: exactly one record holds the key',
+    caseload.filter((cl) => cl.emiratesId && normalizeEmiratesId(cl.emiratesId) === normalizeEmiratesId(emid)).length === 1,
+    'the key has more than one holder',
+  );
+
+  // The merge this closes: next session, that id entered with the name left blank.
+  const blank = matchExistingClient(caseload, { emiratesId: emid });
+  check('forked record: a blank-name capture folds by Emirates ID', blank?.matchedBy === 'emiratesId', JSON.stringify(blank));
+  check('forked record: it lands on the ORIGINAL holder, not the fork', blank?.client?.id === 's-1', String(blank?.client?.id));
+  check('forked record: and on the right patient', blank?.client?.name === 'Sam Ali', String(blank?.client?.name));
+}
+
+// --- 6c. The app's own "New client" placeholder is not a name, so it never vetoes an id fold -------
+{
+  // First capture: a valid id, the optional name left blank — filed under the display placeholder.
+  const unnamed = clientFromSession('s-1', NOTE, {
+    name: UNNAMED_CLIENT_NAME,
+    sessionNumber: 1,
+    dateLabel: DATE,
+    emiratesId: '784-1988-1234567-1',
+  });
+  check('placeholder: the first capture is filed under the placeholder', unnamed.name === UNNAMED_CLIENT_NAME, unnamed.name);
+  check('placeholder: it holds the Emirates ID', unnamed.emiratesId === '784-1988-1234567-1', String(unnamed.emiratesId));
+
+  // Next session: the SAME id, and this time a real name. A label nobody typed cannot contradict it.
+  const match = matchExistingClient([unnamed], { name: 'Sam Ali', emiratesId: ' 784 1988 1234567 1 ' });
+  check('placeholder: the id still FOLDS (no second record)', match?.matchedBy === 'emiratesId', JSON.stringify(match));
+  check('placeholder: no "different name" warning is raised', findIdNameMismatch([unnamed], { name: 'Sam Ali', emiratesId: '784-1988-1234567-1' }) === undefined, 'warned about a placeholder');
+
+  // And the fold UPGRADES the record to the real name rather than leaving "New client" forever.
+  const folded = appendSessionToClient(match.client, NOTE, { sessionNumber: 2, dateLabel: DATE, name: 'Sam Ali' });
+  check('placeholder: the stored name is upgraded to the typed one', folded.name === 'Sam Ali', folded.name);
+  check('placeholder: initials follow the upgraded name', folded.initials === 'SA', folded.initials);
+  check('placeholder: the identity key is unchanged', folded.emiratesId === '784-1988-1234567-1', String(folded.emiratesId));
+
+  // A name the counselor already gave is never overwritten by a later session's typing.
+  const named = clientFromSession('s-3', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE });
+  const kept = appendSessionToClient(named, NOTE, { sessionNumber: 2, dateLabel: DATE, name: 'Someone Else' });
+  check('placeholder: a REAL stored name is never overwritten', kept.name === 'Sam Ali', kept.name);
 }
 
 // --- 7. A malformed entry is not an identity — it can never merge two patients ---------------------

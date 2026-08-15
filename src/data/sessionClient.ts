@@ -69,12 +69,29 @@ function holdsIdKey(cl: Client, key: string): boolean {
 }
 
 /**
- * Does this record's name AGREE with what the counselor typed? A blank typed name agrees with
- * everything — there is nothing to disagree with (the capture was opened from a client file, or the
- * optional field was left empty).
+ * The display label a record gets when the optional name field was left blank. It is a PLACEHOLDER,
+ * never a name the counselor gave — so it can never act as a signal about who the patient is. Shared
+ * with `DataProvider` so the label the mint writes and the label these checks discount are one string.
+ */
+export const UNNAMED_CLIENT_NAME = 'New client';
+
+/** A stored name that carries no information: blank, or the app's own display placeholder. */
+function isPlaceholderName(name: string): boolean {
+  const n = normalizeName(name);
+  return !n || n === normalizeName(UNNAMED_CLIENT_NAME);
+}
+
+/**
+ * Does this record's name AGREE with what the counselor typed? Only two REAL names can disagree:
+ *   • a blank typed name has nothing to disagree with (capture opened from a client file, or the
+ *     optional field left empty);
+ *   • a record still under the app's own placeholder was never named by anyone, so it cannot
+ *     contradict the name typed this session — treating it as a disagreement would veto a correctly
+ *     entered Emirates ID and warn about a "different name" the counselor never typed.
  */
 function nameAgrees(cl: Client, typedName: string): boolean {
-  return !typedName || normalizeName(cl.name) === normalizeName(typedName);
+  if (!typedName || isPlaceholderName(cl.name)) return true;
+  return normalizeName(cl.name) === normalizeName(typedName);
 }
 
 /**
@@ -97,6 +114,22 @@ export function findIdNameMismatch(clients: Client[], opts: { name?: string; emi
   const typedName = opts.name?.trim() ?? '';
   if (!key || !typedName) return undefined;
   return clients.find((cl) => holdsIdKey(cl, key) && !nameAgrees(cl, typedName));
+}
+
+/**
+ * The Emirates ID a NEWLY MINTED record may keep — the typed value, or nothing when that id was just
+ * ruled to belong to another patient (`findIdNameMismatch`).
+ *
+ * ONE KEY, ONE HOLDER. Storing the id on the record we forked precisely because it is someone else's
+ * would leave two records answering to it, and the next capture entering that id with the name left
+ * blank agrees with both — folding into whichever the caseload lists first, which is the newer fork.
+ * That is the unrecoverable merge the fork existed to prevent, arriving one session later under the
+ * confident "you already see this client" banner. So the key stays with its original holder.
+ */
+export function emiratesIdForNewClient(clients: Client[], opts: { name?: string; emiratesId?: string }): string | undefined {
+  const typedId = opts.emiratesId?.trim();
+  if (!typedId) return undefined;
+  return findIdNameMismatch(clients, opts) ? undefined : typedId;
 }
 
 /**
@@ -463,18 +496,27 @@ export function clientFromSession(
  * that land here are an id MATCH (the record already holds that identity) or a name continuation with
  * no identifier to record. Backfilling from a name fold is exactly how one patient's id came to be
  * stamped onto another's record.
+ *
+ * It DOES upgrade a placeholder name. A record captured with the name field blank is filed under the
+ * app's own label; when a later session for the same identity finally supplies a real name, that name
+ * takes hold (initials with it) rather than leaving the counselor's own caseload reading "New client"
+ * forever. A name the counselor already gave is never overwritten.
  */
 export function appendSessionToClient(
   existing: Client,
   note: DraftNote,
-  opts: { sessionNumber: number; dateLabel: string },
+  opts: { sessionNumber: number; dateLabel: string; name?: string },
 ): Client {
   const subjective = note.sections.find((s) => s.marker === 'S');
   const summary = subjective?.body?.[0] ?? existing.summaryLine;
   const noteRisk = riskFromNote(note);
+  const typedName = opts.name?.trim();
+  const upgradedName = typedName && isPlaceholderName(existing.name) ? typedName : undefined;
 
   return {
     ...existing,
+    name: upgradedName ?? existing.name,
+    initials: upgradedName ? initialsOf(upgradedName) : existing.initials,
     risk: RISK_ORDER[noteRisk] > RISK_ORDER[existing.risk] ? noteRisk : existing.risk,
     sessionNumber: opts.sessionNumber,
     lastSessionLabel: `Today · ${opts.dateLabel}`,

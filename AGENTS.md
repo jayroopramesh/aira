@@ -206,6 +206,11 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
     - An id reaching a record filed under a **materially different name** does NOT fold either: a
       clipboard carried over from another patient's form or a transposed digit landing on a real id is
       likelier than a match, and folding is the same unrecoverable merge from the opposite direction.
+      Only two REAL names can disagree — the app's own `UNNAMED_CLIENT_NAME` placeholder (and a blank)
+      never vetoes an id fold, and such a record has its name upgraded when a session finally supplies a
+      real one. The record that fork mints carries **no** Emirates ID: the id was just ruled to be
+      someone else's, and a second holder of the key would let the next blank-name capture fold into the
+      wrong one — the very merge the fork prevented. One key, one holder.
     - Every veto mints a SEPARATE record — the safe residual, since a mistyped digit forking a client is
       recoverable and merging two patients is not — but none is silent. `findNameConflict` and
       `findIdNameMismatch` are the exact complements of the branches that declined (so the app cannot

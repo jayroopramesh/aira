@@ -113,6 +113,74 @@ function CopyNoteButton({ draft }: { draft: DraftNote }) {
   );
 }
 
+/**
+ * The one banner shape the duplicate-identity outcomes speak through: a fold into an existing record
+ * (brand tone, shield) and the two deliberate forks (caution tone, "!" badge — `strong` draws the
+ * border in the caution colour for the sharper mis-entry warning). One component so three cautions
+ * about the same subject cannot drift apart visually as the copy is edited.
+ */
+function IdentityNotice({
+  tone,
+  heading,
+  strong,
+  children,
+}: {
+  tone: 'brand' | 'caution';
+  heading: string;
+  strong?: boolean;
+  children: React.ReactNode;
+}) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const tint = tone === 'brand' ? c.brand : c.caution;
+  const background = tone === 'brand' ? c.brandBg : c.cautionBg;
+  const border = tone === 'brand' ? c.brandBd : strong ? c.caution : c.cautionBg;
+
+  return (
+    <Row
+      gap={9}
+      style={{
+        marginTop: theme.spacing.md,
+        alignItems: 'flex-start',
+        backgroundColor: background,
+        borderColor: border,
+        borderWidth: 1,
+        borderRadius: theme.radii.md,
+        padding: theme.spacing.md,
+      }}
+    >
+      {tone === 'brand' ? (
+        <View style={{ marginTop: 1 }}>
+          <ShieldIcon size={15} color={c.brand} />
+        </View>
+      ) : (
+        <View
+          style={{
+            width: 18,
+            height: 18,
+            borderRadius: 9,
+            borderWidth: 2,
+            borderColor: c.caution,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginTop: 1,
+          }}
+        >
+          <AppText variant="label" tint={c.caution} style={{ fontSize: 11 }}>
+            !
+          </AppText>
+        </View>
+      )}
+      <AppText variant="small" color="ink2" style={{ flex: 1, lineHeight: 17 }}>
+        <AppText variant="bodyStrong" tint={tint} style={{ fontSize: 12.5 }}>
+          {heading}
+        </AppText>{' '}
+        {children}
+      </AppText>
+    </Row>
+  );
+}
+
 export default function ReviewNote() {
   const theme = useTheme();
   const c = theme.colors;
@@ -232,109 +300,26 @@ export default function ReviewNote() {
             </AppText>
 
             {foldedIntoExisting ? (
-              <Row
-                gap={9}
-                style={{
-                  marginTop: theme.spacing.md,
-                  alignItems: 'flex-start',
-                  backgroundColor: c.brandBg,
-                  borderColor: c.brandBd,
-                  borderWidth: 1,
-                  borderRadius: theme.radii.md,
-                  padding: theme.spacing.md,
-                }}
-              >
-                <View style={{ marginTop: 1 }}>
-                  <ShieldIcon size={15} color={c.brand} />
-                </View>
-                <AppText variant="small" color="ink2" style={{ flex: 1, lineHeight: 17 }}>
-                  <AppText variant="bodyStrong" tint={c.brand} style={{ fontSize: 12.5 }}>
-                    You already see this client.
-                  </AppText>{' '}
-                  This Emirates ID is already on your caseload, so the session was added to their existing
-                  record instead of creating a second — this is that record.
-                </AppText>
-              </Row>
+              <IdentityNotice tone="brand" heading="You already see this client.">
+                This Emirates ID is already on your caseload, so the session was added to their existing
+                record instead of creating a second — this is that record.
+              </IdentityNotice>
             ) : null}
 
             {idOnFileUnderAnotherName ? (
-              <Row
-                gap={9}
-                style={{
-                  marginTop: theme.spacing.md,
-                  alignItems: 'flex-start',
-                  backgroundColor: c.cautionBg,
-                  borderColor: c.caution,
-                  borderWidth: 1,
-                  borderRadius: theme.radii.md,
-                  padding: theme.spacing.md,
-                }}
-              >
-                <View
-                  style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: 9,
-                    borderWidth: 2,
-                    borderColor: c.caution,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginTop: 1,
-                  }}
-                >
-                  <AppText variant="label" tint={c.caution} style={{ fontSize: 11 }}>
-                    !
-                  </AppText>
-                </View>
-                <AppText variant="small" color="ink2" style={{ flex: 1, lineHeight: 17 }}>
-                  <AppText variant="bodyStrong" tint={c.caution} style={{ fontSize: 12.5 }}>
-                    Check the Emirates ID.
-                  </AppText>{' '}
-                  That Emirates ID is already on your caseload under a different name, so this session was
-                  kept as a separate record rather than added to theirs. If you mistyped it, the correct ID
-                  on the next session will file it with the right client.
-                </AppText>
-              </Row>
+              <IdentityNotice tone="caution" strong heading="Check the Emirates ID.">
+                That Emirates ID is already on your caseload under a different name, so this session was kept
+                as a separate record rather than added to theirs. If you mistyped it, the correct ID on the
+                next session will file it with the right client.
+              </IdentityNotice>
             ) : null}
 
             {mintedDespiteSameName ? (
-              <Row
-                gap={9}
-                style={{
-                  marginTop: theme.spacing.md,
-                  alignItems: 'flex-start',
-                  backgroundColor: c.cautionBg,
-                  borderColor: c.cautionBg,
-                  borderWidth: 1,
-                  borderRadius: theme.radii.md,
-                  padding: theme.spacing.md,
-                }}
-              >
-                <View
-                  style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: 9,
-                    borderWidth: 2,
-                    borderColor: c.caution,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginTop: 1,
-                  }}
-                >
-                  <AppText variant="label" tint={c.caution} style={{ fontSize: 11 }}>
-                    !
-                  </AppText>
-                </View>
-                <AppText variant="small" color="ink2" style={{ flex: 1, lineHeight: 17 }}>
-                  <AppText variant="bodyStrong" tint={c.caution} style={{ fontSize: 12.5 }}>
-                    This looks like a different person.
-                  </AppText>{' '}
-                  {client?.name ? `A client named ${client.name}` : 'A client with this name'} is already on your
-                  caseload, but not under the Emirates ID you entered, so a new record was created for this
-                  session rather than adding it to theirs.
-                </AppText>
-              </Row>
+              <IdentityNotice tone="caution" heading="This looks like a different person.">
+                {client?.name ? `A client named ${client.name}` : 'A client with this name'} is already on your
+                caseload, but not under the Emirates ID you entered, so a new record was created for this
+                session rather than adding it to theirs.
+              </IdentityNotice>
             ) : null}
 
             {/* Tabs */}

@@ -13,9 +13,11 @@ import { CaseloadKpi, Client, DayDashboard, DraftNote, NoteSection } from './typ
 import {
   appendSessionToClient,
   clientFromSession,
+  emiratesIdForNewClient,
   findIdNameMismatch,
   findNameConflict,
   matchExistingClient,
+  UNNAMED_CLIENT_NAME,
 } from './sessionClient';
 
 /** Prepend the newest note and keep at most MAX_NOTES_PER_CLIENT per client (C4) — oldest rotates out. */
@@ -156,7 +158,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const dateLabel = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
       const typedName = opts?.name?.trim() ?? '';
       const emiratesId = opts?.emiratesId?.trim() ?? '';
-      const name = typedName || 'New client'; // display fallback only — NEVER a fold key
+      const name = typedName || UNNAMED_CLIENT_NAME; // display fallback only — NEVER a fold key
 
       // A session for a client we already know → fold it in rather than minting a duplicate, so
       // trends accumulate, the session history stays reachable, and the note's risk reaches the
@@ -170,7 +172,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (match) {
         const existing = match.client;
         const sessionNumber = existing.sessionNumber + 1;
-        const updated = appendSessionToClient(existing, note, { sessionNumber, dateLabel });
+        const updated = appendSessionToClient(existing, note, { sessionNumber, dateLabel, name: typedName });
         const noteForClient: DraftNote = { ...note, sessionLabel: `Session ${sessionNumber} — ${dateLabel}` };
         await persist({
           ...snapshot,
@@ -197,10 +199,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const conflict = findNameConflict(snapshot.clients, { name: typedName, emiratesId });
       const idMismatch = findIdNameMismatch(snapshot.clients, { name: typedName, emiratesId });
 
-      // Standalone session — mint a lightweight client so blank boot visibly populates.
+      // Standalone session — mint a lightweight client so blank boot visibly populates. When the id was
+      // just ruled to belong to ANOTHER patient, the new record carries no Emirates ID: storing it would
+      // leave two records holding the same "unique" key, and a later capture entering that id with the
+      // name left blank would fold into whichever one came first — the very merge this fork prevented.
+      // The key stays with its original holder.
       const id = `s-${Date.now().toString(36)}`;
       const sessionNumber = 1;
-      const client = clientFromSession(id, note, { name, sessionNumber, dateLabel, emiratesId });
+      const client = clientFromSession(id, note, {
+        name,
+        sessionNumber,
+        dateLabel,
+        emiratesId: emiratesIdForNewClient(snapshot.clients, { name: typedName, emiratesId }),
+      });
       const noteForClient: DraftNote = { ...note, sessionLabel: `Session ${sessionNumber} — ${dateLabel}` };
       await persist({
         ...snapshot,
