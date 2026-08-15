@@ -158,7 +158,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (match) {
         const existing = match.client;
         const sessionNumber = existing.sessionNumber + 1;
-        const updated = appendSessionToClient(existing, note, { sessionNumber, dateLabel });
+        // Pass the typed Emirates ID through so a record captured without one takes it here — the
+        // uniqueness key has to be RECORDED to work, or the next differently-spelled capture of the
+        // same person mints a duplicate. An already-stored id is left untouched.
+        const updated = appendSessionToClient(existing, note, { sessionNumber, dateLabel, emiratesId });
         const noteForClient: DraftNote = { ...note, sessionLabel: `Session ${sessionNumber} — ${dateLabel}` };
         await persist({
           ...snapshot,

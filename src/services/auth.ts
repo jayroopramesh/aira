@@ -190,6 +190,15 @@ export class MockAuthService implements AuthService {
   }
 
   async createAccount(details: AccountDetails): Promise<{ recoveryCode: string[] }> {
+    // The already-registered rule holds on EVERY build, not just the Supabase one. There is no server
+    // to ask here, but the device already carries the evidence: a persisted recovery hash means an
+    // account was created on it, so a second createAccount would overwrite the hash of the code the
+    // counselor saved — the exact silent lockout the Supabase path stops. So STOP the same way: no new
+    // code, no hash write, no password-hash write, no status change. The create screen already routes
+    // AccountExistsError to sign-in with the email prefilled.
+    if (await deviceStore.get(RECOVERY_HASH_KEY)) {
+      throw new AccountExistsError(details.email);
+    }
     // A real impl derives the vault key from the password and escrows a wrapped copy;
     // here we remember the chosen password, move state forward, and hand back the code.
     this.createdPassword = details.password;

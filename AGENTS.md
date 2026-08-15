@@ -177,11 +177,20 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
     "Create account" never has their saved recovery code overwritten. The create screen routes that
     error to `/unlock?notice=account-exists&email=…` (calm notice + prefill); a generic signUp error
     still throws a plain `Error` (retry the form). Never reinstate the swallow-and-continue.
+    The rule holds on **every** build: `MockAuthService.createAccount` (the keyless path) has no server
+    to ask, so it reads the device's own evidence — a persisted `RECOVERY_HASH_KEY` means an account
+    exists here — and throws the same `AccountExistsError` before writing anything.
   - **Patient**: Emirates ID is the **local** caseload uniqueness key (`Client.emiratesId`, stored
     verbatim; compared via `normalizeEmiratesId`). `matchExistingClient` (`sessionClient.ts`) resolves a
     capture to an existing client by id → Emirates ID → captured-name, and `saveSessionNote` folds an
     Emirates-ID match into that record (returns `isDuplicate`) instead of minting a second, surfacing
-    "You already see this client" on review. Scope is device-local ONLY — never a cross-device/therapist
+    "You already see this client" on review. A supplied Emirates ID **vetoes** the captured-name fold
+    against a record storing a different one — same name, different ID = different people, and folding
+    would merge strangers' notes/plan/timeline and carry one patient's risk tier onto the other, which
+    nothing lowers. And the key has to be RECORDED to work, so `appendSessionToClient` **backfills** it
+    onto a record captured without one (never overwriting a stored one); otherwise a later capture
+    spelling the name differently mints the duplicate this guard exists to prevent.
+    Scope is device-local ONLY — never a cross-device/therapist
     existence check (captain, 2026-08-15): a global check would leak that a named person is in therapy.
 - Snapshot writes are **serialized** (`createWriteQueue` in `src/services/writeQueue.ts`, applied at
   `ClientRepository.save`): signing persists twice in one tick (pending section edit, then the

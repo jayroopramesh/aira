@@ -36,9 +36,16 @@ export function normalizeEmiratesId(raw: string): string {
  *   2. an Emirates ID already on the caseload — the local uniqueness key for a patient. This is the
  *      duplicate-patient guard: adding a client whose Emirates ID exists must open the existing record,
  *      not create a second (captain scope: local caseload only);
- *   3. a non-blank typed name against a prior CAPTURED client ('s-' ids) — the pre-existing F3 fold.
+ *   3. a non-blank typed name against a prior CAPTURED client ('s-' ids) — the pre-existing F3 fold,
+ *      EXCEPT against a candidate whose own Emirates ID conflicts with the supplied one.
  * Returns undefined when nothing matches (the caller mints a fresh client). An explicit clientId that
  * no longer exists returns undefined too, so the caller can keep the note under that id.
+ *
+ * A supplied Emirates ID always beats a name: two people can share a name, but a different Emirates ID
+ * makes them different people, and folding would merge strangers' notes, plan and timeline — and carry
+ * one patient's risk tier onto the other, which nothing ever lowers. So the name branch skips any
+ * candidate storing a DIFFERENT (normalised) Emirates ID; a candidate with none, or a capture that
+ * supplies none, folds by name exactly as before.
  */
 export function matchExistingClient(
   clients: Client[],
@@ -48,18 +55,26 @@ export function matchExistingClient(
     const byId = clients.find((cl) => cl.id === opts.clientId);
     return byId ? { client: byId, matchedBy: 'id' } : undefined;
   }
-  const emid = opts.emiratesId?.trim();
-  if (emid) {
-    const key = normalizeEmiratesId(emid);
-    // A blank/punctuation-only entry normalises to '' — never treat that as a match key.
-    if (key) {
-      const byEmid = clients.find((cl) => cl.emiratesId && normalizeEmiratesId(cl.emiratesId) === key);
-      if (byEmid) return { client: byEmid, matchedBy: 'emiratesId' };
-    }
+  // A blank/punctuation-only entry normalises to '' — never treat that as a match key.
+  const key = opts.emiratesId?.trim() ? normalizeEmiratesId(opts.emiratesId.trim()) : '';
+  if (key) {
+    const byEmid = clients.find((cl) => cl.emiratesId && normalizeEmiratesId(cl.emiratesId) === key);
+    if (byEmid) return { client: byEmid, matchedBy: 'emiratesId' };
   }
+  // Only a stored value that normalises to a real key can contradict the supplied one.
+  const conflictsWithSuppliedId = (cl: Client) => {
+    if (!key || !cl.emiratesId) return false;
+    const stored = normalizeEmiratesId(cl.emiratesId);
+    return !!stored && stored !== key;
+  };
   const typedName = opts.name?.trim();
   if (typedName) {
-    const byName = clients.find((cl) => cl.id.startsWith('s-') && normalizeName(cl.name) === normalizeName(typedName));
+    const byName = clients.find(
+      (cl) =>
+        cl.id.startsWith('s-') &&
+        normalizeName(cl.name) === normalizeName(typedName) &&
+        !conflictsWithSuppliedId(cl),
+    );
     if (byName) return { client: byName, matchedBy: 'name' };
   }
   return undefined;
@@ -344,18 +359,27 @@ export function clientFromSession(
  * a duplicate. Bumps the session count, refreshes the last-session/summary/plan, prepends a new
  * timeline entry, and raises risk from the newest note — a client's standing risk tier is never
  * auto-DOWNGRADED by a calmer session (captain ruling); lowering it is a deliberate clinician act.
+ *
+ * Also BACKFILLS the uniqueness key: a client first captured WITHOUT an Emirates ID takes the one this
+ * capture supplied, so the key actually takes hold and the next capture — however that name is spelled
+ * — resolves to this record instead of minting a duplicate. It only ever fills a record that has none;
+ * an Emirates ID already stored is never overwritten (a conflicting one belongs to a different person,
+ * and `matchExistingClient` never folds those together). Stored verbatim, exactly as on the mint path.
  */
 export function appendSessionToClient(
   existing: Client,
   note: DraftNote,
-  opts: { sessionNumber: number; dateLabel: string },
+  opts: { sessionNumber: number; dateLabel: string; emiratesId?: string },
 ): Client {
   const subjective = note.sections.find((s) => s.marker === 'S');
   const summary = subjective?.body?.[0] ?? existing.summaryLine;
   const noteRisk = riskFromNote(note);
+  const supplied = opts.emiratesId?.trim();
+  const emiratesId = existing.emiratesId?.trim() ? existing.emiratesId : supplied || existing.emiratesId;
 
   return {
     ...existing,
+    emiratesId,
     risk: RISK_ORDER[noteRisk] > RISK_ORDER[existing.risk] ? noteRisk : existing.risk,
     sessionNumber: opts.sessionNumber,
     lastSessionLabel: `Today · ${opts.dateLabel}`,
