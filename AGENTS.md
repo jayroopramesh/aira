@@ -14,6 +14,13 @@ constraints — don't duplicate it here.
 - Verify with `npx tsc --noEmit` and `npx expo export --platform web --platform ios --platform
   android`. `expo export` **overwrites `dist/`** per run — don't expect web HTML to survive a
   later native export.
+- **CI** (`.github/workflows/ci.yml`, PRs + push to `main`, Node pinned via `actions/setup-node`,
+  no secrets): `tsc --noEmit`, `npm test` (the `scripts/*-harness.mjs` suites — provenance,
+  persist-race, risk-floor, groq-proxy — wired up as the `test` script in `package.json`; that IS
+  the project's test suite, there is no separate framework), then `expo export --platform web`.
+  Lint is deliberately not wired in: `expo lint` auto-installs `eslint-config-expo` and currently
+  flags real `react-hooks/refs` errors (refs read during render) that would require behaviour
+  changes to fix — re-evaluate next time those files are touched.
 - Design tokens come from `aira-ui-s3/design-direction.html` (light: verbatim; dark: revised
   turquoise in round 4 — see `README.md` "Theme / token architecture"); the prototype spec is
   `aira-ui-screens-s4/screens.html`. Treat those as source-of-truth for any UI change.
