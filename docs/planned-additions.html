@@ -83,7 +83,7 @@
   .sheet {
     width: 210mm;
     height: 297mm;
-    padding: 13mm 13mm 11mm;
+    padding: 16mm;
     background: var(--surface);
     /* very soft seafoam wash so the cream cards read as raised paper */
     background-image:
@@ -91,6 +91,7 @@
       radial-gradient(90% 60% at 0% 100%, rgba(15,110,96,0.04), rgba(15,110,96,0) 55%);
     display: flex;
     flex-direction: column;
+    justify-content: center;
     overflow: hidden;
   }
 
@@ -99,54 +100,54 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 16px;
+    gap: 20px;
   }
   .head-left { padding-top: 2px; }
   .eyebrow {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     background: var(--brand-bg);
     border: 1px solid var(--brand-bd);
     color: var(--brand-strong);
-    font-size: 10.5px;
+    font-size: 11.5px;
     font-weight: 600;
     letter-spacing: 0.6px;
     text-transform: uppercase;
-    padding: 4px 11px;
+    padding: 5px 13px;
     border-radius: 999px;
   }
   .eyebrow .dot {
-    width: 7px; height: 7px; border-radius: 999px; background: var(--brand);
+    width: 8px; height: 8px; border-radius: 999px; background: var(--brand);
   }
   .wordmark {
     font-family: 'Atkinson Hyperlegible Mono', monospace;
     font-weight: 500;
-    font-size: 40px;
+    font-size: 50px;
     letter-spacing: -0.5px;
     color: var(--brand);
-    margin-top: 10px;
+    margin-top: 13px;
     line-height: 1;
   }
   .lede {
-    font-size: 13px;
-    line-height: 19px;
+    font-size: 14.5px;
+    line-height: 22px;
     color: var(--ink2);
-    max-width: 118mm;
-    margin-top: 9px;
+    max-width: 126mm;
+    margin-top: 12px;
   }
   .lede b { color: var(--ink); font-weight: 600; }
 
   .mascot-wrap {
     flex: 0 0 auto;
-    width: 108px;
+    width: 130px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
   }
   .mascot-disc {
-    width: 108px; height: 108px;
+    width: 130px; height: 130px;
     border-radius: 999px;
     background:
       radial-gradient(circle at 50% 42%, #FFFFFF 0%, var(--brand-bg) 78%);
@@ -154,22 +155,22 @@
     box-shadow: var(--shadow-sm);
     display: flex; align-items: center; justify-content: center;
   }
-  .mascot-disc img { width: 90px; height: 90px; object-fit: contain; display: block; }
+  .mascot-disc img { width: 108px; height: 108px; object-fit: contain; display: block; }
   .mascot-cap {
-    font-size: 9.5px; letter-spacing: 0.5px; text-transform: uppercase;
+    font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase;
     color: var(--ink3); font-weight: 600;
   }
 
   .rule {
     height: 1px; background: var(--line);
-    margin: 13px 0 12px;
+    margin: 20px 0 18px;
   }
 
   .section-label {
-    font-size: 11px; font-weight: 600; letter-spacing: 0.7px;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.7px;
     text-transform: uppercase; color: var(--ink3);
-    display: flex; align-items: center; gap: 9px;
-    margin-bottom: 11px;
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 16px;
   }
   .section-label::after {
     content: ''; flex: 1; height: 1px; background: var(--line-soft);
@@ -180,45 +181,45 @@
      stretched to a shared row height — no half-empty boxes. */
   .grid {
     columns: 2;
-    column-gap: 9px;
+    column-gap: 14px;
   }
   .card {
     background: var(--sand);
     border: 1px solid var(--sand-bd);
     border-radius: var(--r-lg);
     box-shadow: var(--shadow-sm);
-    padding: 12px 13px 12px 12px;
+    padding: 18px 19px;
     display: flex;
-    gap: 11px;
+    gap: 15px;
     align-items: flex-start;
     break-inside: avoid;
-    margin-bottom: 9px;
+    margin-bottom: 14px;
   }
   .icon {
     flex: 0 0 auto;
-    width: 38px; height: 38px;
-    border-radius: 12px;
+    width: 48px; height: 48px;
+    border-radius: 14px;
     background: var(--brand-bg);
     border: 1px solid var(--brand-bd);
     display: flex; align-items: center; justify-content: center;
   }
-  .icon svg { width: 21px; height: 21px; display: block; }
+  .icon svg { width: 26px; height: 26px; display: block; }
   .icon svg * { stroke: var(--brand); }
 
   .body { flex: 1; min-width: 0; }
   .card-title {
-    font-size: 13px; font-weight: 600; line-height: 17px;
+    font-size: 15px; font-weight: 600; line-height: 20px;
     color: var(--ink); letter-spacing: -0.1px;
   }
   .card-desc {
-    font-size: 10.5px; line-height: 14.5px; color: var(--ink2);
-    margin-top: 4px;
+    font-size: 12px; line-height: 17px; color: var(--ink2);
+    margin-top: 6px;
   }
 
   .check {
     flex: 0 0 auto;
-    width: 22px; height: 22px;
-    border-radius: 7px;
+    width: 26px; height: 26px;
+    border-radius: 8px;
     border: 2px solid var(--brand-bd);
     background: rgba(255,255,255,0.55);
     margin-top: 1px;
@@ -226,8 +227,8 @@
 
   /* ---- Footer ------------------------------------------------------------ */
   .foot {
-    margin-top: 12px;
-    font-size: 10px; line-height: 14px; color: var(--ink3);
+    margin-top: 18px;
+    font-size: 11.5px; line-height: 16px; color: var(--ink3);
   }
   .foot b { color: var(--ink2); font-weight: 600; }
 </style>
