@@ -137,6 +137,11 @@ const withOnCall = { crisisLine: configured.crisisLine, onCallEmail: { configure
   const crisis = findAction(sections, 'crisis');
   check('blanked build falls back to 999 (local emergency)', crisis?.href === 'tel:999', crisis?.href);
   check('blanked build says honestly no dedicated line is configured', crisis?.sub.includes('no dedicated line configured'), crisis?.sub);
+  check(
+    'blanked build labels 999 inline as local emergency services, not a bare number',
+    visibleTarget(crisis) === '999 · local emergency services',
+    visibleTarget(crisis),
+  );
 
   // The fixed emergency/non-urgent tiers never depend on config — same in every build.
   const dha = findAction(sections, 'dha');
@@ -290,9 +295,19 @@ const withOnCall = { crisisLine: configured.crisisLine, onCallEmail: { configure
 {
   const crisis = findAction(buildEscalateSections({}, blank), 'crisis');
   check(
-    'the 999 fallback hands back a bare number, not its prose display string',
-    manualTargetLabel(crisis) === '999',
+    'the 999 fallback hands back the number with its local-emergency qualifier',
+    manualTargetLabel(crisis) === '999 · local emergency services',
     manualTargetLabel(crisis),
+  );
+  check(
+    'the qualified label still strips to exactly what the button dials',
+    manualTargetLabel(crisis).replace(/[^\d+]/g, '') === hrefTarget(crisis),
+    `${manualTargetLabel(crisis)} vs ${crisis?.href}`,
+  );
+  check(
+    'its failure copy still names the dialable 999',
+    openFailureMessage(crisis).includes('999'),
+    openFailureMessage(crisis),
   );
 }
 

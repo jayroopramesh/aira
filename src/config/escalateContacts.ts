@@ -194,10 +194,11 @@ export function buildCrisisAction(config: { crisisLine: CrisisLineConfig } = { c
     sub: config.crisisLine.configured ? 'Opens your dialer' : 'Opens your dialer — no dedicated line configured for this build',
     kind: 'tel',
     href: config.crisisLine.tel,
-    // Only the configured branch has a dialable display form; the fallback's `display` is prose
-    // ("999 · local emergency services"), so that branch derives its bare number from the href —
-    // manualTargetLabel does that automatically when displayTarget is absent.
-    displayTarget: config.crisisLine.configured ? config.crisisLine.display : undefined,
+    // Both branches carry `display` as the human-read form: the brief's grouping when configured
+    // ("800 4673"), and on the fallback the qualifier the locked env rule requires — "999 · local
+    // emergency services", so 999 is never mistaken for a dedicated mental-health line. The
+    // href-derived bare digits would drop that label.
+    displayTarget: config.crisisLine.display,
   };
 }
 
