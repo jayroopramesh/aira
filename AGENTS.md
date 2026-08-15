@@ -118,7 +118,14 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   and deep links keep working; do not rename those. Web `<title>` and PWA manifest are NOT emitted by
   Expo static export, so they're declared explicitly: the title via a root `Head` in `_layout.tsx`
   (the static HTML title stays empty and hydrates at runtime), the manifest as `public/manifest.json`
-  linked from `src/app/+html.tsx`.
+  linked from `src/app/+html.tsx`. `public/manifest.json` icons are scaled from `assets/images/icon.png`
+  (same source as the native app icon): `icon-192.png`/`icon-512.png` (`purpose: any`) plus
+  `icon-512-maskable.png` (the mark inset to the central 80% safe zone on the `#0F6E60` brand
+  background, `purpose: maskable`) — below 192/512 Chrome refuses to treat the app as installable.
+  Regenerate all three together if the brand mark ever changes; verify real pixel dimensions with
+  `sips -g pixelWidth -g pixelHeight <file>` before committing, and installability with Chrome's
+  `Page.getInstallabilityErrors` CDP call (empty array = installable) since headless Chrome has no
+  DevTools UI to read visually.
 - **Wordmark font**: the wordmark — and ONLY the wordmark — renders in the `brandFont` token
   (`src/theme/tokens.ts`, exposed as `theme.brandFont`) = Atkinson Hyperlegible Mono Medium, a local
   asset in `assets/fonts/` (with its Braille Institute license) loaded via `useFonts` in
