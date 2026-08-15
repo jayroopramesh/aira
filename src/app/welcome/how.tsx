@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import { View } from 'react-native';
 import { AuthHello, AuthLink, AuthProgress, AuthScaffold, AuthSubmit, AuthTitle, INK, INK2, MINT, PagerDots } from '../../components/auth';
+import { hasGroq } from '../../config/env';
 import { MascotMood } from '../../components/mascotMoods';
 import { ShieldIcon } from '../../components/icons';
 import { AppText, Row } from '../../components/ui';
@@ -73,7 +74,7 @@ export default function WelcomeHow() {
           <ShieldIcon size={16} color={MINT} />
         </View>
         <AppText variant="small" tint="rgba(234,247,243,0.9)" style={{ flex: 1, lineHeight: 19 }}>
-          {R.onboard2Privacy}
+          {hasGroq ? R.onboard2PrivacyCloud : R.onboard2PrivacyLocal}
         </AppText>
       </Row>
 

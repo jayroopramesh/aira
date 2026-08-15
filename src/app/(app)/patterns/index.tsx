@@ -40,6 +40,7 @@ export default function Caseload() {
         <PageHeader eyebrow="Caseload" title="Patterns across your caseload" subtitle="Everything here is re-identified locally · nothing synced to a server" />
         <ZeroState
           mood="curious"
+          showMascot={false}
           title="No clients yet"
           body="Your caseload is empty. Capture a session to add your first client, or load the sample cohort to explore patterns, charts and a fully-drafted note."
           primary={{ label: 'Start a session', onPress: () => router.push('/(app)/session') }}

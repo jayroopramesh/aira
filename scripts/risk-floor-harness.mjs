@@ -255,6 +255,23 @@ const cases = [
   { name: 'asymmetry: bare "Present" ideation row, no level → acute (floor == derivation)', in: note({ level: undefined, rows: ideationRow('Present') }), want: 'acute' },
   { name: 'asymmetry: "Active, with a plan" ideation row, no level → acute (floor == derivation)', in: note({ level: undefined, rows: ideationRow('Active, with a plan') }), want: 'acute' },
   { name: 'no level: disclosed ideation row → acute', in: note({ level: undefined, rows: ideationRow('Passive ideation reported') }), want: 'acute' },
+
+  // --- Ideation without plan or means must never settle for "watch" (item 1) ----------------------
+  // Ideation is ideation, with or without a plan — it must floor to acute (above watch, the mildest
+  // non-clear tier) and thereby enter the risk queue (patterns/index.tsx filters on acute/elevated).
+  { name: 'ideation without plan or means, level=watch → floors to acute', in: note({ level: 'watch', rows: ideationRow('Transient, without plan or means') }), want: 'acute' },
+  { name: 'ideation without plan or means, no level → acute', in: note({ level: undefined, rows: ideationRow('Transient, without plan or means') }), want: 'acute' },
+  { name: 'ideation without plan or means, level=clear → floors to acute', in: note({ level: 'clear', rows: ideationRow('Transient, without plan or means') }), want: 'acute' },
+  // A row labelled with the bare "SI" clinical shorthand (never spelling "ideation"/"suicid" again in
+  // either the label or the value) must still be recognised as the ideation row — this is the exact
+  // gap that let a real "SI: transient, without plan or means" row escape the floor and keep the
+  // model's own too-low "watch" tier.
+  { name: '"SI"-labelled row, ideation without plan or means, level=watch → floors to acute', in: note({ level: 'watch', rows: [{ label: 'SI', value: 'Transient, without plan or means' }] }), want: 'acute' },
+  { name: '"SI/HI"-labelled row, ideation without plan or means, no level → acute', in: note({ level: undefined, rows: [{ label: 'SI/HI', value: 'Transient, without plan or means' }] }), want: 'acute' },
+  // The same shorthand label must still deny correctly — broadening label recognition must not turn a
+  // genuine denial into a false acute.
+  { name: '"SI"-labelled row, denied, level=watch → stays watch (no false acute)', in: note({ level: 'watch', rows: [{ label: 'SI', value: 'Denied' }] }), want: 'watch' },
+  { name: '"SI"-labelled row, not assessed, no level → watch', in: note({ level: undefined, rows: [{ label: 'SI', value: 'Not raised this session' }] }), want: 'watch' },
 ];
 
 

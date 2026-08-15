@@ -12,6 +12,7 @@ import { AppText, Button, Card } from './ui';
 
 export function ZeroState({
   mood = 'curious',
+  showMascot = true,
   title,
   body,
   primary,
@@ -19,6 +20,8 @@ export function ZeroState({
   note,
 }: {
   mood?: Mood;
+  /** Human surfaces only (locked rule) — a data surface (charts/tables/risk queue) passes false. */
+  showMascot?: boolean;
   title: string;
   body: string;
   primary?: { label: string; onPress: () => void };
@@ -29,8 +32,12 @@ export function ZeroState({
   const c = theme.colors;
   return (
     <Card elevation="sm" radius="lg" style={{ alignItems: 'center', paddingVertical: theme.spacing.xxl }}>
-      <MascotMood mood={mood} size={92} float />
-      <View style={{ height: 14 }} />
+      {showMascot ? (
+        <>
+          <MascotMood mood={mood} size={92} float />
+          <View style={{ height: 14 }} />
+        </>
+      ) : null}
       <AppText variant="h1" style={{ fontSize: 22 }} center>
         {title}
       </AppText>

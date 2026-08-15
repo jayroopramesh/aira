@@ -76,6 +76,16 @@ export type AccountDetails = {
 export type AccountStatus = 'none' | 'awaiting-recovery-save' | 'active';
 
 /**
+ * An unlock result plus the ONE fact the post-sign-in copy is allowed to claim: whether checking the
+ * credential actually reached a server. Like provenance elsewhere in the app, it is OBSERVED at the
+ * call that made the hop, never inferred from configuration — only `SupabaseAuthService.signIn` with
+ * a live client sets it. A recovery-code unlock reads a locally persisted hash and a keyless build is
+ * device-local end to end; neither may be described to the clinician as having signed in over a
+ * network. Absent = nothing left the device.
+ */
+export type SignInResult = UnlockResult & { reachedServer?: boolean };
+
+/**
  * Thrown by `createAccount` when Supabase reports the email is ALREADY registered. This is a
  * returning counselor who tapped "Create account" instead of "Sign in" — and their saved recovery
  * code is the one credential the app calls their only way back in, so create-account STOPS on this:
@@ -150,9 +160,9 @@ export interface AuthService {
   /** The signed-in clinician's display name — the sign-off attestation and greeting are attributed to it. */
   getClinicianName(): string | null;
   /** Sign in with username/email + password; unlocks the vault on success. */
-  signIn(username: string, password: string): Promise<UnlockResult>;
+  signIn(username: string, password: string): Promise<SignInResult>;
   /** Fallback path: unlock with the saved 12-word recovery code (lets them reset later). */
-  signInWithRecoveryCode(code: string): Promise<UnlockResult>;
+  signInWithRecoveryCode(code: string): Promise<SignInResult>;
   /** Drop the session (re-locks the vault). */
   signOut(): Promise<void>;
 }
@@ -236,7 +246,7 @@ export class MockAuthService implements AuthService {
     return this.clinicianName;
   }
 
-  async signIn(username: string, password: string): Promise<UnlockResult> {
+  async signIn(username: string, password: string): Promise<SignInResult> {
     // Demo rule: the password chosen at account creation (in-memory or its persisted hash, so a
     // returning counselor's real password still works after a reload) or DEMO_PASSWORD opens;
     // anything else reproduces the calm wrong-password state.
@@ -253,7 +263,7 @@ export class MockAuthService implements AuthService {
     return res;
   }
 
-  async signInWithRecoveryCode(code: string): Promise<UnlockResult> {
+  async signInWithRecoveryCode(code: string): Promise<SignInResult> {
     // Check against the hash persisted at account creation so the saved code works across reloads (F1).
     if (!(await recoveryCodeMatches(code))) return { ok: false, reason: 'wrong-key' };
     const res = await this.vault.unlockWithRecoveryCode(code);
@@ -375,7 +385,7 @@ export class SupabaseAuthService implements AuthService {
     return { recoveryCode: this.recoveryCode };
   }
 
-  async signIn(username: string, password: string): Promise<UnlockResult> {
+  async signIn(username: string, password: string): Promise<SignInResult> {
     const supabase = this.resolveSupabase();
     if (supabase) {
       const { error } = await supabase.auth.signInWithPassword({ email: username.trim(), password });
@@ -387,11 +397,13 @@ export class SupabaseAuthService implements AuthService {
     await deviceStore.set(KNOWN_EMAIL_KEY, username);
     const res = await this.vault.unlock(password);
     if (res.ok) this.status = 'active';
-    return res;
+    // Only THIS branch sent the password anywhere — and only when a client was actually resolved.
+    return res.ok && supabase ? { ...res, reachedServer: true } : res;
   }
 
-  async signInWithRecoveryCode(code: string): Promise<UnlockResult> {
+  async signInWithRecoveryCode(code: string): Promise<SignInResult> {
     // Check against the hash persisted at account creation so the saved code works across reloads (F1).
+    // Purely local: no Supabase call, no session — so this result never claims to have reached a server.
     if (!(await recoveryCodeMatches(code))) return { ok: false, reason: 'wrong-key' };
     const res = await this.vault.unlockWithRecoveryCode(code);
     if (res.ok) this.status = 'active';

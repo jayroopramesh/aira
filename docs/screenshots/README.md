@@ -2,9 +2,13 @@
 
 > **Every capture in this folder predates the Airava brand rename.** The README hero strip,
 > `mobile/*`, and the `r4r5-`/`r2r3-` sets all still show the old **"Aira"** wordmark set in Lexend;
-> the shipped app now shows **"Airava"** in Atkinson Hyperlegible Mono. Nothing else in them is
-> affected — judge layout and colour from them as usual, but not the brand mark. A full refresh is
-> queued as a separate task.
+> the shipped app now shows **"Airava"** in Atkinson Hyperlegible Mono. Judge layout and colour from
+> them as usual, but not the brand mark. A full refresh is queued as a separate task.
+>
+> They also predate two later changes. The **encryption/server copy sweep**: the shipped app no longer
+> says "encrypted on this device" or "keys never leave this device" anywhere — read the live copy from
+> `src/strings/recovery.ts`, not from these images. And the **date-proportional chart x-axis**, so
+> `06-patterns` still spaces its readings at equal intervals.
 
 Real renders of the running **web** app (headless Chrome, 2× scale). The `mobile/` folder is the
 **current** set (phone-dimension signature screens, light + dark); the `r4r5-` prefix below it is the
@@ -25,7 +29,8 @@ directly — the in-memory vault would re-lock). The build is the on-device **mo
 `.env.local`), so nothing leaves the machine and login accepts the demo password.
 
 - `01-onboarding` · welcome intro: mascot hero, personal-scribe copy, endowed progress bar
-- `02-login` · unlock: vault-locked copy + both trust notes ("Encrypted with your login", HIPAA-aligned)
+- `02-login` · unlock: vault-locked copy + both trust notes (pre-sweep wording — the shipped line is now
+  "Stored on this device · unlocked with your login"; the HIPAA-aligned note likewise no longer says "encrypted")
 - `03-day-dashboard` · Get ready: countdown, today's session cards, day-at-a-glance, standing safety
 - `04-client-drawer` · client details: latest scores, patient-details + SALAMA/EHR card, history timeline
 - `05-caseload` · caseload: per-row Outreach quick-actions (two pre-greyed), sparklines, sober risk chips

@@ -170,7 +170,7 @@ export default function Settings() {
       <View style={{ height: theme.spacing.lg }} />
       <Eyebrow>On this device</Eyebrow>
       <View style={{ height: 8 }} />
-      <TrustPill label="Clinical data never leaves this device" icon={<ShieldIcon size={13} color={c.brand} />} />
+      <TrustPill label="Notes and client records are stored only on this device" icon={<ShieldIcon size={13} color={c.brand} />} />
     </Screen>
   );
 }

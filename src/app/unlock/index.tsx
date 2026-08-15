@@ -44,7 +44,8 @@ function safeNext(next?: string): string {
 /**
  * Unlock — username + password (round-2 change #1, replacing the passcode keypad). A calm
  * wrong-password state (nothing is locked out) exposes an inline recovery-code fallback, and
- * a decrypt transition opens the vault. "Encrypted with your login" throughout.
+ * a brief transition opens the vault. "Stored on this device · unlocked with your login"
+ * throughout — the vault is not encrypted today, so the copy claims only what's true.
  */
 export default function UnlockScreen() {
   const router = useRouter();
@@ -79,8 +80,13 @@ export default function UnlockScreen() {
   const [recoveryCode, setRecoveryCode] = useState('');
   const [recoveryError, setRecoveryError] = useState(false);
 
+  // Whether the sign-in that just succeeded actually reached a server — observed from the auth
+  // service, never assumed, so the transition screen's copy can't claim a hop that didn't happen.
+  const [reachedServer, setReachedServer] = useState(false);
+
   const goDecrypt = useCallback(
-    (dest: string) => {
+    (dest: string, viaServer: boolean) => {
+      setReachedServer(viaServer);
       setPhase('decrypting');
       setTimeout(() => router.replace(dest as Parameters<typeof router.replace>[0]), 1500);
     },
@@ -89,7 +95,7 @@ export default function UnlockScreen() {
 
   const signIn = useCallback(async () => {
     const res = await authService.signIn(username, password);
-    if (res.ok) goDecrypt(safeNext(next));
+    if (res.ok) goDecrypt(safeNext(next), res.reachedServer === true);
     else setPhase('wrong');
   }, [username, password, next, goDecrypt]);
 
@@ -98,11 +104,11 @@ export default function UnlockScreen() {
   // reproduce the failure they came here to fix.
   const unlockWithRecovery = useCallback(async () => {
     const res = await authService.signInWithRecoveryCode(recoveryCode);
-    if (res.ok) goDecrypt(HOME);
+    if (res.ok) goDecrypt(HOME, res.reachedServer === true);
     else setRecoveryError(true);
   }, [recoveryCode, goDecrypt]);
 
-  if (phase === 'decrypting') return <Decrypting />;
+  if (phase === 'decrypting') return <Decrypting reachedServer={reachedServer} />;
 
   const wrong = phase === 'wrong';
 
@@ -223,7 +229,7 @@ export default function UnlockScreen() {
 
 /* ------------------------------------------------------------ decrypting --- */
 
-function Decrypting() {
+function Decrypting({ reachedServer }: { reachedServer: boolean }) {
   // Held in state (created once) rather than a ref so the animated value can be read in render.
   const [width] = useState(() => new Animated.Value(0.08));
   useEffect(() => {
@@ -241,7 +247,7 @@ function Decrypting() {
       <View style={{ height: 16 }} />
       <AuthHello>{R.decryptingEyebrow}</AuthHello>
       <AuthTitle>{R.decryptingTitle}</AuthTitle>
-      <AuthLede>{R.decryptingSubtitle}</AuthLede>
+      <AuthLede>{reachedServer ? R.decryptingSubtitleServer : R.decryptingSubtitleLocal}</AuthLede>
 
       <View style={{ width: 220, height: 5, borderRadius: 3, backgroundColor: 'rgba(234,247,243,0.22)', marginTop: 24, overflow: 'hidden' }}>
         <Animated.View

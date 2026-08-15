@@ -282,7 +282,12 @@ export function riskFromNote(note: DraftNote): RiskLevel {
   return floor && RISK_ORDER[floor] > RISK_ORDER[note.riskLevel] ? floor : note.riskLevel;
 }
 
-const IDEATION_LABEL = /ideation|suicid/;
+// Includes the bare "SI" / "SI/HI" clinical shorthand a model or clinician may use as the row LABEL
+// itself (never spelling "ideation" or "suicid" out again) — without it, a row labelled just "SI"
+// with a value like "Transient, without plan or means" matches neither the label nor the value cue,
+// so `scanNoteRisk` never recognises it as the ideation row at all and the up-only floor never fires,
+// silently trusting whatever (possibly too-low) structured tier the model returned.
+const IDEATION_LABEL = /ideation|suicid|\bsi\b|\bsi\/hi\b|\bsi-hi\b/;
 const SELF_HARM_LABEL = /self[- ]?harm/;
 
 /** Ideation cues, used to find the ideation ROW when the model labelled it something unexpected. */

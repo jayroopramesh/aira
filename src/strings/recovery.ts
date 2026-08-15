@@ -16,18 +16,18 @@ export const recoveryStrings = {
   // Unlock · login (username + password)
   loginEyebrow: (clinician: string) => `Good morning, ${clinician}`,
   loginTitle: 'Your vault is locked',
-  loginSubtitle: 'Sign in to decrypt today’s notes. Everything below stays on this device.',
+  loginSubtitle: 'Sign in to open today’s notes. Everything below stays on this device.',
   usernameLabel: 'Username',
   passwordLabel: 'Password',
-  signInCta: 'Sign in & decrypt',
+  signInCta: 'Sign in & unlock',
   demoWrongLink: 'See a wrong-password state',
   createAccountLink: 'New to Airava? Create an account',
   // Shown on the sign-in screen when someone tapped "Create account" for an email that already has one
   // — calm, not an error: nothing was changed, their saved recovery code is intact, they just sign in.
   accountExistsNotice: 'You already have an account — sign in below. Nothing was changed, and your saved recovery code still works.',
-  vaultLine: 'Encrypted with your login · notes stay on this device.',
+  vaultLine: 'Stored on this device · unlocked with your login.',
   // Supanote-style trust note — HIPAA-ALIGNED phrasing only (never "compliant/certified"; counsel pending).
-  hipaaLine: 'HIPAA-aligned safeguards · encrypted on this device — only you hold the key.',
+  hipaaLine: 'HIPAA-aligned safeguards · stored on this device, behind your login.',
 
   // Wrong-password (calm, nothing locked out)
   wrongEyebrow: 'That didn’t match',
@@ -47,15 +47,21 @@ export const recoveryStrings = {
   // Decrypt transition
   decryptingEyebrow: 'Signed in',
   decryptingTitle: 'Opening your vault…',
-  decryptingSubtitle: 'Decrypting notes on this device with your login. This never touches a server.',
-  decryptingVaultLine: 'Encrypted with your login · keys never leave this device',
+  // Two subtitles because only ONE of the two unlock paths reaches a server. A password sign-in on a
+  // build with accounts configured does send the password to Supabase, and item 5 says so plainly.
+  // A recovery-code unlock checks a hash stored right here, and a keyless build is device-local end
+  // to end — telling those clinicians something reached a server would just be the opposite lie. The
+  // screen picks by the observed `reachedServer` fact, never by how the build is configured.
+  decryptingSubtitleServer: 'Signing in reaches Airava’s servers; your notes stay on this device.',
+  decryptingSubtitleLocal: 'Opening your notes on this device — nothing left it to sign you in.',
+  decryptingVaultLine: 'Stored on this device · unlocked with your login',
 
   // Welcome · onboarding
   onboard1Eyebrow: 'Welcome to Airava',
   onboard1Title: 'Your sessions, understood — and kept only by you',
   onboard1Lede:
-    'Airava is your personal scribe for after the session — not another ear in the room. You capture the conversation on your device; Airava drafts the clinical note once you’re done, and shows what’s changing over time. Everything private stays on your device, encrypted.',
-  onboard1Chips: ['Encrypted on your device', 'Notes drafted for you', 'Patterns over time'],
+    'Airava is your personal scribe for after the session — not another ear in the room. You capture the conversation on your device; Airava drafts the clinical note once you’re done, and shows what’s changing over time. Your notes and client records are stored only on this device.',
+  onboard1Chips: ['Stored on your device', 'Notes drafted for you', 'Patterns over time'],
   onboard1Cta: 'Get started',
   onboardSkip: 'Skip — I already have an account',
 
@@ -66,13 +72,22 @@ export const recoveryStrings = {
     { title: 'Sign your note', body: 'Airava drafts a SOAP note. You review, edit, and sign — nothing is final until you say so.' },
     { title: 'See patterns', body: 'Scores and themes build over time, so change is visible across visits.' },
   ],
-  onboard2Privacy: 'Your notes are encrypted with a key only you hold. Airava can’t read them, and neither can anyone else.',
+  // Onboarding runs BEFORE `DemoBanner` (mounted in `(app)/_layout`) exists to disclose the cloud
+  // hop, so this is the one privacy line that has to carry that disclosure itself — otherwise a
+  // clinician reads the beat above ("Airava transcribes it and drafts your note") and concludes
+  // nothing reaches a server. Branched on the observed build the same way the unlock subtitles are:
+  // the claim is scoped to STORAGE (which is genuinely device-local either way) and the cloud
+  // variant says plainly that session audio and text leave the device to be processed.
+  onboard2PrivacyCloud:
+    'Your notes and client records are stored only on this device. Transcription and drafting run in the cloud, so session audio and text leave this device for those steps — nothing else is shared without your say-so.',
+  onboard2PrivacyLocal:
+    'Your notes and client records are stored only on this device, and transcription and drafting run here too — nothing is shared without your say-so.',
   onboard2Cta: 'Create your account',
 
   // Welcome · create account
   createEyebrow: 'Create your account',
   createTitle: 'A vault that’s yours alone',
-  createLede: 'We verify you’re a licensed clinician, then set up your encrypted vault on this device.',
+  createLede: 'We verify you’re a licensed clinician, then set up your vault on this device.',
   emiratesIdLabel: 'Emirates ID number',
   emiratesIdWhyLink: 'Why do we need this?',
   emiratesIdWhy:
@@ -82,7 +97,7 @@ export const recoveryStrings = {
   emailLabel: 'Email',
   confirmPasswordLabel: 'Confirm password',
   consentText:
-    'I’m a licensed clinician and I agree to Airava’s Terms and Privacy Notice. I understand my notes are encrypted on this device.',
+    'I’m a licensed clinician and I agree to Airava’s Terms and Privacy Notice. I understand my notes are stored on this device.',
   createCta: 'Create account',
   createSignInLink: 'Already have an account? Sign in',
 

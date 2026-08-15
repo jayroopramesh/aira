@@ -320,5 +320,44 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
   globalThis.fetch = originalFetch;
 }
 
+// --- 5. The Transcript tab's contract: the reviewed transcript rides on the note itself ------------
+// (decision item 3) `buildDraft` — not a caller re-attaching it after the fact — is the single source
+// of truth for `DraftNote.transcript`, so every summarize() path (mock, offline-delegate, live cloud)
+// carries it identically and the review screen never has to trust a UI-layer graft.
+{
+  const mock = new MockSummarizationService();
+
+  const withText = await mock.summarize({ transcript: REAL_TRANSCRIPT });
+  check('a real transcript rides on the returned note', withText.transcript === REAL_TRANSCRIPT, withText.transcript);
+
+  const padded = await mock.summarize({ transcript: `  ${REAL_TRANSCRIPT}  ` });
+  check('surrounding whitespace is trimmed, matching what the clinician reviewed', padded.transcript === REAL_TRANSCRIPT, padded.transcript);
+
+  const blank = await mock.summarize({ transcript: '   ' });
+  check('a whitespace-only transcript stores as absent, never a blank string', blank.transcript === undefined, String(blank.transcript));
+
+  const empty = await mock.summarize({ transcript: '' });
+  check('an empty transcript stores as absent too', empty.transcript === undefined, String(empty.transcript));
+
+  // The offline (no-token) delegate path is the same buildDraft call, so it must carry the same field —
+  // there is deliberately only one place this is decided.
+  const offline = new GroqSummarizationService('https://proxy.invalid', async () => null, 'llama-3.3-70b-versatile');
+  const offlineDraft = await offline.summarize({ transcript: REAL_TRANSCRIPT });
+  check('the offline Groq-delegate path also stamps the transcript', offlineDraft.transcript === REAL_TRANSCRIPT, offlineDraft.transcript);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ subjective: { body: ['Reported a steadier fortnight.'] }, riskSafety: { level: 'clear' } }) } }],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  const live = new GroqSummarizationService('https://proxy.invalid', async () => 'session-token', 'llama-3.3-70b-versatile');
+  const liveDraft = await live.summarize({ transcript: REAL_TRANSCRIPT, audioLeftDevice: true, transcriptFromCloud: true });
+  check('the live cloud-drafted path stamps the same transcript the clinician reviewed', liveDraft.transcript === REAL_TRANSCRIPT, liveDraft.transcript);
+  globalThis.fetch = originalFetch;
+}
+
 console.log(failed ? `\n${failed} assertion(s) failed` : '\nAll provenance assertions passed');
 process.exit(failed ? 1 : 0);

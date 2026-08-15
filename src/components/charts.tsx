@@ -1,6 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
+import { axisLabelVisibility, dateProportionalX } from '../data/chartLayout';
 import { ScaleDef } from '../data/scales';
 import { Reading } from '../data/types';
 import { useTheme } from '../theme/ThemeProvider';
@@ -38,6 +39,13 @@ export function Sparkline({ values, width = 84, height = 26, color }: { values: 
   );
 }
 
+/**
+ * Room a date caption needs on the axis: "12 Jan" at fontSize 12 in these viewBox units runs ~40
+ * wide, plus a little air so neighbours read as separate words. Points closer together than this
+ * keep their marker and drop their caption (see `axisLabelVisibility`) — the spacing stays honest.
+ */
+const AXIS_LABEL_MIN_GAP = 46;
+
 const PHQ_BANDS = [
   { from: 20, to: 27, label: 'severe', key: 'bandSev' as const },
   { from: 15, to: 19, label: 'mod-sev', key: 'bandModSev' as const },
@@ -64,8 +72,10 @@ export function BandedChart({ readings, max = 27 }: { readings: Reading[]; max?:
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
 
-  const xAt = (i: number) => padL + (i * plotW) / Math.max(readings.length - 1, 1);
+  const dateX = dateProportionalX(readings.map((r) => r.date), plotW, padL);
+  const xAt = (i: number) => dateX?.[i] ?? padL + (i * plotW) / Math.max(readings.length - 1, 1);
   const yAt = (v: number) => padT + (1 - v / max) * plotH;
+  const labelShown = axisLabelVisibility(readings.map((_, i) => xAt(i)), AXIS_LABEL_MIN_GAP);
 
   return (
     <View style={{ width: '100%', backgroundColor: c.sunken, borderRadius: theme.radii.md, padding: theme.spacing.md }}>
@@ -116,9 +126,11 @@ export function BandedChart({ readings, max = 27 }: { readings: Reading[]; max?:
               <SvgText x={xAt(i)} y={yAt(r.value) - 12} fontSize={13} fill={c.ink} textAnchor="middle" fontFamily={theme.type.numeric.fontFamily}>
                 {r.value}
               </SvgText>
-              <SvgText x={xAt(i)} y={padT + plotH + 22} fontSize={12} fill={c.ink3} textAnchor="middle" fontFamily={theme.type.small.fontFamily}>
-                {r.label}
-              </SvgText>
+              {labelShown[i] ? (
+                <SvgText x={xAt(i)} y={padT + plotH + 22} fontSize={12} fill={c.ink3} textAnchor="middle" fontFamily={theme.type.small.fontFamily}>
+                  {r.label}
+                </SvgText>
+              ) : null}
             </React.Fragment>
           );
         })}
@@ -160,8 +172,10 @@ export function ScaleChart({ scale, clientLabel = 'This client' }: { scale: Scal
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
   const n = scale.pts.length;
-  const xAt = (i: number) => padL + (i * plotW) / Math.max(n - 1, 1);
+  const dateX = dateProportionalX(scale.pts.map((p) => p.date), plotW, padL);
+  const xAt = (i: number) => dateX?.[i] ?? padL + (i * plotW) / Math.max(n - 1, 1);
   const yAt = (v: number) => padT + (1 - v / max) * plotH;
+  const labelShown = axisLabelVisibility(scale.pts.map((_, i) => xAt(i)), AXIS_LABEL_MIN_GAP);
   const ticks = scale.ticks ?? [max, Math.round(max / 2), 0];
 
   return (
@@ -226,9 +240,11 @@ export function ScaleChart({ scale, clientLabel = 'This client' }: { scale: Scal
               <SvgText x={xAt(i)} y={yAt(p.value) - 12} fontSize={13} fill={c.ink} textAnchor="middle" fontFamily={theme.type.numeric.fontFamily}>
                 {p.value}
               </SvgText>
-              <SvgText x={xAt(i)} y={padT + plotH + 22} fontSize={12} fill={c.ink3} textAnchor="middle" fontFamily={theme.type.small.fontFamily}>
-                {p.label}
-              </SvgText>
+              {labelShown[i] ? (
+                <SvgText x={xAt(i)} y={padT + plotH + 22} fontSize={12} fill={c.ink3} textAnchor="middle" fontFamily={theme.type.small.fontFamily}>
+                  {p.label}
+                </SvgText>
+              ) : null}
             </React.Fragment>
           );
         })}

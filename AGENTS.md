@@ -16,13 +16,14 @@ constraints — don't duplicate it here.
   later native export.
 - **CI** (`.github/workflows/ci.yml`, PRs + push to `main`, Node pinned via `actions/setup-node`,
   no secrets): `tsc --noEmit`, `npm test` (the `scripts/*-harness.mjs` suites — provenance,
-  persist-race, risk-floor, escalate-targets, groq-proxy — followed by `jest --ci`, all chained in
-  the `test` script in `package.json`; that IS the project's test suite. The harnesses are the
-  default lane for pure modules; jest (`jest.config.js`, preset `jest-expo/ios`, matching
-  `src/**/*.test.tsx?`) exists for tests that must RENDER a component to prove its wiring), then
-  `expo export --platform web`. Lint is deliberately not wired in: `expo lint` auto-installs
-  `eslint-config-expo` and currently flags real `react-hooks/refs` errors (refs read during
-  render) that would require behaviour changes to fix — re-evaluate next time those files are touched.
+  persist-race, risk-floor, escalate-targets, duplicate-identity, chart-axis, groq-proxy —
+  followed by `jest --ci`, all chained in the `test` script in `package.json`; that IS the
+  project's test suite. The harnesses are the default lane for pure modules; jest
+  (`jest.config.js`, preset `jest-expo/ios`, matching `src/**/*.test.tsx?`) exists for tests that
+  must RENDER a component to prove its wiring), then `expo export --platform web`.
+  Lint is deliberately not wired in: `expo lint` auto-installs `eslint-config-expo` and currently
+  flags real `react-hooks/refs` errors (refs read during render) that would require behaviour
+  changes to fix — re-evaluate next time those files are touched.
 - A harness that runs a pure `src/` module directly under `node --experimental-strip-types` needs
   an **explicit `.ts` extension** on every runtime (non-type-only) relative import inside that
   module's own import chain — Node's stripped-types loader does not resolve extensionless
@@ -96,7 +97,10 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   `{text: ""}` is not a transcript either, so `transcriptFromCloud` needs non-empty text. None derive
   from `hasGroq`, so a note can never claim — or deny — a hop that did not match reality. `buildDraft`
   owns all three; the `sourceLine` expression they feed is proved by `scripts/provenance-harness.mjs`,
-  which exists because it was re-derived wrongly in three successive fix rounds.
+  which exists because it was re-derived wrongly in three successive fix rounds. `buildDraft` also
+  stamps the note's `transcript` (trimmed; blank = absent) from the input it drafted, so the review
+  screen's Transcript tab is fed by every `summarize()` path instead of by one UI call site
+  re-attaching it — never reintroduce that graft.
 - **Cloud reachability is a runtime question**: `cloudSessionReady()` (`cloudSession.ts`) = proxy
   configured AND a live token. The capture screen asks it before the mic opens and says plainly when
   the cloud is unreachable; it never gates recording. Signing in cannot rescue a capture already
