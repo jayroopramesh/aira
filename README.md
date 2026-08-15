@@ -48,10 +48,10 @@ Five workflows, built to the s4 prototype's steps and phone-adapted:
 
 | Workflow | Steps |
 |---|---|
-| **Welcome** (boots here when signed out) | onboarding (post-session "personal scribe" framing; endowed setup progress bar, prefilled 20% → 45% → 72% → 100%) → create account (Emirates ID + "why?", phone, name, email, password) → one-time recovery code (reveal once, copy/save, "I saved it" gate) → login |
-| **Unlock** | login (username + password, "Encrypted with your login", HIPAA-aligned trust note) → calm wrong-password state (inline recovery-code fallback) → decrypt transition |
+| **Welcome** (boots here when signed out) | onboarding (post-session "personal scribe" framing; endowed setup progress bar, prefilled 20% → 45% → 72% → 100%) → create account (Emirates ID + "why?", phone, name, email, password; an email that **already has an account** stops here and routes to sign-in instead of minting a second recovery code) → one-time recovery code (reveal once, copy/save, "I saved it" gate) → login |
+| **Unlock** | login (username + password, "Encrypted with your login", HIPAA-aligned trust note; a calm "you already have an account" notice with the email prefilled when arriving from create-account) → calm wrong-password state (inline recovery-code fallback) → decrypt transition |
 | **Get ready** | day dashboard (countdown, session cards) → client drawer (scores, timeline, last plan, editable patient-details card that persists device-local, mock SALAMA/EHR connection card with a persistent no-external-system disclaimer) → read-only prep reminder → ready state |
-| **Session summary** | pre-capture (read-only reminders; record, upload a clip, or use sample audio) → recording (waveform + timer, timestamp-synced comment-card strip with a dotted add-first card, trust note; transcription is one-shot on stop — no live readout) → analysing (editable transcript; a silent/near-empty capture is refused rather than drafted, and a dismissible banner flags a transcript that doesn't read like clinical text) → note with SOAP/DAP format switcher (SOAP: S · O · Risk & Safety · A · P; DAP merges S+O into one D — Data section, derived so content never diverges; three-pane on web, stacked on phone) → per-section inline edit (each section's **Done** persists through the vault seam, and an edit still open when the clinician signs is flushed into the note that gets signed) → Prescriptions rail → sign-off (attributed to the signed-in clinician, stamped when they sign) → audio-trust moment (delete-by-default, keep toggle). **Copy note** (on the draft action bar and again under the signed note, for the EHR paste) writes the whole note as plain text — draft-marked when unsigned, attested when signed — and confirms only after a real clipboard write; where the platform has no clipboard it is disabled and says why, never a silent no-op. The reviewed transcript is saved **with** the note (same device-local vault seam, same retention), and the note's **Transcript** tab shows that real text; a note with no stored transcript — sample data, or notes captured before transcripts were saved — says so plainly rather than standing in placeholder prose. Up to **3 notes per client** are retained, newest first — the session rail switches between them. |
+| **Session summary** | pre-capture (read-only reminders; a new client's name plus an **optional Emirates ID** — the local caseload's uniqueness key, see [Duplicate identity](#duplicate-identity); record, upload a clip, or use sample audio) → recording (waveform + timer, timestamp-synced comment-card strip with a dotted add-first card, trust note; transcription is one-shot on stop — no live readout) → analysing (editable transcript; a silent/near-empty capture is refused rather than drafted, and a dismissible banner flags a transcript that doesn't read like clinical text) → note with SOAP/DAP format switcher (SOAP: S · O · Risk & Safety · A · P; DAP merges S+O into one D — Data section, derived so content never diverges; three-pane on web, stacked on phone) → per-section inline edit (each section's **Done** persists through the vault seam, and an edit still open when the clinician signs is flushed into the note that gets signed) → Prescriptions rail → sign-off (attributed to the signed-in clinician, stamped when they sign) → audio-trust moment (delete-by-default, keep toggle). **Copy note** (on the draft action bar and again under the signed note, for the EHR paste) writes the whole note as plain text — draft-marked when unsigned, attested when signed — and confirms only after a real clipboard write; where the platform has no clipboard it is disabled and says why, never a silent no-op. The reviewed transcript is saved **with** the note (same device-local vault seam, same retention), and the note's **Transcript** tab shows that real text; a note with no stored transcript — sample data, or notes captured before transcripts were saved — says so plainly rather than standing in placeholder prose. Up to **3 notes per client** are retained, newest first — the session rail switches between them. |
 | **Patterns** | caseload table (search, status chips, sparklines with a dashed first-reading baseline, sober risk column carried over from each note's risk tier, Outreach mailto templates that grey out once used; tiles computed from the caseload itself) → client patterns (plain-language headline *before* charts; multi-scale tabs PHQ-9 · GAD-7 · MHI-5 · DASS-21 with a muted dashed "Caseload avg" comparison stroke + legend; sparse ≤2-reading dot-strip rule kept per scale; companion-app journal box) → history timeline (with the retained notes) → acute-risk review (reachable for **any** client rated acute, including one the app flagged from a captured session; with no structured safety snapshot on file it says so and points at the session note rather than inventing one, while still offering escalation and the safety plan) → safety-plan viewer |
 
 The standing calm **Escalate** affordance sits on every screen (never alarm-red, never modal — a
@@ -321,6 +321,34 @@ curl -s -X POST "$PROXY/chat/completions" -H "Content-Type: application/json" \
   -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"ping"}]}'
 ```
 
+## Duplicate identity
+
+Two records that should be one — and one record that is really two people — are both destructive, so
+Airava resolves neither silently.
+
+**Your account.** Tapping *Create account* for an account that already exists **stops**: no new
+recovery code is minted and the stored hash of the code you saved is left untouched, so a returning
+counselor can't void their only way back in by using the wrong button. You land on sign-in with the
+email prefilled and a calm notice; a genuine new account is created exactly as before. Configured,
+that's Supabase's "already registered" reply; on a keyless build it's the evidence on the device
+itself (one account per device, since there is no email registry to ask).
+
+**Your patients.** Within *this device's* caseload a well-formed Emirates ID (784 + 12 digits) is the
+uniqueness key. A capture whose ID is already on file — and whose name agrees, or where none was
+typed — is added to that client's existing record ("You already see this client") instead of minting
+a second; an ID that's new to the caseload is saved onto the one same-named client who has none yet.
+Where the signals disagree or are ambiguous (the ID is on file under a different name, a namesake
+holds a different ID, or more than one client shares the name) a **separate record is created and the
+review screen says why** — merging two patients destroys whose note, plan and risk tier is whose and
+can't be undone, while a fork leaves two truthful records. A malformed entry ("N/A", a truncated
+number) is a placeholder, never an identity, and the capture screen says so inline.
+
+The check is **device-local only** — never a cross-device or cross-therapist lookup, which would leak
+that a named person is in therapy. The full rule, veto by veto, is in `AGENTS.md`;
+`node scripts/duplicate-identity-harness.mjs` runs the real save path and asserts it.
+
+---
+
 ## Service seams
 
 Patient data never leaves the device. These foundations sit behind interfaces so implementations slot
@@ -334,7 +362,9 @@ in without touching callers (see live wiring above; crypto is still a mock).
   the recovery-code fallback. The code itself is never kept — a non-cryptographic **hash** of it is
   persisted device-locally at account creation (alongside the clinician's name and email), so the
   saved code still unlocks after a reload and the sign-off is attributed to whoever actually signed
-  in. Login prefills only that persisted email — never a demo identity, and never a password. With
+  in. Creating an account for an email that already has one throws `AccountExistsError` and writes
+  nothing (see [Duplicate identity](#duplicate-identity)). Login prefills the email that route hands
+  it, else only the persisted one — never a demo identity, and never a password. With
   Supabase configured the app uses `SupabaseAuthService` (see
   [Demo-mode live services](#demo-mode-live-services)); otherwise `MockAuthService` (the password
   chosen at account creation is accepted, in addition to the demo default `clinicvault`; anything
@@ -415,7 +445,8 @@ src/
   components/          mascot moods (mascotMoods), auth surface, DemoBanner, ZeroState, Highlights, charts, waveform, escalate sheet, ui primitives
   config/              env.ts (EXPO_PUBLIC_* + hasSupabase/hasGroq flags, crisis line / on-call contacts)
   theme/               tokens + ThemeProvider
-  data/                types, sample fixtures (no PHI), assessment scales, repository + reactive DataProvider
+  data/                types, sample fixtures (no PHI), assessment scales, repository + reactive DataProvider,
+                       sessionClient/saveSession (the pure capture → match/fold/mint identity decision)
   services/            auth (Supabase/mock), storage (vault) + deviceStore, transcription + summarization (groq-proxy/mock) + cloudSession, audio capture, writeQueue (serialized snapshot saves)
   strings/             recovery.ts (login + recovery copy, captain-resolved policy)
 supabase/              config.toml + functions/groq-proxy (the server-side Groq proxy; Deno, not part of the app tsconfig)
