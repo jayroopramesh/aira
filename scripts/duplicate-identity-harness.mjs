@@ -11,8 +11,9 @@
  *   2. DUPLICATE PATIENT within the local caseload. Emirates ID is the local uniqueness key: adding a
  *      client whose (normalised) Emirates ID already exists opens the EXISTING record and creates
  *      nothing; a novel one creates a new client; the raw typed value is stored verbatim. A CONFLICTING
- *      Emirates ID beats a name match (two different people never merge), and folding backfills a
- *      supplied Emirates ID onto a record that has none, so the key takes hold for the next capture.
+ *      Emirates ID beats a name match (two different people never merge) and is REPORTED rather than
+ *      silently forking the caseload, and folding backfills a supplied Emirates ID onto a record that
+ *      has none, so the key takes hold for the next capture.
  *
  * Run (Node ≥ 22.13, e.g. ~/.cache/fm-node/node-v22.23.2-darwin-arm64/bin/node):
  *   node scripts/duplicate-identity-harness.mjs
@@ -33,9 +34,8 @@ globalThis.localStorage = {
 
 const { AccountExistsError, MockAuthService, SupabaseAuthService } = await import('../src/services/auth.ts');
 const { deviceStore } = await import('../src/services/deviceStore.ts');
-const { appendSessionToClient, clientFromSession, matchExistingClient, normalizeEmiratesId } = await import(
-  '../src/data/sessionClient.ts'
-);
+const { appendSessionToClient, clientFromSession, findNameConflict, matchExistingClient, normalizeEmiratesId } =
+  await import('../src/data/sessionClient.ts');
 
 let failed = 0;
 function check(name, ok, detail) {
@@ -78,6 +78,11 @@ function fakeSupabase(signUpResult) {
 
 // deviceStore namespaces keys under 'aira.vault.'; the recovery hash key auth.ts persists is this one.
 const RECOVERY_HASH_KEY = 'auth.recovery-hash';
+// The credential the unguarded MOCK path actually destroyed: its recovery hash is deterministic (the
+// RECOVERY_WORDS constant through an unsalted fnv1a), so a second createAccount rewrote an IDENTICAL
+// recovery hash — but PASSWORD_HASH_KEY took the second attempt's password and the counselor's real
+// password stopped opening signIn.
+const PASSWORD_HASH_KEY = 'auth.password-hash';
 const DETAILS = {
   emiratesId: '784-1988-1234567-1',
   phone: '+971 50 123 4567',
@@ -157,8 +162,9 @@ const DETAILS = {
   check('mock first account: the saved recovery code unlocks the vault', unlock.ok === true && vault.isUnlocked() === true, JSON.stringify(unlock));
 
   // Reload: a fresh service + fresh vault over the SAME device store, as after a page refresh. The
-  // counselor taps "Create an account" again instead of "Sign in".
+  // counselor taps "Create an account" again instead of "Sign in", with a DIFFERENT password typed in.
   const savedHash = await deviceStore.get(RECOVERY_HASH_KEY);
+  const savedPasswordHash = await deviceStore.get(PASSWORD_HASH_KEY);
   const vault2 = fakeVault();
   const svc2 = new MockAuthService(vault2);
   let thrown = null;
@@ -171,9 +177,17 @@ const DETAILS = {
   check('mock duplicate account: throws AccountExistsError', thrown instanceof AccountExistsError, String(thrown));
   check('mock duplicate account: the error carries the email to prefill', thrown?.email === DETAILS.email, String(thrown?.email));
   check('mock duplicate account: the saved recovery hash is UNTOUCHED', (await deviceStore.get(RECOVERY_HASH_KEY)) === savedHash, String(await deviceStore.get(RECOVERY_HASH_KEY)));
+  // THE credential this guard saves on the mock path — it is the password hash that a second
+  // createAccount overwrote (the recovery hash is deterministic, so rewriting it changed nothing).
+  check('mock duplicate account: the saved PASSWORD hash is UNTOUCHED', (await deviceStore.get(PASSWORD_HASH_KEY)) === savedPasswordHash, String(await deviceStore.get(PASSWORD_HASH_KEY)));
   check('mock duplicate account: the vault is NOT unlocked', vault2.isUnlocked() === false, 'vault was unlocked');
   check('mock duplicate account: status stays none (not active/awaiting)', svc2.getStatus() === 'none', svc2.getStatus());
-  // The credential that matters: the code the counselor saved still opens the vault afterwards.
+  // The observable consequence: the counselor's ORIGINAL password still opens signIn afterwards.
+  const vault3 = fakeVault();
+  const svc3 = new MockAuthService(vault3);
+  const signedIn = await svc3.signIn(DETAILS.email, DETAILS.password);
+  check('mock duplicate account: the ORIGINAL password still signs in', signedIn.ok === true, JSON.stringify(signedIn));
+  // And the saved recovery code still unlocks.
   const stillWorks = await svc2.signInWithRecoveryCode(recoveryCode.join(' '));
   check('mock duplicate account: the ORIGINAL saved code still unlocks', stillWorks.ok === true, JSON.stringify(stillWorks));
 }
@@ -245,6 +259,46 @@ const NOTE = {
     'no Emirates ID supplied: the name fold is unchanged',
     matchExistingClient(caseload, { name: 'Ahmed Ali' })?.matchedBy === 'name',
     'name fold broke',
+  );
+
+  // The veto must never be SILENT: the same refusal that mints a separate record is reported, so the
+  // counselor is told why two same-named rows now exist instead of being left to guess at a typo.
+  const conflict = findNameConflict(caseload, { name: 'Ahmed Ali', emiratesId: '784-1988-2222222-2' });
+  check('conflict notice: the vetoed same-name record is reported', conflict?.id === 's-1', JSON.stringify(conflict));
+  check('conflict notice: it names the client the counselor already sees', conflict?.name === 'Ahmed Ali', String(conflict?.name));
+  check('conflict notice: the existing client is still left untouched', JSON.stringify(caseload[0]) === before, 'existing record mutated');
+
+  // ...and it must stay quiet whenever there is nothing to explain.
+  check(
+    'conflict notice: silent when the Emirates IDs MATCH (that folds)',
+    findNameConflict(caseload, { name: 'Ahmed Ali', emiratesId: ' 784 1988 1111111 1 ' }) === undefined,
+    'flagged a matching id',
+  );
+  check(
+    'conflict notice: silent when the NAME differs',
+    findNameConflict(caseload, { name: 'Someone Else', emiratesId: '784-1988-2222222-2' }) === undefined,
+    'flagged a different name',
+  );
+  check(
+    'conflict notice: silent when the capture supplies NO Emirates ID',
+    findNameConflict(caseload, { name: 'Ahmed Ali' }) === undefined && findNameConflict(caseload, { name: 'Ahmed Ali', emiratesId: '  ' }) === undefined,
+    'flagged with no supplied id',
+  );
+  const noStoredId = [clientFromSession('s-2', NOTE, { name: 'Ahmed Ali', sessionNumber: 1, dateLabel: DATE })];
+  check(
+    'conflict notice: silent when the CANDIDATE stores no Emirates ID (it folds + backfills)',
+    findNameConflict(noStoredId, { name: 'Ahmed Ali', emiratesId: '784-1988-2222222-2' }) === undefined,
+    'flagged a candidate with no stored id',
+  );
+
+  // The veto and the notice are exact complements — every same-named candidate the fold refuses is one
+  // the notice can name, so the app can never refuse to fold for a reason it then fails to explain.
+  const supplied = '784-1988-2222222-2';
+  check(
+    'conflict notice: fires exactly when the name fold was vetoed',
+    matchExistingClient(caseload, { name: 'Ahmed Ali', emiratesId: supplied }) === undefined &&
+      !!findNameConflict(caseload, { name: 'Ahmed Ali', emiratesId: supplied }),
+    'veto and notice disagree',
   );
 }
 

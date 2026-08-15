@@ -179,7 +179,12 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
     still throws a plain `Error` (retry the form). Never reinstate the swallow-and-continue.
     The rule holds on **every** build: `MockAuthService.createAccount` (the keyless path) has no server
     to ask, so it reads the device's own evidence — a persisted `RECOVERY_HASH_KEY` means an account
-    exists here — and throws the same `AccountExistsError` before writing anything.
+    exists here — and throws the same `AccountExistsError` before writing anything. On that path the
+    credential a second create destroyed is the **password** hash, not the recovery one (the mock's code
+    is the `RECOVERY_WORDS` constant and `fnv1a` is unsalted, so the rewritten recovery hash was
+    identical; `PASSWORD_HASH_KEY` took the second attempt's password and the real password stopped
+    opening `signIn`) — same silent lockout, other credential. The guard is device-scoped, not
+    email-scoped: one account per device is the keyless model, and there is no email registry to consult.
   - **Patient**: Emirates ID is the **local** caseload uniqueness key (`Client.emiratesId`, stored
     verbatim; compared via `normalizeEmiratesId`). `matchExistingClient` (`sessionClient.ts`) resolves a
     capture to an existing client by id → Emirates ID → captured-name, and `saveSessionNote` folds an
@@ -187,9 +192,14 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
     "You already see this client" on review. A supplied Emirates ID **vetoes** the captured-name fold
     against a record storing a different one — same name, different ID = different people, and folding
     would merge strangers' notes/plan/timeline and carry one patient's risk tier onto the other, which
-    nothing lowers. And the key has to be RECORDED to work, so `appendSessionToClient` **backfills** it
-    onto a record captured without one (never overwriting a stored one); otherwise a later capture
-    spelling the name differently mints the duplicate this guard exists to prevent.
+    nothing lowers. That veto mints a SEPARATE record — the safe residual, since a mistyped digit forking
+    a client is recoverable and merging two patients is not — but it is never silent: `findNameConflict`
+    reports it off the SAME predicate the veto uses (so the app cannot refuse to fold for a reason it
+    fails to explain), `saveSessionNote` returns `nameConflict`, and review says a same-named client
+    exists under a different Emirates ID. And the key has to be RECORDED to work, so
+    `appendSessionToClient` **backfills** it onto a record captured without one (never overwriting a
+    stored one); otherwise a later capture spelling the name differently mints the duplicate this guard
+    exists to prevent.
     Scope is device-local ONLY — never a cross-device/therapist
     existence check (captain, 2026-08-15): a global check would leak that a named person is in therapy.
 - Snapshot writes are **serialized** (`createWriteQueue` in `src/services/writeQueue.ts`, applied at

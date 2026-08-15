@@ -136,14 +136,18 @@ export default function SessionCapture() {
   };
 
   const onDrafted = async (note: DraftNote) => {
-    const { clientId: id, isDuplicate } = await saveSessionNote(note, {
+    const { clientId: id, isDuplicate, nameConflict } = await saveSessionNote(note, {
       clientId: client?.id,
       name: client ? undefined : name,
       emiratesId: client ? undefined : emiratesId,
     });
     // A duplicate Emirates ID folded into an existing client — open that record and tell the counselor
-    // plainly, rather than silently landing on what looks like a brand-new note.
-    router.replace(`/(app)/session/review?clientId=${id}${isDuplicate ? '&existing=1' : ''}`);
+    // plainly, rather than silently landing on what looks like a brand-new note. The mirror case is a
+    // same-named client under a DIFFERENT Emirates ID: a separate record was minted on purpose (never
+    // merge two people), and review says so instead of leaving two identical-looking caseload rows.
+    // Mutually exclusive — a fold is not a mint.
+    const notice = isDuplicate ? '&existing=1' : nameConflict ? '&conflict=1' : '';
+    router.replace(`/(app)/session/review?clientId=${id}${notice}`);
   };
 
   const returnTo = client ? `/(app)/session?clientId=${client.id}` : '/(app)/session';

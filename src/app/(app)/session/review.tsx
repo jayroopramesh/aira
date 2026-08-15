@@ -120,10 +120,19 @@ export default function ReviewNote() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const wide = width >= 1040;
-  const { clientId, note: noteParam, existing } = useLocalSearchParams<{ clientId: string; note?: string; existing?: string }>();
+  const { clientId, note: noteParam, existing, conflict } = useLocalSearchParams<{
+    clientId: string;
+    note?: string;
+    existing?: string;
+    conflict?: string;
+  }>();
   // Set when this capture's Emirates ID matched a client already on the caseload: the session folded
   // into that existing record rather than creating a duplicate patient, and we say so plainly.
   const foldedIntoExisting = existing === '1';
+  // The mirror case: a client of the same name is already on the caseload under a DIFFERENT Emirates
+  // ID. Those are two people, so a separate record was minted deliberately — said plainly here, because
+  // an unexplained second identical-looking row is how a mistyped digit silently forks a client.
+  const mintedDespiteSameName = !foldedIntoExisting && conflict === '1';
   // Up to 3 notes are retained per client (C4); `note` selects which retained note to review (newest = 0).
   const notes = useClientNotes(clientId);
   const parsedIndex = noteParam ? Number(noteParam) : 0;
@@ -238,6 +247,46 @@ export default function ReviewNote() {
                   </AppText>{' '}
                   This Emirates ID is already on your caseload, so the session was added to their existing
                   record instead of creating a second — this is that record.
+                </AppText>
+              </Row>
+            ) : null}
+
+            {mintedDespiteSameName ? (
+              <Row
+                gap={9}
+                style={{
+                  marginTop: theme.spacing.md,
+                  alignItems: 'flex-start',
+                  backgroundColor: c.cautionBg,
+                  borderColor: c.cautionBg,
+                  borderWidth: 1,
+                  borderRadius: theme.radii.md,
+                  padding: theme.spacing.md,
+                }}
+              >
+                <View
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 9,
+                    borderWidth: 2,
+                    borderColor: c.caution,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginTop: 1,
+                  }}
+                >
+                  <AppText variant="label" tint={c.caution} style={{ fontSize: 11 }}>
+                    !
+                  </AppText>
+                </View>
+                <AppText variant="small" color="ink2" style={{ flex: 1, lineHeight: 17 }}>
+                  <AppText variant="bodyStrong" tint={c.caution} style={{ fontSize: 12.5 }}>
+                    This looks like a different person.
+                  </AppText>{' '}
+                  {client?.name ? `A client named ${client.name}` : 'A client with this name'} already exists on
+                  your caseload with a different Emirates ID, so a new record was created for this session
+                  rather than adding it to theirs.
                 </AppText>
               </Row>
             ) : null}

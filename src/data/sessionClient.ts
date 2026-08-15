@@ -30,6 +30,54 @@ export function normalizeEmiratesId(raw: string): string {
 }
 
 /**
+ * The comparison key for a typed Emirates ID, or '' when there is nothing to compare — a blank entry
+ * and a punctuation-only one both normalise to nothing, and neither may ever act as a match key.
+ */
+function matchKey(raw?: string): string {
+  const trimmed = raw?.trim();
+  return trimmed ? normalizeEmiratesId(trimmed) : '';
+}
+
+/** The pre-existing F3 fold candidate: a prior CAPTURED client ('s-' id) under the same typed name. */
+function isCapturedNameMatch(cl: Client, typedName: string): boolean {
+  return cl.id.startsWith('s-') && normalizeName(cl.name) === normalizeName(typedName);
+}
+
+/**
+ * Does this client's STORED Emirates ID contradict the supplied one? Only a stored value that
+ * normalises to a real key can contradict anything, so a record holding none — or a capture supplying
+ * none — never conflicts.
+ *
+ * This single predicate is what `matchExistingClient` vetoes the name fold on and what
+ * `findNameConflict` reports to the counselor, so the two are exact complements: the app can never
+ * refuse to fold for a reason it then fails to explain.
+ */
+function storedIdConflicts(cl: Client, key: string): boolean {
+  if (!key || !cl.emiratesId) return false;
+  const stored = normalizeEmiratesId(cl.emiratesId);
+  return !!stored && stored !== key;
+}
+
+/**
+ * The same-named captured client this capture was NOT folded into, because its stored Emirates ID
+ * contradicts the supplied one. Undefined when there is nothing to explain: no Emirates ID supplied,
+ * no same-named captured client, the candidate stores none, or the two IDs normalise equal (that case
+ * folds through `matchExistingClient` and is no conflict at all).
+ *
+ * Minting a separate record is the SAFE outcome — merging two different patients is unrecoverable
+ * (notes, plan, timeline and a risk tier nothing lowers) — but it must not be a SILENT one: a mistyped
+ * digit otherwise forks a client into two identical-looking caseload rows with no explanation. So the
+ * capture flow asks for this and the review screen says plainly what happened. Device-local only; it
+ * says nothing about anyone outside this caseload.
+ */
+export function findNameConflict(clients: Client[], opts: { name?: string; emiratesId?: string }): Client | undefined {
+  const key = matchKey(opts.emiratesId);
+  const typedName = opts.name?.trim();
+  if (!key || !typedName) return undefined;
+  return clients.find((cl) => isCapturedNameMatch(cl, typedName) && storedIdConflicts(cl, key));
+}
+
+/**
  * Decide which EXISTING caseload client (if any) a capture belongs to, so a second record is never
  * minted for someone already on the caseload. Priority:
  *   1. an explicit clientId (the day board / client file opened the capture) — matched by id;
@@ -45,7 +93,8 @@ export function normalizeEmiratesId(raw: string): string {
  * makes them different people, and folding would merge strangers' notes, plan and timeline — and carry
  * one patient's risk tier onto the other, which nothing ever lowers. So the name branch skips any
  * candidate storing a DIFFERENT (normalised) Emirates ID; a candidate with none, or a capture that
- * supplies none, folds by name exactly as before.
+ * supplies none, folds by name exactly as before. That veto is reported, never silent — the caller
+ * pairs it with `findNameConflict`, which uses the SAME predicate to name what it refused to fold.
  */
 export function matchExistingClient(
   clients: Client[],
@@ -55,26 +104,14 @@ export function matchExistingClient(
     const byId = clients.find((cl) => cl.id === opts.clientId);
     return byId ? { client: byId, matchedBy: 'id' } : undefined;
   }
-  // A blank/punctuation-only entry normalises to '' — never treat that as a match key.
-  const key = opts.emiratesId?.trim() ? normalizeEmiratesId(opts.emiratesId.trim()) : '';
+  const key = matchKey(opts.emiratesId);
   if (key) {
     const byEmid = clients.find((cl) => cl.emiratesId && normalizeEmiratesId(cl.emiratesId) === key);
     if (byEmid) return { client: byEmid, matchedBy: 'emiratesId' };
   }
-  // Only a stored value that normalises to a real key can contradict the supplied one.
-  const conflictsWithSuppliedId = (cl: Client) => {
-    if (!key || !cl.emiratesId) return false;
-    const stored = normalizeEmiratesId(cl.emiratesId);
-    return !!stored && stored !== key;
-  };
   const typedName = opts.name?.trim();
   if (typedName) {
-    const byName = clients.find(
-      (cl) =>
-        cl.id.startsWith('s-') &&
-        normalizeName(cl.name) === normalizeName(typedName) &&
-        !conflictsWithSuppliedId(cl),
-    );
+    const byName = clients.find((cl) => isCapturedNameMatch(cl, typedName) && !storedIdConflicts(cl, key));
     if (byName) return { client: byName, matchedBy: 'name' };
   }
   return undefined;
