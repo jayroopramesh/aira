@@ -163,7 +163,9 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   a thin renderer over it. Any new contact must be transcribed verbatim from a source, never
   paraphrased or "corrected" — a number therefore carries BOTH forms: `href` is machine form
   (`tel:` wants bare digits) and `displayTarget` is the brief's own grouping, which is what a human
-  asked to dial by hand is shown. The harness pins that the two never drift apart.
+  asked to dial by hand is shown. Set `displayTarget` ONLY where the href-derived form loses
+  something (i.e. `tel:`); a url/mailto copy of it can only drift. The harness re-derives the target
+  from the href independently and pins that the two never disagree, for every kind.
   Pure data can't prove the WIRING, and a deleted `onPress` is how this surface went inert once — so
   `src/components/__tests__/Escalate.test.tsx` mounts the real sheet, presses every row, and asserts
   the exact `Linking.openURL` / `router.push` target (and that the disabled safety-plan row reaches
@@ -173,7 +175,10 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   A hand-off that the device REFUSES (a `tel:` on desktop web with no dialer) must not dismiss the
   sheet onto nothing: `runAction` closes only on a resolved `openURL`, and on rejection keeps the
   sheet open and renders `openFailureMessage` — the bare number/address to use by hand. Never
-  restore the `.catch(() => {})` swallow.
+  restore the `.catch(() => {})` swallow. That copy must never name a target the app knows isn't
+  real: an unconfigured on-call address is the deliberate placeholder `on-call@clinic.example`, so
+  that action carries a `failureMessage` override saying no address is configured rather than
+  sending the counselor to an inbox that does not exist.
 - A note's risk reaches the caseload as a structured tier: the summarizer emits `riskLevel` and it is
   trusted for the ordinary case — never re-derived *down* by sniffing note prose. But `riskFromNote`
   applies an **up-only safety floor**: if the note's own structured risk **rows** disclose ideation (or

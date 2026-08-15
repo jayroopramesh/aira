@@ -40,9 +40,21 @@ function findAction(sections, key) {
   return undefined;
 }
 
+/**
+ * Independently derives what an action's `href` actually points at, so a `displayTarget` that has
+ * drifted from the target the button really opens is caught. Deliberately NOT `manualTargetLabel` —
+ * comparing that function against itself would prove nothing.
+ */
+function hrefTarget(action) {
+  if (action.kind === 'tel') return action.href.replace(/^tel:/, '');
+  if (action.kind === 'mailto') return action.href.replace(/^mailto:/, '').split('?')[0];
+  return action.href;
+}
+
 /** Fabricated crisis-line/on-call config, matching the shape `../config/env` derives at runtime. */
 const configured = { crisisLine: { configured: true, display: '800 4673', tel: 'tel:8004673' }, onCallEmail: { configured: false, address: 'on-call@clinic.example' } };
 const blank = { crisisLine: { configured: false, display: '999 · local emergency services', tel: 'tel:999' }, onCallEmail: { configured: false, address: 'on-call@clinic.example' } };
+const withOnCall = { crisisLine: configured.crisisLine, onCallEmail: { configured: true, address: 'oncall@clinic.ae' } };
 
 // --- Injected config: crisis line resolved to 800 4673 ------------------------------------------
 {
@@ -170,21 +182,48 @@ const blank = { crisisLine: { configured: false, display: '999 · local emergenc
 
   for (const action of sections.flatMap((s) => s.actions)) {
     if (action.disabled || action.kind === 'route') continue;
-    check(
-      `"${action.key}" failure copy is non-empty and quotes its target`,
-      openFailureMessage(action).includes(manualTargetLabel(action)) && manualTargetLabel(action).length > 0,
-      openFailureMessage(action),
-    );
-    // A display form that drifts from the dialed form would have the counselor key a different
-    // number than the button dials — the one way carrying two representations can hurt.
-    if (action.kind === 'tel') {
+    check(`"${action.key}" failure copy is non-empty`, openFailureMessage(action).length > 0, openFailureMessage(action));
+    if (!action.failureMessage) {
       check(
-        `"${action.key}" displayed digits match the digits it actually dials`,
-        manualTargetLabel(action).replace(/[^\d+]/g, '') === action.href.replace(/^tel:/, ''),
-        `${manualTargetLabel(action)} vs ${action.href}`,
+        `"${action.key}" failure copy quotes its target`,
+        openFailureMessage(action).includes(manualTargetLabel(action)) && manualTargetLabel(action).length > 0,
+        openFailureMessage(action),
       );
     }
+    // A hand-target that drifts from what the button actually opens would send the counselor
+    // somewhere else entirely — the one way carrying two representations can hurt. Checked for
+    // EVERY kind, not just `tel`, so a stale `displayTarget` on a url/mailto cannot hide either.
+    const declared = manualTargetLabel(action);
+    check(
+      `"${action.key}" hand-target matches what it actually opens`,
+      action.kind === 'tel' ? declared.replace(/[^\d+]/g, '') === hrefTarget(action) : declared === hrefTarget(action),
+      `${declared} vs ${action.href}`,
+    );
   }
+}
+
+// --- Warm handoff: the failure copy never names an address that isn't real ----------------------
+{
+  const unconfigured = findAction(buildEscalateSections({}, configured), 'handoff');
+  const copy = openFailureMessage(unconfigured);
+  check(
+    'an unconfigured on-call build does not tell the counselor to write to the placeholder',
+    !copy.includes('on-call@clinic.example'),
+    copy,
+  );
+  check(
+    'it says plainly that no on-call address is configured instead',
+    copy.includes('no on-call address is configured'),
+    copy,
+  );
+
+  const real = findAction(buildEscalateSections({}, withOnCall), 'handoff');
+  check('a configured on-call build drafts to the real address', real?.href.startsWith('mailto:oncall@clinic.ae?'), real?.href);
+  check(
+    'and its failure copy hands that real address back to write by hand',
+    openFailureMessage(real).includes('oncall@clinic.ae'),
+    openFailureMessage(real),
+  );
 }
 
 // --- The no-dedicated-line fallback still hands back something dialable -------------------------

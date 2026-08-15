@@ -146,6 +146,18 @@ describe('when the device refuses to open a target', () => {
     expect(screen.queryByText(/Dial 042192000 yourself/)).toBeNull();
   });
 
+  it('does not tell the counselor to write to the placeholder on-call address', async () => {
+    // This lane runs with EXPO_PUBLIC_ONCALL_EMAIL scrubbed (jest.setup.js), i.e. the CI and
+    // fresh-clone build, whose address is the deliberately undeliverable on-call@clinic.example.
+    openURL.mockRejectedValue(new Error('no registered handler'));
+    openSheet({ clientId: 'client-42', clientToken: 'TOKEN-9' });
+
+    fireEvent.press(screen.getByText('Warm handoff to on-call'));
+
+    expect(await screen.findByText(/no on-call address is configured for this build/)).toBeTruthy();
+    expect(screen.queryByText(/Write to on-call@clinic\.example yourself/)).toBeNull();
+  });
+
   it('names the web address when a url will not open', async () => {
     openURL.mockRejectedValue(new Error('no registered handler'));
     openSheet();

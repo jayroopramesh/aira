@@ -25,12 +25,18 @@ export type EscalateAction = {
   /** Resolved `tel:`/`https:`/`mailto:` target for kind tel|url|mailto. */
   href?: string;
   /**
-   * The same target as a human reads and keys it — the brief's own digit grouping for a number
-   * ("04 219 2000"), the full address otherwise. `href` is machine form (`tel:` wants bare digits);
-   * this is the form shown to a counselor who has to dial it by hand, transcribed verbatim rather
-   * than re-derived from the stripped digits.
+   * The target as a human reads and keys it, where `href` alone cannot say it: a `tel:` href is
+   * stripped digits, so a number carries the brief's own grouping ("04 219 2000") here. Set it ONLY
+   * where the href-derived form would lose something — for `url`/`mailto` the derivation is already
+   * the address verbatim, and a second copy of it could only drift.
    */
   displayTarget?: string;
+  /**
+   * Failure copy overriding the generic "reach it by hand" sentence, for a target the app knows is
+   * not actually reachable — an unconfigured on-call address is a deliberate placeholder, so naming
+   * it would send the counselor to an inbox that does not exist.
+   */
+  failureMessage?: string;
   /** Resolved in-app route for kind route. */
   route?: string;
 };
@@ -67,6 +73,7 @@ export function manualTargetLabel(action: EscalateAction): string {
 
 /** Honest copy for a target the device would not open, naming what to reach by hand instead. */
 export function openFailureMessage(action: EscalateAction): string {
+  if (action.failureMessage) return action.failureMessage;
   const target = manualTargetLabel(action);
   switch (action.kind) {
     case 'tel':
@@ -109,7 +116,6 @@ export const EMERGENCY_SECTION: EscalateSection = {
       sub: 'https://www.dha.gov.ae/ · opens your browser',
       kind: 'url',
       href: 'https://www.dha.gov.ae/',
-      displayTarget: 'https://www.dha.gov.ae/',
     },
   ],
 };
@@ -135,7 +141,6 @@ export const NON_URGENT_SECTION: EscalateSection = {
       sub: 'https://www.lighthousearabia.com/ · opens your browser',
       kind: 'url',
       href: 'https://www.lighthousearabia.com/',
-      displayTarget: 'https://www.lighthousearabia.com/',
     },
   ],
 };
@@ -192,7 +197,9 @@ export function buildEscalateSections(
       : 'Drafts a handoff email — no on-call address is set for this build, so add the recipient before sending',
     kind: 'mailto',
     href: onCallMailto(config.onCallEmail, opts.clientToken),
-    displayTarget: config.onCallEmail.address,
+    failureMessage: config.onCallEmail.configured
+      ? undefined
+      : 'This device wouldn’t open your email app, and no on-call address is configured for this build — reach the on-call clinician the way you normally would.',
   };
 
   // Normalise a missing/blank id to undefined so an empty string is never treated as a real client.
