@@ -22,14 +22,70 @@ constraints — don't duplicate it here.
 The seams are wired to real cloud services for the demo, degrading to mocks when keys are absent:
 - **Config**: `src/config/env.ts` reads `EXPO_PUBLIC_*` from `.env.local` (gitignored; `.env.example`
   is the committed template). `hasSupabase` / `hasGroq` pick live vs mock per service — the app never
-  crashes without keys. Secrets source: `firstmate/data/aira-secrets/{supabase,groq}.env`.
+  crashes without keys. `hasGroq = hasSupabase && EXPO_PUBLIC_GROQ_PROXY_URL set` (the proxy
+  authenticates with the Supabase session). Secrets source:
+  `firstmate/data/aira-secrets/{supabase,groq}.env`.
 - **Accounts — Supabase** (`src/services/supabase.ts`, `SupabaseAuthService` in `auth.ts`): real
   signup/login (email confirmation OFF; identity fields → user metadata). The one-time recovery-code
-  moment stays app-side (local vault key path).
+  moment stays app-side (local vault key path). `getAccessToken()` (supabase.ts) yields the signed-in
+  session JWT the Groq proxy verifies. **Only email/password `signIn` mints that token** — recovery-code
+  unlock opens the vault but holds no Supabase credentials, and native reloads drop the session
+  (`persistSession` is web-only), so those paths reach capture with no cloud. That is by design; the
+  capture screen offers a "Sign in to enable cloud transcription" action (routing through
+  `/unlock?next=<in-app route>`, validated by `safeNext`) plus the paste fallback. See `README.md`.
+- **Groq is server-side** — the Groq API key is NO LONGER a client var. It lives as a Supabase secret
+  behind the `groq-proxy` Edge Function (`supabase/functions/groq-proxy/index.ts`), which proxies both
+  Groq calls (`/transcriptions` whisper-large-v3 multipart, `/chat/completions` llama-3.3-70b JSON).
+  The function verifies the caller's Supabase user JWT (anon key / anonymous → 401), reads
+  `GROQ_API_KEY` from its own env, **pins the models server-side** (a caller-supplied `model` is
+  overwritten, never honoured), rate-limits per user (best-effort in-memory, documented), rejects
+  payloads carrying a client identifier/name (400), and relays upstream errors faithfully (including
+  `Retry-After` / `x-ratelimit-*`).
+  `verify_jwt=false` in `supabase/config.toml` on purpose — we verify in-code so the anon key (a valid
+  JWT) is rejected. The function is **Deno** (uses `Deno.*` globals), so `supabase/functions` is
+  excluded from the app `tsconfig.json` — `npx tsc --noEmit` does not cover it; its promises are
+  proved instead by `scripts/groq-proxy-harness.mjs`, which runs the real function over HTTP with
+  stand-in GoTrue/Groq servers (no Deno or Docker). Deploy + the honest residency note (Supabase
+  global edge; project ap-south-1; Azure in-region for prod) are in `README.md` → "Groq proxy (Edge
+  Function)". Never reintroduce `EXPO_PUBLIC_GROQ_API_KEY`.
 - **Transcription — Groq whisper-large-v3** (`GroqTranscriptionService` in `transcription.ts`) and
-  **summarization — Groq llama-3.3-70b** (`src/services/summarization.ts` → a `DraftNote`). Web audio
-  via `src/services/audioCapture.ts` (MediaRecorder + file-picker fallback; native falls back to the
-  mock). The `mock://` sample-audio path always uses the mock transcriber.
+  **summarization — Groq llama-3.3-70b** (`src/services/summarization.ts` → a `DraftNote`), both via
+  the proxy above with the session token. Web audio via `src/services/audioCapture.ts` (MediaRecorder
+  + file-picker fallback; native falls back to the mock). The `mock://` sample-audio path always uses
+  the mock transcriber. No proxy configured → the on-device mock for both.
+- **The fabrication line — canned content belongs to the `mock://` sample and to nothing else, on
+  EVERY build.** Fabrication is the app INVENTING clinical text; drafting the clinician's own
+  typed/pasted words on-device invents nothing. So the gate is *whose session it is*, never how the
+  build is configured:
+  - `MockTranscriptionService.transcribe` replays `MOCK_TRANSCRIPT_TEXT` only for a `mock://` uri and
+    otherwise throws `TranscriptionUnavailableError` (`transcription.ts`). An unconfigured build has
+    no automatic transcription for a real recording — it must not answer one with the sample's words
+    ("Denies passive ideation on screening today" is a safety finding nobody made).
+  - `MockSummarizationService` emits the full walkthrough note (canned assessment, plan bullets, the
+    `F41.1` chip) only when `input.sampleCapture === true`; every other session gets derive-only
+    output (subjective/objective from the clinician's words + the risk scan, everything else left at
+    `NOT_CAPTURED`). The flag defaults to absent = safe mode.
+  - With the proxy configured but NOT signed in, **transcription throws** `CloudSessionRequiredError`
+    (`cloudSession.ts`) while **drafting falls back** to the stub over the same text, stamped
+    `draftedInCloud: false`. Never make transcription fall back, never make drafting throw — that is
+    what keeps the paste-the-transcript recovery a real route to a note instead of a dead end.
+  Proved by `scripts/provenance-harness.mjs`; the two error kinds are distinct because signing in
+  fixes one and cannot fix the other, so only `CloudSessionRequiredError` shows the sign-in action.
+- **Provenance is observed, never configured — and it is THREE facts, never one**:
+  `audioLeftDevice` (the upload was ISSUED; set on the cloud transcriber's `transcribing` stage, which
+  fires immediately before the POST, because a 429/5xx arrives after the audio has already left),
+  `transcriptFromCloud` (the stored text IS whisper's output — only on a successful transcription, so
+  text typed after a failed upload is never presented as machine-transcribed), and `draftedInCloud`
+  (stamped by `buildDraft` from the summarizer that actually ran). Collapsing the first two back into
+  one boolean is how a note came to claim whisper produced the clinician's own typing. A 200 carrying
+  `{text: ""}` is not a transcript either, so `transcriptFromCloud` needs non-empty text. None derive
+  from `hasGroq`, so a note can never claim — or deny — a hop that did not match reality. `buildDraft`
+  owns all three; the `sourceLine` expression they feed is proved by `scripts/provenance-harness.mjs`,
+  which exists because it was re-derived wrongly in three successive fix rounds.
+- **Cloud reachability is a runtime question**: `cloudSessionReady()` (`cloudSession.ts`) = proxy
+  configured AND a live token. The capture screen asks it before the mic opens and says plainly when
+  the cloud is unreachable; it never gates recording. Signing in cannot rescue a capture already
+  recorded, and the copy says so.
 - **Blank boot + device-local data**: a fresh install starts EMPTY. Caseload state is a reactive
   context (`src/data/DataProvider.tsx`, hooks `useClients`/`useClient`/`useDayDashboard`/etc.) persisted
   through `ClientRepository` → `VaultStorage` (`LocalVaultStorage` → `deviceStore`: localStorage on web,

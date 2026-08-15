@@ -89,11 +89,15 @@ For the **live demo** (accounts + transcription + summarization), copy the env t
 keys; without it the app runs entirely on on-device mocks (and says so):
 
 ```bash
-cp .env.example .env.local   # then set EXPO_PUBLIC_SUPABASE_* and EXPO_PUBLIC_GROQ_*
+cp .env.example .env.local   # then set EXPO_PUBLIC_SUPABASE_* and EXPO_PUBLIC_GROQ_PROXY_URL
 ```
 
-`.env.local` is gitignored — never commit real keys. Only the Supabase **publishable** (anon) key
-belongs in a client env var. See [Demo-mode live services](#demo-mode-live-services).
+`.env.local` is gitignored — never commit real keys. Only client-safe values belong in an
+`EXPO_PUBLIC_*` var (they are inlined into the bundle and readable by anyone who opens the page): the
+Supabase **publishable** (anon) key, and the Groq **proxy URL** (a public function endpoint). The
+**Groq API key is server-side** — a Supabase secret behind the `groq-proxy` Edge Function, never a
+client var. See [Groq proxy (Edge Function)](#groq-proxy-edge-function) and
+[Demo-mode live services](#demo-mode-live-services).
 
 The same template also carries the deployment's **safety contacts** — the crisis line the Escalate
 sheet dials and the on-call address a warm handoff drafts to. `.env.example` documents each one and
@@ -111,8 +115,8 @@ npx expo export --platform web && npx expo serve
 npx expo start             # scan the QR with Expo Go (iOS/Android)
 ```
 Everything in this v1 runs in **Expo Go** — no native module yet (demo transcription is a plain
-HTTPS call to Groq, or the mock). The real on-device whisper engine is a native module and will
-require a **dev build** (see [Service seams](#service-seams)).
+HTTPS call to the `groq-proxy` Edge Function, or the mock). The real on-device whisper engine is a
+native module and will require a **dev build** (see [Service seams](#service-seams)).
 
 ### Native bundle check
 ```bash
@@ -178,10 +182,12 @@ report which are live). Configuration is `EXPO_PUBLIC_*` in `.env.local`, read v
 | Concern | Live (keys present) | Mock (no keys) |
 |---|---|---|
 | **Accounts** | Supabase `signUp` / `signInWithPassword` (`SupabaseAuthService`). Email confirmation OFF; Emirates ID/phone/name → user metadata. The one-time recovery code stays app-side (local vault key). | `MockAuthService` |
-| **Transcription** | Groq **whisper-large-v3** over recorded/uploaded audio (`GroqTranscriptionService`). Web capture via MediaRecorder + a file-picker fallback (`services/audioCapture.ts`). | `MockTranscriptionService` (canned transcript) |
-| **Summarization** | Groq **llama-3.3-70b** → SOAP sections + risk/safety + plan → `DraftNote` (`services/summarization.ts`) | `MockSummarizationService` |
+| **Transcription** | Groq **whisper-large-v3** over recorded/uploaded audio (`GroqTranscriptionService`), via the `groq-proxy` Edge Function. Web capture via MediaRecorder + a file-picker fallback (`services/audioCapture.ts`). | `MockTranscriptionService` — replays the canned transcript **only for the built-in `mock://` sample clip**; any real capture is refused (`TranscriptionUnavailableError`) so the clinician types or pastes it |
+| **Summarization** | Groq **llama-3.3-70b** → SOAP sections + risk/safety + plan → `DraftNote` (`services/summarization.ts`), via the `groq-proxy` Edge Function. | `MockSummarizationService` — the full walkthrough note **only for the sample clip**; a real session gets derive-only sections |
 
-Transcription + summarization are two **separate cloud hops** over the session — the audio to
+Both Groq calls go through a **server-side proxy** so the Groq API key never ships in the bundle —
+see [Groq proxy (Edge Function)](#groq-proxy-edge-function). Transcription + summarization are two
+**separate cloud hops** over the session — the audio to
 transcribe, then the transcript text to draft from — and the demo banner says so plainly so the
 on-device trust copy never overclaims. Each is recorded on the note as it happens (a capture can stay
 on-device, e.g. the sample audio, and still be drafted in the cloud), so the note's source line and
@@ -193,6 +199,127 @@ vault seam.
 reactive context (`src/data/DataProvider.tsx`) persisted through `ClientRepository` → `VaultStorage`
 (`LocalVaultStorage` → `deviceStore`: localStorage on web, a JSON file on native). Load the Amara
 sample cohort from **Settings → Load sample data** (or the zero-state CTA); clear it there too.
+
+### Groq proxy (Edge Function)
+
+The Groq API key is **server-side**: it lives as a Supabase **secret** behind the `groq-proxy` Edge
+Function (`supabase/functions/groq-proxy/index.ts`), never as an `EXPO_PUBLIC_*` var. `EXPO_PUBLIC_*`
+values are inlined into the web/native bundle at build time — an `EXPO_PUBLIC_GROQ_API_KEY` would be
+readable by anyone who opens the page, letting anyone spend the project's Groq quota. The app now
+holds only the **proxy URL** (`EXPO_PUBLIC_GROQ_PROXY_URL`, a public function endpoint) and calls it
+with the signed-in counselor's Supabase **session token**.
+
+The function proxies both Groq calls — `POST /groq-proxy/transcriptions` (multipart audio →
+whisper-large-v3) and `POST /groq-proxy/chat/completions` (JSON messages → llama-3.3-70b) — and:
+
+- **Verifies the caller.** The `Authorization: Bearer` must be a valid *user* session JWT (role
+  `authenticated` and not an anonymous sign-in, checked against GoTrue `/auth/v1/user`). Anonymous
+  callers and the anon publishable key are rejected **401** — only signed-in counselors spend quota.
+  (`verify_jwt` is disabled in `supabase/config.toml` on purpose: we verify in-code so the anon key —
+  itself a valid JWT — is rejected and errors come back as clear JSON.)
+  *What this does **not** prove, stated plainly:* signup is open from the client with the public anon
+  key and email confirmation is **OFF**, so a valid user JWT proves **"someone registered"**, not
+  **"an authorized counselor"**. Real signup restriction — an allowlist or a custom claim check —
+  defers to production/Azure; for the demo the pinned models and the rate limit are what bound the
+  damage a registered stranger can do.
+- **Reads `GROQ_API_KEY` from the function environment** (a Supabase secret), never from a client var.
+- **Pins the models server-side.** `whisper-large-v3` for transcription, `llama-3.3-70b-versatile` for
+  chat; a caller-supplied `model` is **overwritten, not honoured**, so no one can aim the project's
+  quota at an arbitrary, more expensive Groq model.
+- **Rate-limits per caller.** A best-effort **in-memory fixed window** (default 20 req / 60 s per user
+  id; tune with `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS`). *Honest limits:* the counter lives in the
+  isolate's memory, so it is per-isolate and resets on cold start — an abuse backstop, **not** a hard
+  cluster-wide quota. A hard limit needs a shared store (a Postgres table with an atomic upsert, or
+  Redis); that is the production upgrade.
+- **Guards identifiers.** Any payload carrying a client/patient identifier or name (a set of forbidden
+  JSON keys / form fields — `clientName`, `client_id`, `mrn`, …) is rejected **400** with a clear
+  error, never silently stripped — a server-side backing for "identifiers never leave the device".
+- **Passes upstream Groq errors through faithfully** (status code + body preserved, plus `Retry-After`
+  and `x-ratelimit-*` so a caller can actually back off — those are CORS-exposed for browser callers).
+
+Those promises are executable: `node scripts/groq-proxy-harness.mjs` runs the real function over HTTP
+(with stand-in GoTrue and Groq servers, no Deno or Docker needed) and asserts each one.
+
+**Honest degradation — the line it draws.** *Fabrication* is the app **inventing clinical text**:
+standing canned words in for a session that was actually recorded. That is never acceptable.
+*Drafting the clinician's own typed or pasted words on-device* invents nothing, and is the accepted
+no-keys degradation. What decides which content a note may carry is therefore **whose session it is**,
+not how the build is configured:
+
+| | built-in `mock://` sample clip | any **real** capture (mic or uploaded file) |
+|---|---|---|
+| **Transcription** | replays the walkthrough transcript | a real transcript, or **rejects** — never canned words. Cloud with no session → `CloudSessionRequiredError`; no engine in this build → `TranscriptionUnavailableError` |
+| **Drafting** | full walkthrough note (placeholder assessment, plan bullets, the `F41.1` chip) | **derive-only**: subjective/objective from the clinician's own words + the risk scan; assessment, plan, prescriptions and codes left at *"review required"* |
+
+Both rules hold on **every** build, configured or not. An unconfigured build has no automatic
+transcription at all, so the record button still works but the transcript is yours to type — the
+canned sample text is never offered as a recording of a real person. Likewise the walkthrough's
+working diagnosis and prescriptions can only ever attach to the sample clip. The note's source line
+says a **keyword stub** wrote a derive-only draft, so "drafted on this device" is not mistaken for an
+on-device model.
+
+So the paste-the-transcript recovery is a **real, working route to a note**: type or paste the
+session text and Airava drafts it on this device, with nothing sent anywhere. It never crashes.
+
+Both rules are executable: `node scripts/provenance-harness.mjs` runs the real services and asserts
+them, alongside the source-line combinations below.
+
+**Provenance records three separate facts**, each from what actually happened rather than from
+build-time config, because they come apart:
+
+- `audioLeftDevice` — the recording was **uploaded**. True from the moment the POST is issued, since a
+  429 or 5xx arrives *after* the audio has left. Never under-disclosed.
+- `transcriptFromCloud` — the stored text **is** what whisper returned. True only on a successful
+  cloud transcription, so text the clinician typed after a failed upload is never presented as a
+  machine transcript a reader might later audit for mishearings.
+- `draftedInCloud` — stamped by the summarizer that actually produced the draft.
+
+Because the proxy authenticates with the Supabase session, Groq features require Supabase accounts to
+be configured too (`hasGroq = hasSupabase && proxy URL set`).
+
+**A live email/password session is what unlocks the cloud — recovery-code unlock is not.** This is a
+deliberate consequence of the recovery-key model, not a bug. Signing in with email + password
+(`authService.signIn` → Supabase `signInWithPassword`) is the only path that mints a session token,
+and that token is what the proxy verifies. **Recovery-code unlock opens the local vault but not the
+cloud**: it holds no Supabase credentials and cannot mint a session by design — the whole point of
+the recovery code is that it never carries the account password. The same applies after a native app
+reload, where the session is kept in memory only (`persistSession` is web-only in
+`src/services/supabase.ts`).
+
+The capture screen handles that **before** the mic opens: on entering it checks for a live session
+(`cloudSessionReady`) and, when there isn't one, says so plainly and offers to sign in first — an
+informed choice, never a gate on recording. If a session is recorded anyway, the transcription
+rejection explains the position honestly, including the part that is easy to over-promise: signing in
+enables cloud transcription for the **next** capture and **cannot** transcribe the recording already
+made (leaving the screen discards it). The working path for the capture in hand is to paste the
+transcript and draft on-device.
+
+**Residency.** Supabase Edge Functions run on Supabase's **global edge** (Deno Deploy), not
+necessarily in-region; this project is **ap-south-1 (Mumbai)**. For production the **same proxy
+pattern moves to the in-region Azure container** (see [`infra/`](infra/)), keeping the key server-side
+*and* the hop in-region.
+
+**Deploy.**
+
+```bash
+export SUPABASE_ACCESS_TOKEN=…                       # a Supabase CLI access token
+supabase link --project-ref <project-ref>            # run inside this repo (writes supabase/.temp/, gitignored)
+supabase secrets set GROQ_API_KEY=gsk_…              # the Groq key — server-side secret, not a client var
+supabase functions deploy groq-proxy                 # deploy the function
+```
+
+Then set `EXPO_PUBLIC_GROQ_PROXY_URL` in `.env.local` to
+`https://<project-ref>.supabase.co/functions/v1/groq-proxy`. Verify with a signed-in session token:
+
+```bash
+# 200 + a completion (signed-in counselor)
+curl -s -X POST "$PROXY/chat/completions" -H "Authorization: Bearer $USER_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"ping"}]}'
+# 401 (anonymous — no bearer, or the anon publishable key)
+curl -s -X POST "$PROXY/chat/completions" -H "Content-Type: application/json" \
+  -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"ping"}]}'
+```
 
 ## Service seams
 
@@ -238,10 +365,12 @@ out of scope for v1; the seam encodes the spike's decisions so `whisper.rn` slot
 - `whisper.rn` is a **native module — it does not run in Expo Go.** It needs `expo-dev-client` +
   `npx expo prebuild` + an EAS dev build. The app is structured for that pipeline from day one.
 
-With Groq configured the app uses `GroqTranscriptionService` — a disclosed **cloud hop** (see
+With Groq configured the app uses `GroqTranscriptionService` — a disclosed **cloud hop** through the
+[`groq-proxy` Edge Function](#groq-proxy-edge-function) (see
 [Demo-mode live services](#demo-mode-live-services)); note the on-device de-identification hop does
-**not** run in demo mode. Otherwise `MockTranscriptionService` (mocked timing, canned transcript)
-drives the recording/analysing states. Neither needs a native module.
+**not** run in demo mode. Otherwise `MockTranscriptionService` drives the recording/analysing states:
+it replays the canned transcript for the built-in `mock://` sample clip and refuses any real capture,
+so a recording is never answered with words nobody said. Neither needs a native module.
 
 ---
 
@@ -287,8 +416,9 @@ src/
   config/              env.ts (EXPO_PUBLIC_* + hasSupabase/hasGroq flags, crisis line / on-call contacts)
   theme/               tokens + ThemeProvider
   data/                types, sample fixtures (no PHI), assessment scales, repository + reactive DataProvider
-  services/            auth (Supabase/mock), storage (vault) + deviceStore, transcription + summarization (Groq/mock), audio capture, writeQueue (serialized snapshot saves)
+  services/            auth (Supabase/mock), storage (vault) + deviceStore, transcription + summarization (groq-proxy/mock) + cloudSession, audio capture, writeQueue (serialized snapshot saves)
   strings/             recovery.ts (login + recovery copy, captain-resolved policy)
+supabase/              config.toml + functions/groq-proxy (the server-side Groq proxy; Deno, not part of the app tsconfig)
 scripts/               dependency-free invariant harnesses (`node scripts/<name>.mjs`)
 docs/screenshots/      rendered captures of every workflow step (light/dark/phone)
 ```

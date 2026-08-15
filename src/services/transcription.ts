@@ -20,10 +20,18 @@
  *
  * The app-wide handle is `GroqTranscriptionService` (whisper-large-v3 — a disclosed cloud
  * hop, see its doc comment below) when Groq is configured, and `MockTranscriptionService`
- * (mocked timing, canned transcript) otherwise; neither needs a native module.
+ * (mocked timing, canned sample transcript) otherwise; neither needs a native module.
+ *
+ * ONE RULE HOLDS ON EVERY BUILD: a real recording is never answered with invented words. Whichever
+ * handle is in play, it either returns a transcript actually produced from THAT audio or it rejects
+ * — the cloud one with `CloudSessionRequiredError` when there is no session, the on-device one with
+ * `TranscriptionUnavailableError` for anything that is not the built-in `mock://` sample clip. The
+ * capture screen turns either rejection into the "type or paste the transcript" recovery.
  */
 
 import { env, hasGroq } from '../config/env';
+import { CloudSessionRequiredError } from './cloudSession';
+import { getAccessToken } from './supabase';
 
 export type WhisperModelId = 'small.en' | 'base.en' | 'large-v3-turbo-q5_0' | 'whisper-large-v3';
 
@@ -64,12 +72,47 @@ export interface TranscriptionService {
   ): Promise<Transcript>;
 }
 
-/** Canned de-identified transcript used to drive the mock analysing → draft transition. */
+/**
+ * Raised when no transcription ENGINE exists for this capture — as opposed to a cloud engine that
+ * exists but has no session (`CloudSessionRequiredError`). Signing in cannot fix this one, so the
+ * capture screen must offer the type/paste path and NOT the cloud sign-in action.
+ */
+export const TRANSCRIPTION_UNAVAILABLE = 'TranscriptionUnavailableError';
+
+export class TranscriptionUnavailableError extends Error {
+  readonly name = TRANSCRIPTION_UNAVAILABLE;
+}
+
+export function isTranscriptionUnavailableError(e: unknown): boolean {
+  return (e as Error | undefined)?.name === TRANSCRIPTION_UNAVAILABLE;
+}
+
+/** True for the built-in demo clip (`mock://…`), which is not a recording of anyone. */
+export function isSampleCapture(uri: string): boolean {
+  return uri.startsWith('mock://');
+}
+
+/**
+ * The canned transcript that drives the walkthrough. It belongs to the `mock://` SAMPLE CLIP and to
+ * nothing else — see `MockTranscriptionService.transcribe`, which refuses to return it for a real
+ * recording.
+ */
 const MOCK_TRANSCRIPT_TEXT =
   'Client reports a steadier fortnight with improved sleep since starting the sleep log. ' +
   'Ongoing academic pressure ahead of an upcoming exam. Denies passive ideation on screening today. ' +
   'Agreed to continue the sleep log and practise an exam-specific cognitive reframe.';
 
+/**
+ * The on-device stand-in. It does NOT transcribe: it replays a canned transcript for the built-in
+ * `mock://` sample clip so the capture → analysing → draft walkthrough demos with no keys.
+ *
+ * It therefore refuses any OTHER capture. Returning the canned text for a real recording would put
+ * words in a client's mouth — including "Denies passive ideation on screening today", a safety
+ * finding nobody made — and the note would present it as the session. That is the same fabrication
+ * the cloud transcriber refuses when it has no session, and the rule holds identically on an
+ * unconfigured build: a real recording either gets a real transcript or gets none, never an invented
+ * one. The capture screen turns the refusal into the type/paste recovery.
+ */
 export class MockTranscriptionService implements TranscriptionService {
   readonly defaultModel: WhisperModelId = 'small.en';
   readonly requiresDevBuild = false; // the mock runs anywhere; the real whisper.rn does not
@@ -97,6 +140,11 @@ export class MockTranscriptionService implements TranscriptionService {
     opts?: { model?: WhisperModelId; onStage?: (stage: 'preparing' | 'transcribing' | 'deidentifying') => void; signal?: AbortSignal },
   ): Promise<Transcript> {
     const model = opts?.model ?? this.defaultModel;
+    if (!isSampleCapture(audio.uri)) {
+      throw new TranscriptionUnavailableError(
+        'No automatic transcription is available in this build — type or paste the transcript instead.',
+      );
+    }
     opts?.onStage?.('preparing');
     await delay(400 * this.demoScale, opts?.signal);
     opts?.onStage?.('transcribing');
@@ -125,11 +173,24 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * GroqTranscriptionService — DEMO-mode transcription against Groq's OpenAI-compatible audio
- * endpoint (whisper-large-v3). This is a CLOUD hop: the recorded (or uploaded) audio is sent to
- * Groq to be transcribed. That's an honest departure from the on-device story, disclosed by the
- * app's demo-mode banner. No model is downloaded — the model runs server-side — so `ensureModel`
- * is a no-op and `requiresDevBuild` is false (it works on web).
+ * GroqTranscriptionService — DEMO-mode transcription (whisper-large-v3) via the server-side
+ * groq-proxy Edge Function, NOT Groq directly: the Groq key lives as a Supabase secret and never
+ * ships in the bundle. This is a CLOUD hop: the recorded (or uploaded) audio is POSTed to the proxy
+ * (which forwards it to Groq) with the counselor's Supabase session token. That's an honest
+ * departure from the on-device story, disclosed by the app's demo-mode banner. No model is
+ * downloaded — it runs server-side — so `ensureModel` is a no-op and `requiresDevBuild` is false.
+ *
+ * Not signed in (no session token) REJECTS with a CloudSessionRequiredError — it never falls back to
+ * the mock. The proxy requires a signed-in counselor, so with no token there is no cloud path to
+ * take; substituting the mock's canned transcript for a real recording would attach fabricated
+ * clinical content to the session and leave the note claiming a cloud hop that never ran. The
+ * capture screen catches this and offers the calm "paste the transcript" recovery. (Drafting is the
+ * opposite: it falls back on-device, because drafting the clinician's own words invents nothing.)
+ *
+ * The `transcribing` stage marks the moment the audio is HANDED TO THE NETWORK — `onStage` fires
+ * immediately before the POST. Everything after it means the recording left the device, whether the
+ * call then succeeds, 429s, 5xxes or drops, so the capture screen keys its "audio left the device"
+ * provenance off that stage rather than off a successful return.
  *
  * There is NO on-device de-identification hop in demo mode (that needs the native OpenMed model),
  * so `deidentified` is false; the summarizer's clinical prompt is instructed to avoid echoing
@@ -140,8 +201,8 @@ export class GroqTranscriptionService implements TranscriptionService {
   readonly requiresDevBuild = false;
 
   constructor(
-    private readonly apiKey: string,
-    private readonly baseUrl: string,
+    private readonly proxyUrl: string,
+    private readonly getToken: () => Promise<string | null>,
     private readonly model = 'whisper-large-v3',
   ) {}
 
@@ -158,6 +219,12 @@ export class GroqTranscriptionService implements TranscriptionService {
     audio: CaptureRef,
     opts?: { model?: WhisperModelId; onStage?: (stage: 'preparing' | 'transcribing' | 'deidentifying') => void; signal?: AbortSignal },
   ): Promise<Transcript> {
+    const token = await this.getToken();
+    // No signed-in session → no server-side cloud path. Reject rather than fabricate a transcript.
+    if (!token) {
+      throw new CloudSessionRequiredError('Sign in to use cloud transcription — there is no active session.');
+    }
+
     opts?.onStage?.('preparing');
 
     // Pull the captured audio into a Blob. On web this is a blob:/File URI from MediaRecorder or
@@ -174,9 +241,9 @@ export class GroqTranscriptionService implements TranscriptionService {
     form.append('temperature', '0');
 
     opts?.onStage?.('transcribing');
-    const res = await fetch(`${this.baseUrl}/audio/transcriptions`, {
+    const res = await fetch(`${this.proxyUrl}/transcriptions`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${this.apiKey}` },
+      headers: { Authorization: `Bearer ${token}` },
       body: form,
       signal: opts?.signal,
     });
@@ -221,5 +288,5 @@ function guessFilename(mime: string): string {
  * otherwise the mock so the recording/analysing flow still demos with no keys.
  */
 export const transcriptionService: TranscriptionService = hasGroq
-  ? new GroqTranscriptionService(env.groq.apiKey, env.groq.baseUrl, env.groq.transcriptionModel)
+  ? new GroqTranscriptionService(env.groq.proxyUrl, getAccessToken, env.groq.transcriptionModel)
   : new MockTranscriptionService(1);

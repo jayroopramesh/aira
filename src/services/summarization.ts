@@ -4,8 +4,12 @@
  *
  * DEMO mode uses Groq chat completions (llama-3.3-70b-versatile) with a clinical system prompt that
  * produces SOAP sections + a routine risk & safety check + plan items (which feed the Prescriptions
- * rail). This is a CLOUD hop over the transcript text — disclosed by the demo-mode banner. With no
- * key configured it degrades to a deterministic on-device mock so the flow still demos.
+ * rail). This is a CLOUD hop over the transcript text — disclosed by the demo-mode banner. It reaches
+ * Groq through the server-side groq-proxy Edge Function (the Groq key is a Supabase secret, not a
+ * client var). With no proxy configured — or with one configured but nobody signed in — drafting
+ * degrades to a deterministic on-device mock over the same text, and the note records that it was
+ * drafted on this device. Drafting the clinician's own words on-device is honest degradation;
+ * inventing a transcript is not, which is why transcription refuses where drafting falls back.
  *
  * The transcript (plus a bare session number) is the only thing sent — never the client's name,
  * never audio, never stored records. The prompt instructs
@@ -13,6 +17,7 @@
  */
 
 import { env, hasGroq } from '../config/env';
+import { getAccessToken } from './supabase';
 import { DraftNote, NoteSection, PrepItem, ReviewCode, RiskLevel } from '../data/types';
 
 export type SummaryInput = {
@@ -21,13 +26,23 @@ export type SummaryInput = {
   sessionNumber?: number;
   durationMs?: number;
   /**
-   * How THIS capture was transcribed: true iff the audio went to the cloud (Groq) for ASR, false when
-   * the on-device mock transcriber produced it (the `mock://` sample-audio and no-live-mic paths are
-   * on-device even with keys configured). Absent → treated as on-device, because a cloud hop we can't
-   * prove is never claimed. Feeds the note's `sourceLine`, which reports the transcription and the
-   * drafting hop separately rather than collapsing both onto the app-wide config.
+   * Did this capture's audio leave the device? True from the moment the upload is issued, so a cloud
+   * call that fails afterwards is still disclosed. Absent → nothing was sent.
    */
-  transcribedInCloud?: boolean;
+  audioLeftDevice?: boolean;
+  /**
+   * Is the `transcript` above what the cloud transcriber returned? True only on a successful cloud
+   * transcription; false for the on-device mock and for anything the clinician typed or pasted. These
+   * are two different facts — an upload can succeed and the transcription still fail — and the note's
+   * `sourceLine` reports each one from its own truth rather than collapsing them.
+   */
+  transcriptFromCloud?: boolean;
+  /**
+   * Is this the built-in `mock://` demo clip rather than a session with a real person in it? Only the
+   * sample may receive the on-device stub's canned walkthrough content; see `MockSummarizationService`.
+   * Absent → treated as a real session, so the safe mode is the default.
+   */
+  sampleCapture?: boolean;
 };
 
 export interface SummarizationService {
@@ -76,14 +91,37 @@ Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY this shape
   "reviewCodes": [ { "code": "e.g. F41.1", "label": "human-readable label", "relevance": "high|med|low" } ]
 }`;
 
+/**
+ * GroqSummarizationService — DEMO-mode drafting (llama-3.3-70b) via the server-side groq-proxy Edge
+ * Function, NOT Groq directly: the Groq key is a Supabase secret and never ships in the bundle. The
+ * transcript text is POSTed to the proxy with the counselor's Supabase session token; only the
+ * transcript + a bare session number are sent — never the client's name (the proxy also rejects any
+ * payload that carries a client identifier). Not signed in (no token) DELEGATES to the on-device
+ * MockSummarizationService over the same text, which for a real session means its derive-only mode.
+ * That is not fabrication: it restates the clinician's own typed/pasted words and leaves every
+ * section it cannot derive — the assessment, the plan, the prescriptions, the diagnosis chips — as
+ * "review required" rather than inventing them. Inventing a transcript is transcription's job to
+ * refuse (see
+ * `GroqTranscriptionService`, which still rejects). Because the fallback runs `buildDraft` with
+ * `draftedInCloud: false`, a note drafted this way says so, and says a keyword stub wrote it.
+ */
 export class GroqSummarizationService implements SummarizationService {
+  private readonly mock = new MockSummarizationService();
+
   constructor(
-    private readonly apiKey: string,
-    private readonly baseUrl: string,
+    private readonly proxyUrl: string,
+    private readonly getToken: () => Promise<string | null>,
     private readonly model: string,
   ) {}
 
   async summarize(input: SummaryInput, opts?: { signal?: AbortSignal }): Promise<DraftNote> {
+    const token = await this.getToken();
+    // No signed-in session → no server-side cloud path. Draft the text we were given on-device
+    // instead: it is the clinician's own transcript, so nothing is invented, and the fallback stamps
+    // the note drafted-on-device. Refusing here would leave the paste-the-transcript recovery with
+    // nowhere to go.
+    if (!token) return this.mock.summarize(input);
+
     const userPrompt = [
       input.sessionNumber ? `Session number: ${input.sessionNumber}.` : '',
       'Transcript:',
@@ -94,9 +132,9 @@ export class GroqSummarizationService implements SummarizationService {
       .filter(Boolean)
       .join('\n');
 
-    const res = await fetch(`${this.baseUrl}/chat/completions`, {
+    const res = await fetch(`${this.proxyUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         model: this.model,
         temperature: 0.2,
@@ -120,28 +158,52 @@ export class GroqSummarizationService implements SummarizationService {
     } catch {
       parsed = JSON.parse(stripFences(content)) as LlmDraft;
     }
-    return buildDraft(parsed, input);
+    // Reaching here means the proxy call succeeded with a real session token, so the cloud drafting
+    // hop demonstrably happened — that, not the build-time config, is what the note records.
+    return buildDraft(parsed, input, { draftedInCloud: true });
   }
 }
 
 /**
- * Deterministic on-device fallback so the flow demos with no Groq key. The mock is a stub — it does
- * not run a clinical model — so it must NEVER fabricate a "Denied / clear" risk finding it did not
- * assess (F4-mock-clear). It derives its risk row + structured level from a lightweight scan of the
- * transcript: disclosed ideation → acute, self-harm → elevated, otherwise clear only when nothing was
- * raised. This way a real dictated transcript that discloses ideation is never rated "clear" in
- * no-keys mode (and the live Groq path is unaffected).
+ * Deterministic on-device drafting. It is a STUB — no clinical model runs — so it must never fabricate
+ * a "Denied / clear" risk finding it did not assess (F4-mock-clear); it derives the risk row + tier
+ * from a lightweight scan of the transcript (disclosed ideation → acute, self-harm → elevated, clear
+ * only when nothing was raised), so a real dictated transcript that discloses ideation is never rated
+ * "clear" here.
+ *
+ * WHAT IT MAY WRITE depends on WHOSE session it is — decided per call from `input.sampleCapture`, not
+ * from how the build is configured, because both configurations can hand it either kind of session:
+ *  • The built-in `mock://` SAMPLE (`sampleCapture: true`) is a demo clip with no real person in it,
+ *    so the stub fills a complete walkthrough note — a placeholder assessment, plan bullets and a
+ *    working code chip. That content is scaffolding for a demo, not a finding about anyone.
+ *  • ANY OTHER session is real, whatever the build. The same scaffolding there would be invented
+ *    clinical content attached to a real client — an anxiety code and prescriptions nobody derived
+ *    from the session — so the stub emits ONLY what the transcript supports (subjective, objective,
+ *    the risk scan) and leaves assessment, plan, prescriptions and codes at `NOT_CAPTURED` for the
+ *    clinician to complete. The note's source line says a keyword stub wrote it, so "drafted on this
+ *    device" is never mistaken for an on-device model.
+ * Defaulting the flag to absent means a caller that forgets it gets the safe mode.
  */
 export class MockSummarizationService implements SummarizationService {
   async summarize(input: SummaryInput): Promise<DraftNote> {
     const t = input.transcript.replace(/\s+/g, ' ').trim();
     const sentences = t ? t.split(/(?<=[.!?])\s+/).slice(0, 8) : [];
-    const first = sentences.slice(0, 3).join(' ') || 'The client reported on the week since the last session.';
-    const rest = sentences.slice(3, 6).join(' ') || 'Engaged and reflective throughout; no acute distress observed.';
+    const first = sentences.slice(0, 3).join(' ');
+    const rest = sentences.slice(3, 6).join(' ');
     const riskSafety = scanTranscriptRisk(t);
+
+    if (input.sampleCapture !== true) {
+      const draft: LlmDraft = {
+        subjective: { body: first ? [first] : [], quote: '' },
+        objective: { body: rest ? [rest] : [] },
+        riskSafety,
+      };
+      return buildDraft(draft, input, { draftedInCloud: false, keywordStub: true });
+    }
+
     const draft: LlmDraft = {
-      subjective: { body: [first], quote: '' },
-      objective: { body: [rest] },
+      subjective: { body: [first || 'The client reported on the week since the last session.'], quote: '' },
+      objective: { body: [rest || 'Engaged and reflective throughout; no acute distress observed.'] },
       riskSafety,
       assessment: { body: ['Draft impression pending clinician review. Progress consistent with the working plan.'] },
       plan: {
@@ -149,7 +211,7 @@ export class MockSummarizationService implements SummarizationService {
       },
       reviewCodes: [{ code: 'F41.1', label: 'Generalized anxiety (working)', relevance: 'med' }],
     };
-    return buildDraft(draft, input);
+    return buildDraft(draft, input, { draftedInCloud: false });
   }
 }
 
@@ -277,9 +339,10 @@ function toPrep(bullets: string[]): PrepItem[] {
 }
 
 /**
- * Shown when the model omitted a section. Never backfill omitted sections with plausible clinical
- * content — a synthesized "Denied" or invented prose would attach fabricated findings to a real
- * transcript. The mock service supplies complete sections, so only live-path gaps surface this.
+ * Shown when a section has no content the draft can honestly stand behind. Never backfill it with
+ * plausible clinical content — a synthesized "Denied" or invented prose would attach fabricated
+ * findings to a real transcript. Two things surface it: a gap in the live model's reply, and every
+ * section the `deriveOnly` stub cannot read out of the clinician's own words.
  */
 const NOT_CAPTURED = 'Not captured in this draft — review required';
 
@@ -288,7 +351,12 @@ function nonEmpty(items?: string[]): string[] | null {
   return filtered.length ? filtered : null;
 }
 
-function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
+function buildDraft(
+  d: LlmDraft,
+  input: SummaryInput,
+  origin: { draftedInCloud: boolean; keywordStub?: boolean },
+): DraftNote {
+  const { draftedInCloud, keywordStub = false } = origin;
   const sections: NoteSection[] = [];
 
   sections.push({
@@ -345,17 +413,28 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
   const durMin = input.durationMs ? Math.max(1, Math.round(input.durationMs / 60000)) : null;
   const sessionLabel = input.sessionNumber ? `Session ${input.sessionNumber}` : 'New session';
 
-  // Transcription and drafting are independent hops: the audio can stay on-device (sample audio, no
-  // live mic) while the transcript text is still drafted in the cloud. Report each from its own truth
-  // — per-note capture provenance for transcription, the configured summarizer for drafting — and only
-  // promise "nothing was sent anywhere" when both stayed here.
-  const cloudTranscribed = input.transcribedInCloud === true;
+  // THREE independent facts, never collapsed into one: whether the audio left the device, whether the
+  // text below is machine-transcribed, and where this draft was written. They come apart in practice —
+  // a `mock://` capture is transcribed here yet drafted in the cloud, and an upload that 429s means the
+  // audio left the device while the transcript is the clinician's own typing. Each is reported from
+  // what ACTUALLY ran for this note, never from the build-time config.
+  const cloudTranscript = input.transcriptFromCloud === true;
+  const audioLeft = input.audioLeftDevice === true || cloudTranscript;
   const where = (cloud: boolean) => (cloud ? 'in demo mode (cloud)' : 'on this device');
+
+  const transcriptHop = cloudTranscript
+    ? 'transcribed in demo mode (cloud)'
+    : audioLeft
+      ? 'audio sent to the cloud to transcribe but no transcript came back, so the text was entered by hand'
+      : 'transcribed on this device';
+  const draftHop = keywordStub
+    ? 'drafted on this device by a keyword stub, not a clinical model — assessment, plan and codes are left for you'
+    : `drafted ${where(draftedInCloud)}`;
   const hops =
-    cloudTranscribed === hasGroq
-      ? `transcribed and drafted ${where(hasGroq)}`
-      : `transcribed ${where(cloudTranscribed)}, drafted ${where(hasGroq)}`;
-  const tail = !cloudTranscribed && !hasGroq ? 'nothing was sent anywhere' : 'for your review';
+    !keywordStub && audioLeft === cloudTranscript && cloudTranscript === draftedInCloud
+      ? `transcribed and drafted ${where(draftedInCloud)}`
+      : `${transcriptHop}, ${draftHop}`;
+  const tail = !audioLeft && !draftedInCloud ? 'nothing was sent anywhere' : 'for your review';
   const provenance = `${hops} · ${tail}`;
 
   return {
@@ -364,6 +443,9 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
       ? `From a ${durMin}-min voice note · ${provenance}`
       : provenance.charAt(0).toUpperCase() + provenance.slice(1),
     status: 'draft',
+    audioLeftDevice: audioLeft,
+    transcriptFromCloud: cloudTranscript,
+    draftedInCloud,
     riskLevel: toRiskLevel(d.riskSafety?.level),
     sections,
     measures: [],
@@ -376,5 +458,5 @@ function buildDraft(d: LlmDraft, input: SummaryInput): DraftNote {
  * The app-wide summarization handle. Groq-backed when configured, otherwise the on-device mock.
  */
 export const summarizationService: SummarizationService = hasGroq
-  ? new GroqSummarizationService(env.groq.apiKey, env.groq.baseUrl, env.groq.summaryModel)
+  ? new GroqSummarizationService(env.groq.proxyUrl, getAccessToken, env.groq.summaryModel)
   : new MockSummarizationService();

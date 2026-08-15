@@ -39,6 +39,19 @@ export type ActiveRecording = {
   stop: () => Promise<CaptureRef>;
 };
 
+/**
+ * The capture ref for a real recording we could not finalise (no clip to hand back).
+ *
+ * It is deliberately NOT a `mock://` uri. `mock://` means "the built-in sample clip, with no real
+ * person in it", and that is what licenses the canned transcript and the canned walkthrough note —
+ * so labelling a failed REAL recording as the sample would put invented words and an invented
+ * diagnosis on an actual client. This uri routes through the ordinary real-capture path instead,
+ * which refuses to transcribe and lands the clinician in the type/paste recovery.
+ */
+export function failedCaptureRef(durationMs = 0): CaptureRef {
+  return { uri: 'capture://unavailable', durationMs };
+}
+
 /** Begin microphone capture (web). Rejects if the mic is denied or unsupported. */
 export async function startRecording(): Promise<ActiveRecording> {
   if (!isRecordingSupported()) throw new Error('Recording is not supported on this platform.');
@@ -53,18 +66,39 @@ export async function startRecording(): Promise<ActiveRecording> {
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data);
   };
+
+  // The recorder can stop WITHOUT us asking: when every track of the captured stream ends (mic
+  // unplugged, permission revoked mid-session, device switch) it fires `stop` and goes `inactive` on
+  // its own. Attaching the handler here, before `start`, means that clip is still captured — and a
+  // later `recorder.stop()` then throws InvalidStateError against an already-finished recording,
+  // which must not be allowed to look like a capture failure. The counselor's audio is in `chunks`
+  // either way, so settle from there exactly once.
+  let settled = false;
+  let resolveClip: (ref: CaptureRef) => void;
+  const clip = new Promise<CaptureRef>((resolve) => {
+    resolveClip = resolve;
+  });
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    stream.getTracks().forEach((t) => t.stop());
+    const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+    resolveClip({ uri: URL.createObjectURL(blob), durationMs: Date.now() - startedAt });
+  };
+
+  recorder.onstop = finish;
   recorder.start();
 
   return {
-    stop: () =>
-      new Promise<CaptureRef>((resolve) => {
-        recorder.onstop = () => {
-          stream.getTracks().forEach((t) => t.stop());
-          const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
-          resolve({ uri: URL.createObjectURL(blob), durationMs: Date.now() - startedAt });
-        };
-        recorder.stop();
-      }),
+    stop: async () => {
+      try {
+        if (recorder.state !== 'inactive') recorder.stop();
+        else finish();
+      } catch {
+        finish();
+      }
+      return clip;
+    },
   };
 }
 

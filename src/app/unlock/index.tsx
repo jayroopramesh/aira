@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Animated, Easing, Pressable, View } from 'react-native';
 import {
@@ -22,6 +22,25 @@ import { recoveryStrings as R } from '../../strings/recovery';
 
 type Phase = 'login' | 'wrong' | 'decrypting';
 
+const HOME = '/(app)/today';
+
+/**
+ * Where to land after a successful unlock. A caller inside the app can hand us a `next` route (the
+ * capture screen does this when cloud transcription needs a real session), but only an in-app route
+ * is honoured — a deep link must never be able to bounce the counselor to an arbitrary destination.
+ */
+function safeNext(next?: string): string {
+  if (!next) return HOME;
+  const decoded = (() => {
+    try {
+      return decodeURIComponent(next);
+    } catch {
+      return '';
+    }
+  })();
+  return decoded.startsWith('/(app)/') ? decoded : HOME;
+}
+
 /**
  * Unlock — username + password (round-2 change #1, replacing the passcode keypad). A calm
  * wrong-password state (nothing is locked out) exposes an inline recovery-code fallback, and
@@ -29,6 +48,7 @@ type Phase = 'login' | 'wrong' | 'decrypting';
  */
 export default function UnlockScreen() {
   const router = useRouter();
+  const { next } = useLocalSearchParams<{ next?: string }>();
   const [phase, setPhase] = useState<Phase>('login');
   // Prefill ONLY the account's own (persisted) email, never a demo identity, and never a password —
   // a returning user must not be handed someone else's credentials (F17). knownEmail is persisted at
@@ -54,20 +74,26 @@ export default function UnlockScreen() {
   const [recoveryCode, setRecoveryCode] = useState('');
   const [recoveryError, setRecoveryError] = useState(false);
 
-  const goDecrypt = useCallback(() => {
-    setPhase('decrypting');
-    setTimeout(() => router.replace('/(app)/today'), 1500);
-  }, [router]);
+  const goDecrypt = useCallback(
+    (dest: string) => {
+      setPhase('decrypting');
+      setTimeout(() => router.replace(dest as Parameters<typeof router.replace>[0]), 1500);
+    },
+    [router],
+  );
 
   const signIn = useCallback(async () => {
     const res = await authService.signIn(username, password);
-    if (res.ok) goDecrypt();
+    if (res.ok) goDecrypt(safeNext(next));
     else setPhase('wrong');
-  }, [username, password, goDecrypt]);
+  }, [username, password, next, goDecrypt]);
 
+  // Recovery-code unlock opens the local vault but mints NO Supabase session, so it deliberately
+  // ignores `next`: sending the counselor back to a screen that needs a cloud session would just
+  // reproduce the failure they came here to fix.
   const unlockWithRecovery = useCallback(async () => {
     const res = await authService.signInWithRecoveryCode(recoveryCode);
-    if (res.ok) goDecrypt();
+    if (res.ok) goDecrypt(HOME);
     else setRecoveryError(true);
   }, [recoveryCode, goDecrypt]);
 

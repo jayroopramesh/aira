@@ -1,0 +1,11 @@
+# Supabase project config — only the bits this repo needs for the groq-proxy Edge Function.
+# The project ref is set at link time (supabase link --project-ref …); it is not committed here.
+
+project_id = "aira"
+
+[functions.groq-proxy]
+# We verify the caller's session JWT ourselves inside the function (see supabase/functions/groq-proxy/
+# index.ts) so that anonymous/anon-key callers receive our own clear JSON 401, and so the identifier
+# guard and rate limit run for every request. Do NOT set this to true — the platform pre-check would
+# also accept the anon publishable key (a valid JWT), which our in-code check rejects.
+verify_jwt = false
