@@ -2,6 +2,11 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    "allowImportingTsExtensions": true,
+    // TypeScript 6 no longer auto-includes every `node_modules/@types` package, so the jest globals
+    // used by `src/**/*.test.tsx` have to be named. Purely additive — nothing was auto-included
+    // before this (verify with `tsc --listFilesOnly | grep node_modules/@types`).
+    "types": ["jest"],
     "paths": {
       "@/*": [
         "./src/*"

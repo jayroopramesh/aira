@@ -141,6 +141,16 @@ export function PhoneIcon({ size = 18, color = 'currentColor', strokeWidth = 2 }
   );
 }
 
+/** Globe — the "opens your browser" action (Escalate's website links). */
+export function GlobeIcon({ size = 18, color = 'currentColor', strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg {...base(size, strokeWidth)} stroke={color}>
+      <Path d="M12 21a9 9 0 100-18 9 9 0 000 18z" />
+      <Path d="M3 12h18M12 3a13 13 0 010 18M12 3a13 13 0 000 18" />
+    </Svg>
+  );
+}
+
 export function MoonIcon({ size = 20, color = 'currentColor', strokeWidth = 2 }: IconProps) {
   return (
     <Svg {...base(size, strokeWidth)} stroke={color}>
