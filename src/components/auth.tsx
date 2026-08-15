@@ -284,7 +284,7 @@ export function PagerDots({ count, active }: { count: number; active: number }) 
   );
 }
 
-/** The standing "Encrypted with your login" vault line. */
+/** The standing "Stored on this device · unlocked with your login" vault line. */
 export function VaultLine({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
   return (
     <Row gap={8} style={{ marginTop: 22, justifyContent: 'center' }}>

@@ -44,7 +44,8 @@ function safeNext(next?: string): string {
 /**
  * Unlock — username + password (round-2 change #1, replacing the passcode keypad). A calm
  * wrong-password state (nothing is locked out) exposes an inline recovery-code fallback, and
- * a decrypt transition opens the vault. "Encrypted with your login" throughout.
+ * a brief transition opens the vault. "Stored on this device · unlocked with your login"
+ * throughout — the vault is not encrypted today, so the copy claims only what's true.
  */
 export default function UnlockScreen() {
   const router = useRouter();

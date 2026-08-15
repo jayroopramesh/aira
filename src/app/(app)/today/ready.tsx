@@ -51,7 +51,7 @@ export default function ReadyScreen() {
           />
         </Row>
         <View style={{ height: 18 }} />
-        <TrustPill label="Prep & notes stay encrypted on this device" icon={<ShieldIcon size={14} color={c.brand} />} />
+        <TrustPill label="Prep & notes stay on this device" icon={<ShieldIcon size={14} color={c.brand} />} />
       </Card>
     </Screen>
   );
