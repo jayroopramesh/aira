@@ -453,7 +453,9 @@ src/
       patterns/        Patterns: caseload → client patterns → history → risk review → safety plan
       settings/        demo-services status, load sample data / clear all data, sign out
   components/          mascot moods (mascotMoods), auth surface, DemoBanner, ZeroState, Highlights, charts, waveform, escalate sheet, ui primitives
-  config/              env.ts (EXPO_PUBLIC_* + hasSupabase/hasGroq flags, crisis line / on-call contacts)
+                       __tests__/ — the jest render-and-press lane (component wiring, run by `npm test`)
+  config/              env.ts (EXPO_PUBLIC_* + hasSupabase/hasGroq flags, crisis line / on-call contacts),
+                       escalateContacts.ts (the Escalate sheet's sections + resolved tel:/https:/mailto:/route targets)
   theme/               tokens + ThemeProvider
   data/                types, sample fixtures (no PHI), assessment scales, repository + reactive DataProvider,
                        sessionClient/saveSession (the pure capture → match/fold/mint identity decision)
