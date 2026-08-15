@@ -41,7 +41,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "node scripts/provenance-harness.mjs && node --experimental-strip-types scripts/persist-race-harness.mjs && node --experimental-strip-types scripts/risk-floor-harness.mjs && node scripts/groq-proxy-harness.mjs"
   },
   "private": true
 }

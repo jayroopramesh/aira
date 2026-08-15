@@ -1,0 +1,41 @@
+# Aira app CI. Runs with no secrets configured -- the app is designed to degrade to
+# on-device mocks when EXPO_PUBLIC_* keys are absent, so a green run here proves nothing
+# depends on a key being present.
+#
+# Lint is intentionally NOT included: `expo lint` (ESLint + eslint-config-expo) surfaces
+# 17 real react-hooks/refs errors against current main (refs read during render in
+# Waveform.tsx, mascotMoods.tsx, and the session screen). Fixing those is an application
+# behaviour change, out of scope for a CI-only PR -- see the PR description.
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.2"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npm test
+
+      - name: Web build
+        run: npx expo export --platform web
