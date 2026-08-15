@@ -30,9 +30,11 @@ renamed.
 > boots **blank** (zero-states everywhere; load the sample cohort from Settings). Behind the existing
 > seams, accounts run against **Supabase** and transcription/summarization against **Groq**
 > (whisper-large-v3 + llama-3.3-70b); with no keys the app degrades to on-device mocks. Clinical data
-> stays device-local. Crypto is still stubbed. See [Demo-mode live services](#demo-mode-live-services)
-> and [Service seams](#service-seams). The recovery-key policy is captain-resolved
-> (see [Locked v1 constraints](#locked-v1-constraints)).
+> stays device-local. Crypto is still stubbed. The build is an **invite-only beta preview**: a
+> standing banner on every screen says it is not a live medical service, and the web export is
+> noindexed (details in `AGENTS.md` → "Invite-only beta preview"). See
+> [Demo-mode live services](#demo-mode-live-services) and [Service seams](#service-seams). The
+> recovery-key policy is captain-resolved (see [Locked v1 constraints](#locked-v1-constraints)).
 
 <p align="center">
   <img src="docs/screenshots/mobile/01-onboarding-light.png" alt="Welcome onboarding with mascot hero, phone (light)" width="32%" />
@@ -462,8 +464,9 @@ src/
       session/         Session summary: capture → recording → analysing → review (SOAP)
       patterns/        Patterns: caseload → client patterns → history → risk review → safety plan
       settings/        demo-services status, load sample data / clear all data, sign out
-  components/          mascot moods (mascotMoods), auth surface, DemoBanner, ZeroState, Highlights, charts, waveform, escalate sheet, ui primitives
-                       __tests__/ — the jest render-and-press lane (component wiring, run by `npm test`)
+    __tests__/         root-layout wiring test (jest) — the WIP preview banner mounts once for every route
+  components/          mascot moods (mascotMoods), auth surface, DemoBanner, WipBanner, ZeroState, Highlights, charts, waveform, escalate sheet, ui primitives
+                       __tests__/ — jest render-and-press tests (component wiring, run by `npm test`)
   config/              env.ts (EXPO_PUBLIC_* + hasSupabase/hasGroq flags, crisis line / on-call contacts),
                        escalateContacts.ts (the Escalate sheet's sections + resolved tel:/https:/mailto:/route targets)
   theme/               tokens + ThemeProvider
