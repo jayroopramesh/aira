@@ -47,7 +47,13 @@ export const recoveryStrings = {
   // Decrypt transition
   decryptingEyebrow: 'Signed in',
   decryptingTitle: 'Opening your vault…',
-  decryptingSubtitle: 'Signing in reaches Airava’s servers; your notes stay on this device.',
+  // Two subtitles because only ONE of the two unlock paths reaches a server. A password sign-in on a
+  // build with accounts configured does send the password to Supabase, and item 5 says so plainly.
+  // A recovery-code unlock checks a hash stored right here, and a keyless build is device-local end
+  // to end — telling those clinicians something reached a server would just be the opposite lie. The
+  // screen picks by the observed `reachedServer` fact, never by how the build is configured.
+  decryptingSubtitleServer: 'Signing in reaches Airava’s servers; your notes stay on this device.',
+  decryptingSubtitleLocal: 'Opening your notes on this device — nothing left it to sign you in.',
   decryptingVaultLine: 'Stored on this device · unlocked with your login',
 
   // Welcome · onboarding
