@@ -211,8 +211,10 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
       real one. The record that fork mints carries **no** Emirates ID: the id was just ruled to be
       someone else's, and a second holder of the key would let the next blank-name capture fold into the
       wrong one — the very merge the fork prevented. One key, one holder.
-    - Every veto mints a SEPARATE record — the safe residual, since a mistyped digit forking a client is
-      recoverable and merging two patients is not — but none is silent. `findNameConflict` and
+    - Every veto mints a SEPARATE record. That is the SAFE direction by the asymmetry of harm: a fork
+      leaves two truthful records that a future repair surface can reconcile, while merging two patients
+      destroys whose note, plan, timeline and risk tier is whose and nothing can undo it. None of the
+      vetoes is silent. `findNameConflict` and
       `findIdNameMismatch` are the exact complements of the branches that declined (so the app cannot
       refuse to fold for a reason it fails to explain), `saveSessionNote` returns `nameConflict` /
       `idNameConflict`, and review carries the matching caution — the id-under-another-name warning wins

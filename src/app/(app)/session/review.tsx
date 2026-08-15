@@ -309,8 +309,8 @@ export default function ReviewNote() {
             {idOnFileUnderAnotherName ? (
               <IdentityNotice tone="caution" strong heading="Check the Emirates ID.">
                 That Emirates ID is already on your caseload under a different name, so this session was kept
-                as a separate record rather than added to theirs. If you mistyped it, the correct ID on the
-                next session will file it with the right client.
+                as a separate record rather than added to theirs. Check the ID for a mistake — this note stays
+                on its own record either way.
               </IdentityNotice>
             ) : null}
 

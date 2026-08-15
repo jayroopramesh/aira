@@ -349,9 +349,9 @@ function PreCapture({
           ) : null}
           <AppText variant="small" color="ink3" style={{ marginTop: 8, fontSize: 11.5, lineHeight: 16 }}>
             The captured session is added to your caseload afterwards. A valid Emirates ID (784 + 12 digits)
-            files it with the client already saved under that ID. Without one, the session is matched by name to
-            a client you’ve already captured. A new record is created only when nothing matches. It stays on
-            this device.
+            files it with the client saved under that ID when the name agrees too; if the ID is on file under a
+            different name, a separate record is created and you’ll be told. Without an ID, the session is
+            matched by name to a client you’ve already captured. It stays on this device.
           </AppText>
         </Card>
       )}
