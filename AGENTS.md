@@ -97,7 +97,10 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   `{text: ""}` is not a transcript either, so `transcriptFromCloud` needs non-empty text. None derive
   from `hasGroq`, so a note can never claim — or deny — a hop that did not match reality. `buildDraft`
   owns all three; the `sourceLine` expression they feed is proved by `scripts/provenance-harness.mjs`,
-  which exists because it was re-derived wrongly in three successive fix rounds.
+  which exists because it was re-derived wrongly in three successive fix rounds. `buildDraft` also
+  stamps the note's `transcript` (trimmed; blank = absent) from the input it drafted, so the review
+  screen's Transcript tab is fed by every `summarize()` path instead of by one UI call site
+  re-attaching it — never reintroduce that graft.
 - **Cloud reachability is a runtime question**: `cloudSessionReady()` (`cloudSession.ts`) = proxy
   configured AND a live token. The capture screen asks it before the mic opens and says plainly when
   the cloud is unreachable; it never gates recording. Signing in cannot rescue a capture already

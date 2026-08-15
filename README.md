@@ -14,8 +14,10 @@
 
 Airava is a privacy-first documentation and longitudinal-insight app for mental-health counselors: a
 post-session scribe that turns a recorded session into a draft SOAP note, then surfaces
-plain-language patterns across a caseload over time. Patient data stays **on the counselor's own
-device**, encrypted under a password only they hold — nothing is synced to a server.
+plain-language patterns across a caseload over time. Notes and client records are stored **only on
+the counselor's own device**, behind their login — nothing is synced to a server. (The vault is not
+encrypted yet, and no in-app copy claims it is — see
+[What is live vs stubbed](#what-is-live-vs-stubbed).)
 
 This repository is the **Expo (React Native) application** — the production app that realises the
 approved click-through prototype. Expo **replaces** the earlier SvelteKit plan as *the* Airava app
@@ -49,7 +51,7 @@ Five workflows, built to the s4 prototype's steps and phone-adapted:
 | Workflow | Steps |
 |---|---|
 | **Welcome** (boots here when signed out) | onboarding (post-session "personal scribe" framing; endowed setup progress bar, prefilled 20% → 45% → 72% → 100%) → create account (Emirates ID + "why?", phone, name, email, password; an email that **already has an account** stops here and routes to sign-in instead of minting a second recovery code) → one-time recovery code (reveal once, copy/save, "I saved it" gate) → login |
-| **Unlock** | login (username + password, "Encrypted with your login", HIPAA-aligned trust note; a calm "you already have an account" notice with the email prefilled when arriving from create-account) → calm wrong-password state (inline recovery-code fallback) → decrypt transition |
+| **Unlock** | login (username + password, "Stored on this device · unlocked with your login", HIPAA-aligned trust note; a calm "you already have an account" notice with the email prefilled when arriving from create-account) → calm wrong-password state (inline recovery-code fallback) → opening-vault transition (whose copy says whether signing in actually reached a server, observed from the sign-in that just ran — a recovery-code unlock and a keyless build are device-local, and neither claims a hop) |
 | **Get ready** | day dashboard (countdown, session cards) → client drawer (scores, timeline, last plan, editable patient-details card that persists device-local, mock SALAMA/EHR connection card with a persistent no-external-system disclaimer) → read-only prep reminder → ready state |
 | **Session summary** | pre-capture (read-only reminders; a new client's name plus an **optional Emirates ID** — the local caseload's uniqueness key, see [Duplicate identity](#duplicate-identity); record, upload a clip, or use sample audio) → recording (waveform + timer, timestamp-synced comment-card strip with a dotted add-first card, trust note; transcription is one-shot on stop — no live readout) → analysing (editable transcript; a silent/near-empty capture is refused rather than drafted, and a dismissible banner flags a transcript that doesn't read like clinical text) → note with SOAP/DAP format switcher (SOAP: S · O · Risk & Safety · A · P; DAP merges S+O into one D — Data section, derived so content never diverges; three-pane on web, stacked on phone) → per-section inline edit (each section's **Done** persists through the vault seam, and an edit still open when the clinician signs is flushed into the note that gets signed) → Prescriptions rail → sign-off (attributed to the signed-in clinician, stamped when they sign) → audio-trust moment (delete-by-default, keep toggle). **Copy note** (on the draft action bar and again under the signed note, for the EHR paste) writes the whole note as plain text — draft-marked when unsigned, attested when signed — and confirms only after a real clipboard write; where the platform has no clipboard it is disabled and says why, never a silent no-op. The reviewed transcript is saved **with** the note (same device-local vault seam, same retention), and the note's **Transcript** tab shows that real text; a note with no stored transcript — sample data, or notes captured before transcripts were saved — says so plainly rather than standing in placeholder prose. Up to **3 notes per client** are retained, newest first — the session rail switches between them. |
 | **Patterns** | caseload table (search, status chips, sparklines with a dashed first-reading baseline, sober risk column carried over from each note's risk tier, Outreach mailto templates that grey out once used; tiles computed from the caseload itself) → client patterns (plain-language headline *before* charts; multi-scale tabs PHQ-9 · GAD-7 · MHI-5 · DASS-21 with a muted dashed "Caseload avg" comparison stroke + legend; sparse ≤2-reading dot-strip rule kept per scale; companion-app journal box) → history timeline (with the retained notes) → acute-risk review (reachable for **any** client rated acute, including one the app flagged from a captured session; with no structured safety snapshot on file it says so and points at the session note rather than inventing one, while still offering escalation and the safety plan) → safety-plan viewer |
@@ -180,6 +182,11 @@ src/theme/
 - Motion `fast` 120 ms; mascot floats on a 5.5 s bob; reduced-motion is respected.
 - Risk is **clay, never alarm-red**, and colour is never the only signal — always paired with a word.
 - Sparse series (≤ 2 readings) render as a **dot-strip with no trend line** (a correctness rule).
+- Longitudinal charts space points **proportionally to real elapsed time**, never by reading index, so
+  a 2-week gap and a 3-month gap cannot draw the same width (`src/data/chartLayout.ts`; a series with
+  no dates falls back to the old equal spacing). Clustered readings keep a minimum marker gap, and
+  where captions would collide the *labels* are thinned — the points are never displaced to make room.
+  Executable: `node scripts/chart-axis-harness.mjs`.
 
 ---
 
@@ -361,8 +368,11 @@ that a named person is in therapy. The full rule, veto by veto, is in `AGENTS.md
 
 ## Service seams
 
-Patient data never leaves the device. These foundations sit behind interfaces so implementations slot
-in without touching callers (see live wiring above; crypto is still a mock).
+Notes and client records are persisted only on the device — in demo mode session audio and transcript
+text do go to Groq for transcription and drafting (see
+[Demo-mode live services](#demo-mode-live-services)), which is what the in-app banner and copy say.
+These foundations sit behind interfaces so implementations slot in without touching callers (see live
+wiring above; crypto is still a mock).
 
 ### Auth / session — `src/services/auth.ts`
 - `AuthService` is the account + session seam in front of the vault. It models the captain-approved
