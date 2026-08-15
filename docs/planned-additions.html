@@ -175,13 +175,12 @@
     content: ''; flex: 1; height: 1px; background: var(--line-soft);
   }
 
-  /* ---- Cards grid -------------------------------------------------------- */
+  /* ---- Cards ------------------------------------------------------------- */
+  /* Two column-flowed lanes so each card hugs its own content instead of being
+     stretched to a shared row height — no half-empty boxes. */
   .grid {
-    flex: 1;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-auto-rows: 1fr;
-    gap: 9px;
+    columns: 2;
+    column-gap: 9px;
   }
   .card {
     background: var(--sand);
@@ -192,6 +191,8 @@
     display: flex;
     gap: 11px;
     align-items: flex-start;
+    break-inside: avoid;
+    margin-bottom: 9px;
   }
   .icon {
     flex: 0 0 auto;
@@ -223,27 +224,10 @@
     margin-top: 1px;
   }
 
-  .planned-tag {
-    display: inline-block;
-    font-size: 8.5px; font-weight: 600; letter-spacing: 0.5px;
-    text-transform: uppercase;
-    color: var(--brand-strong);
-    background: var(--brand-bg);
-    border: 1px solid var(--brand-bd);
-    border-radius: 999px;
-    padding: 1.5px 7px;
-    margin-top: 7px;
-  }
-
   /* ---- Footer ------------------------------------------------------------ */
   .foot {
     margin-top: 12px;
-    display: flex; align-items: center; gap: 10px;
     font-size: 10px; line-height: 14px; color: var(--ink3);
-  }
-  .foot .empty-box {
-    width: 13px; height: 13px; border-radius: 4px;
-    border: 2px solid var(--brand-bd); flex: 0 0 auto;
   }
   .foot b { color: var(--ink2); font-weight: 600; }
 </style>
@@ -278,7 +262,6 @@
         <div class="body">
           <div class="card-title">End-to-end encryption of records</div>
           <div class="card-desc">Keyed to the therapist's identity plus a device-bound factor, so records are readable only on the therapist's own device. Today records are stored on-device but not encrypted.</div>
-          <span class="planned-tag">Planned</span>
         </div>
         <div class="check"></div>
       </div>
@@ -288,7 +271,6 @@
         <div class="body">
           <div class="card-title">UAE-region hosting</div>
           <div class="card-desc">Migrate to Azure in the UAE once operational. Accounts are currently hosted in India, where Airava is also hiring engineers.</div>
-          <span class="planned-tag">Planned</span>
         </div>
         <div class="check"></div>
       </div>
@@ -298,7 +280,6 @@
         <div class="body">
           <div class="card-title">On-device transcription &amp; summaries</div>
           <div class="card-desc">Replace the cloud AI service so session audio and notes never leave the device.</div>
-          <span class="planned-tag">Planned</span>
         </div>
         <div class="check"></div>
       </div>
@@ -308,7 +289,6 @@
         <div class="body">
           <div class="card-title">Secure record transfer</div>
           <div class="card-desc">A request-and-approval flow for handing a client's history to another practitioner.</div>
-          <span class="planned-tag">Planned</span>
         </div>
         <div class="check"></div>
       </div>
@@ -318,7 +298,6 @@
         <div class="body">
           <div class="card-title">SALAMA connect</div>
           <div class="card-desc">Integration with the Dubai health record system.</div>
-          <span class="planned-tag">Planned</span>
         </div>
         <div class="check"></div>
       </div>
@@ -328,7 +307,6 @@
         <div class="body">
           <div class="card-title">Regulatory registration &amp; review</div>
           <div class="card-desc">Confirm the applicable regulatory class and complete UAE PDPL counsel review before Airava handles real patient data beyond the pilot.</div>
-          <span class="planned-tag">Planned</span>
         </div>
         <div class="check"></div>
       </div>
@@ -338,7 +316,6 @@
         <div class="body">
           <div class="card-title">Dual-approval key recovery</div>
           <div class="card-desc">Escrowed decryption keys released only on the joint approval of the treating therapist and Airava's Chief Medical Officer.</div>
-          <span class="planned-tag">Planned</span>
         </div>
         <div class="check"></div>
       </div>
@@ -348,14 +325,12 @@
         <div class="body">
           <div class="card-title">Duplicate-record repair</div>
           <div class="card-desc">An in-app way to merge or correct client records that were split by a mistyped Emirates ID.</div>
-          <span class="planned-tag">Planned</span>
         </div>
         <div class="check"></div>
       </div>
     </div>
 
     <div class="foot">
-      <span class="empty-box"></span>
       <span>An <b>unchecked box</b> means not built yet. Airava will only mark an item done here when it is genuinely shipped — this sheet exists to be honest about the gap, not to imply progress.</span>
     </div>
   </div>
