@@ -17,6 +17,54 @@ function initialsOf(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+const normalizeName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/**
+ * Canonicalise an Emirates ID for COMPARISON only (the raw typed value is what gets stored): drop
+ * every separator — spaces, dashes, dots — and case, so "784-1988-1234567-1", "784 1988 1234567 1"
+ * and "78419881234567 1" all collapse to the same key. Purely local; the value never leaves the
+ * device (captain scope, 2026-08-15).
+ */
+export function normalizeEmiratesId(raw: string): string {
+  return raw.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Decide which EXISTING caseload client (if any) a capture belongs to, so a second record is never
+ * minted for someone already on the caseload. Priority:
+ *   1. an explicit clientId (the day board / client file opened the capture) — matched by id;
+ *   2. an Emirates ID already on the caseload — the local uniqueness key for a patient. This is the
+ *      duplicate-patient guard: adding a client whose Emirates ID exists must open the existing record,
+ *      not create a second (captain scope: local caseload only);
+ *   3. a non-blank typed name against a prior CAPTURED client ('s-' ids) — the pre-existing F3 fold.
+ * Returns undefined when nothing matches (the caller mints a fresh client). An explicit clientId that
+ * no longer exists returns undefined too, so the caller can keep the note under that id.
+ */
+export function matchExistingClient(
+  clients: Client[],
+  opts: { clientId?: string; name?: string; emiratesId?: string },
+): { client: Client; matchedBy: 'id' | 'emiratesId' | 'name' } | undefined {
+  if (opts.clientId) {
+    const byId = clients.find((cl) => cl.id === opts.clientId);
+    return byId ? { client: byId, matchedBy: 'id' } : undefined;
+  }
+  const emid = opts.emiratesId?.trim();
+  if (emid) {
+    const key = normalizeEmiratesId(emid);
+    // A blank/punctuation-only entry normalises to '' — never treat that as a match key.
+    if (key) {
+      const byEmid = clients.find((cl) => cl.emiratesId && normalizeEmiratesId(cl.emiratesId) === key);
+      if (byEmid) return { client: byEmid, matchedBy: 'emiratesId' };
+    }
+  }
+  const typedName = opts.name?.trim();
+  if (typedName) {
+    const byName = clients.find((cl) => cl.id.startsWith('s-') && normalizeName(cl.name) === normalizeName(typedName));
+    if (byName) return { client: byName, matchedBy: 'name' };
+  }
+  return undefined;
+}
+
 /**
  * The caseload risk tier for a captured session (F4). The caseload risk queue is what a counselor
  * scans to decide who needs attention, so it must reflect what the note documents — never a hardcoded
@@ -248,16 +296,20 @@ function planFromNote(note: DraftNote, dateLabel: string): PrepItem[] {
 export function clientFromSession(
   id: string,
   note: DraftNote,
-  opts: { name: string; sessionNumber: number; dateLabel: string },
+  opts: { name: string; sessionNumber: number; dateLabel: string; emiratesId?: string },
 ): Client {
   const subjective = note.sections.find((s) => s.marker === 'S');
   const summary = subjective?.body?.[0] ?? 'New session captured today.';
+  // Store the Emirates ID EXACTLY as typed (spacing/dashes kept) — comparison normalises, storage
+  // preserves. A blank/whitespace-only entry stays undefined so it never becomes a false match key.
+  const emiratesId = opts.emiratesId?.trim() ? opts.emiratesId.trim() : undefined;
 
   return {
     id,
     name: opts.name,
     initials: initialsOf(opts.name),
     tokenId: id.slice(0, 6),
+    emiratesId,
     age: null,
     status: 'intake',
     risk: riskFromNote(note),

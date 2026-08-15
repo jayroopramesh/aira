@@ -16,7 +16,7 @@ import {
 } from '../../components/auth';
 import { InfoIcon } from '../../components/icons';
 import { hasSupabase } from '../../config/env';
-import { authService } from '../../services/auth';
+import { AccountExistsError, authService } from '../../services/auth';
 import { AppText, Row } from '../../components/ui';
 import { recoveryStrings as R } from '../../strings/recovery';
 
@@ -46,6 +46,13 @@ export default function WelcomeCreate() {
       await authService.createAccount({ emiratesId, phone, fullName, email, password });
       router.push('/welcome/recovery');
     } catch (e) {
+      // Already-registered is NOT a form error to retry — the account (and the saved recovery code)
+      // already exist. Send them to sign in with the email prefilled and a calm notice, rather than
+      // silently minting a new code over the one they saved.
+      if (e instanceof AccountExistsError) {
+        router.replace(`/unlock?notice=account-exists&email=${encodeURIComponent(e.email)}`);
+        return;
+      }
       setError((e as Error).message || 'Could not create the account. Please check the details and try again.');
     } finally {
       setSubmitting(false);

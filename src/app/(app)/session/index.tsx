@@ -75,6 +75,9 @@ export default function SessionCapture() {
 
   const [phase, setPhase] = useState<Phase>('precapture');
   const [name, setName] = useState('');
+  // Optional Emirates ID for a NEW client — the local uniqueness key. When it matches someone already
+  // on the caseload the capture folds into that record instead of minting a duplicate patient.
+  const [emiratesId, setEmiratesId] = useState('');
   const capture = useRef<CaptureRef | null>(null);
   const recording = useRef<ActiveRecording | null>(null);
   // Asked once for the whole screen so the pre-capture notice, the in-flight recording copy and the
@@ -133,8 +136,14 @@ export default function SessionCapture() {
   };
 
   const onDrafted = async (note: DraftNote) => {
-    const id = await saveSessionNote(note, { clientId: client?.id, name: client ? undefined : name });
-    router.replace(`/(app)/session/review?clientId=${id}`);
+    const { clientId: id, isDuplicate } = await saveSessionNote(note, {
+      clientId: client?.id,
+      name: client ? undefined : name,
+      emiratesId: client ? undefined : emiratesId,
+    });
+    // A duplicate Emirates ID folded into an existing client — open that record and tell the counselor
+    // plainly, rather than silently landing on what looks like a brand-new note.
+    router.replace(`/(app)/session/review?clientId=${id}${isDuplicate ? '&existing=1' : ''}`);
   };
 
   const returnTo = client ? `/(app)/session?clientId=${client.id}` : '/(app)/session';
@@ -146,6 +155,8 @@ export default function SessionCapture() {
           client={client}
           name={name}
           onName={setName}
+          emiratesId={emiratesId}
+          onEmiratesId={setEmiratesId}
           onRecord={beginRecording}
           onUpload={onUpload}
           onUseSample={() => goAnalyse(mockCaptureRef())}
@@ -183,6 +194,8 @@ function PreCapture({
   client,
   name,
   onName,
+  emiratesId,
+  onEmiratesId,
   onRecord,
   onUpload,
   onUseSample,
@@ -192,6 +205,8 @@ function PreCapture({
   client: ReturnType<typeof useClient>;
   name: string;
   onName: (v: string) => void;
+  emiratesId: string;
+  onEmiratesId: (v: string) => void;
   onRecord: () => void;
   onUpload: () => void;
   onUseSample: () => void;
@@ -296,8 +311,31 @@ function PreCapture({
               fontSize: 15,
             }}
           />
+          <View style={{ height: 14 }} />
+          <AppText variant="label" color="ink3" uppercase style={{ marginBottom: 8 }}>
+            Emirates ID (optional)
+          </AppText>
+          <TextInput
+            value={emiratesId}
+            onChangeText={onEmiratesId}
+            placeholder="784-XXXX-XXXXXXX-X"
+            placeholderTextColor={c.ink3}
+            keyboardType="numbers-and-punctuation"
+            autoCapitalize="none"
+            style={{
+              borderWidth: 1,
+              borderColor: c.line,
+              borderRadius: theme.radii.sm,
+              paddingVertical: 12,
+              paddingHorizontal: 14,
+              color: c.ink,
+              fontFamily: theme.type.body.fontFamily,
+              fontSize: 15,
+            }}
+          />
           <AppText variant="small" color="ink3" style={{ marginTop: 8, fontSize: 11.5 }}>
-            The captured session is added to your caseload afterwards. Names stay on this device.
+            The captured session is added to your caseload afterwards. If you already see this client, adding
+            their Emirates ID opens their existing record instead of creating a second. It stays on this device.
           </AppText>
         </Card>
       )}

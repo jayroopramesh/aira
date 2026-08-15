@@ -120,7 +120,10 @@ export default function ReviewNote() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const wide = width >= 1040;
-  const { clientId, note: noteParam } = useLocalSearchParams<{ clientId: string; note?: string }>();
+  const { clientId, note: noteParam, existing } = useLocalSearchParams<{ clientId: string; note?: string; existing?: string }>();
+  // Set when this capture's Emirates ID matched a client already on the caseload: the session folded
+  // into that existing record rather than creating a duplicate patient, and we say so plainly.
+  const foldedIntoExisting = existing === '1';
   // Up to 3 notes are retained per client (C4); `note` selects which retained note to review (newest = 0).
   const notes = useClientNotes(clientId);
   const parsedIndex = noteParam ? Number(noteParam) : 0;
@@ -212,6 +215,32 @@ export default function ReviewNote() {
             <AppText variant="small" color="ink3" style={{ marginTop: 8 }}>
               {draft.sourceLine}
             </AppText>
+
+            {foldedIntoExisting ? (
+              <Row
+                gap={9}
+                style={{
+                  marginTop: theme.spacing.md,
+                  alignItems: 'flex-start',
+                  backgroundColor: c.brandBg,
+                  borderColor: c.brandBd,
+                  borderWidth: 1,
+                  borderRadius: theme.radii.md,
+                  padding: theme.spacing.md,
+                }}
+              >
+                <View style={{ marginTop: 1 }}>
+                  <ShieldIcon size={15} color={c.brand} />
+                </View>
+                <AppText variant="small" color="ink2" style={{ flex: 1, lineHeight: 17 }}>
+                  <AppText variant="bodyStrong" tint={c.brand} style={{ fontSize: 12.5 }}>
+                    You already see this client.
+                  </AppText>{' '}
+                  This Emirates ID is already on your caseload, so the session was added to their existing
+                  record instead of creating a second — this is that record.
+                </AppText>
+              </Row>
+            ) : null}
 
             {/* Tabs */}
             <View style={{ height: theme.spacing.md }} />

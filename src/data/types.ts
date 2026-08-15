@@ -129,6 +129,14 @@ export type Client = {
   name: string;
   initials: string;
   tokenId: string; // re-identified locally, e.g. "4c9-AK"
+  /**
+   * The patient's Emirates ID, exactly as the counselor typed it (spacing/dashes preserved). Optional
+   * — sample-cohort and older captured clients have none. It is the local uniqueness key for a
+   * caseload: two records for the same Emirates ID are a duplicate patient, so a capture that supplies
+   * one already on the caseload folds into that client instead of minting a second. Compared only
+   * device-locally and never sent anywhere (see `normalizeEmiratesId` / `matchExistingClient`).
+   */
+  emiratesId?: string;
   age: number | null; // null before any intake age is recorded (rendered as "—", never a fabricated 0)
   pronouns?: string;
   status: ClientStatus;

@@ -48,12 +48,17 @@ function safeNext(next?: string): string {
  */
 export default function UnlockScreen() {
   const router = useRouter();
-  const { next } = useLocalSearchParams<{ next?: string }>();
+  const { next, email, notice } = useLocalSearchParams<{ next?: string; email?: string; notice?: string }>();
   const [phase, setPhase] = useState<Phase>('login');
-  // Prefill ONLY the account's own (persisted) email, never a demo identity, and never a password —
-  // a returning user must not be handed someone else's credentials (F17). knownEmail is persisted at
-  // account creation / sign-in and hydrated on boot, so it's the real user's email after a reload.
-  const [username, setUsername] = useState(() => authService.getKnownEmail() ?? '');
+  // A returning counselor who tapped "Create account" for an existing email is bounced here with a
+  // calm notice (and their email), rather than having their saved recovery code silently overwritten.
+  const accountExists = notice === 'account-exists';
+  const prefillEmail = typeof email === 'string' ? email : '';
+  // Prefill the email the caller handed us (the account they tried to re-create), else ONLY the
+  // account's own (persisted) email — never a demo identity, and never a password, so a returning user
+  // is never handed someone else's credentials (F17). knownEmail is persisted at account creation /
+  // sign-in and hydrated on boot, so it's the real user's email after a reload.
+  const [username, setUsername] = useState(() => prefillEmail || authService.getKnownEmail() || '');
   const [password, setPassword] = useState('');
   // Hydration from the device store is async, so the first render can precede it; once it resolves,
   // land the persisted email (only if the field is still empty) and re-render for the greeting name.
@@ -108,6 +113,30 @@ export default function UnlockScreen() {
       <AuthHello>{wrong ? R.wrongEyebrow : R.loginEyebrow(authService.getClinicianName() ?? 'Doctor')}</AuthHello>
       <AuthTitle>{wrong ? R.wrongTitle : R.loginTitle}</AuthTitle>
       <AuthLede>{wrong ? R.wrongSubtitle : R.loginSubtitle}</AuthLede>
+
+      {accountExists && !wrong ? (
+        <View
+          style={{
+            width: '100%',
+            maxWidth: 320,
+            marginTop: 18,
+            padding: 12,
+            borderRadius: 12,
+            backgroundColor: 'rgba(191,234,225,0.10)',
+            borderWidth: 1,
+            borderColor: 'rgba(191,234,225,0.30)',
+          }}
+        >
+          <Row gap={8} style={{ alignItems: 'flex-start' }}>
+            <View style={{ marginTop: 1 }}>
+              <ShieldIcon size={14} color={MINT} />
+            </View>
+            <AppText variant="small" tint="rgba(234,247,243,0.9)" style={{ flex: 1, lineHeight: 18 }}>
+              {R.accountExistsNotice}
+            </AppText>
+          </Row>
+        </View>
+      ) : null}
 
       <View style={{ width: '100%', maxWidth: 300, gap: 14, marginTop: 26 }}>
         <AuthField
