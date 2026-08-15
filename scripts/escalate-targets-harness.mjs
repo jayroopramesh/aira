@@ -152,6 +152,22 @@ const blank = { crisisLine: { configured: false, display: '999 · local emergenc
     manualTargetLabel(handoff),
   );
 
+  // The hand-dial number keeps the brief's own grouping — this is the one place a human reads and
+  // keys it, so it must not be handed back as the stripped `tel:` digits.
+  const grouped = [
+    ['crisis', '800 4673'],
+    ['rashid-hospital', '04 219 2000'],
+    ['lighthouse-phone', '04 380 2088'],
+  ];
+  for (const [key, expected] of grouped) {
+    const action = findAction(sections, key);
+    check(
+      `"${key}" hands back the number grouped exactly as the brief writes it`,
+      manualTargetLabel(action) === expected,
+      manualTargetLabel(action),
+    );
+  }
+
   for (const action of sections.flatMap((s) => s.actions)) {
     if (action.disabled || action.kind === 'route') continue;
     check(
@@ -159,7 +175,26 @@ const blank = { crisisLine: { configured: false, display: '999 · local emergenc
       openFailureMessage(action).includes(manualTargetLabel(action)) && manualTargetLabel(action).length > 0,
       openFailureMessage(action),
     );
+    // A display form that drifts from the dialed form would have the counselor key a different
+    // number than the button dials — the one way carrying two representations can hurt.
+    if (action.kind === 'tel') {
+      check(
+        `"${action.key}" displayed digits match the digits it actually dials`,
+        manualTargetLabel(action).replace(/[^\d+]/g, '') === action.href.replace(/^tel:/, ''),
+        `${manualTargetLabel(action)} vs ${action.href}`,
+      );
+    }
   }
+}
+
+// --- The no-dedicated-line fallback still hands back something dialable -------------------------
+{
+  const crisis = findAction(buildEscalateSections({}, blank), 'crisis');
+  check(
+    'the 999 fallback hands back a bare number, not its prose display string',
+    manualTargetLabel(crisis) === '999',
+    manualTargetLabel(crisis),
+  );
 }
 
 // --- Safety plan: honest disable with no client, real route with one -----------------------------

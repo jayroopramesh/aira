@@ -12,6 +12,8 @@
 module.exports = {
   preset: 'jest-expo/ios',
   testMatch: ['<rootDir>/src/**/*.test.tsx', '<rootDir>/src/**/*.test.ts'],
+  // Concatenated after the preset's own setup files, not a replacement for them.
+  setupFiles: ['<rootDir>/jest.setup.js'],
   // The first render in a suite pays for compiling the RN/Expo module graph, which alone can beat
   // Jest's 5s default on a cold CI runner.
   testTimeout: 30000,

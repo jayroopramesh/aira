@@ -136,6 +136,16 @@ describe('when the device refuses to open a target', () => {
     expect(screen.getByText('Police')).toBeTruthy();
   });
 
+  it('hands back a grouped number exactly as the brief writes it, not the dialled digits', async () => {
+    openURL.mockRejectedValue(new Error('no registered handler'));
+    openSheet();
+
+    fireEvent.press(screen.getByText('Rashid Hospital'));
+
+    expect(await screen.findByText(/Dial 04 219 2000 yourself/)).toBeTruthy();
+    expect(screen.queryByText(/Dial 042192000 yourself/)).toBeNull();
+  });
+
   it('names the web address when a url will not open', async () => {
     openURL.mockRejectedValue(new Error('no registered handler'));
     openSheet();

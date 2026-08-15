@@ -161,7 +161,9 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   `mailto:`/route href) is pure data in `src/config/escalateContacts.ts` (`buildEscalateSections`,
   config-injectable for testing), proved by `scripts/escalate-targets-harness.mjs`; `Escalate.tsx` is
   a thin renderer over it. Any new contact must be transcribed verbatim from a source, never
-  paraphrased or "corrected".
+  paraphrased or "corrected" — a number therefore carries BOTH forms: `href` is machine form
+  (`tel:` wants bare digits) and `displayTarget` is the brief's own grouping, which is what a human
+  asked to dial by hand is shown. The harness pins that the two never drift apart.
   Pure data can't prove the WIRING, and a deleted `onPress` is how this surface went inert once — so
   `src/components/__tests__/Escalate.test.tsx` mounts the real sheet, presses every row, and asserts
   the exact `Linking.openURL` / `router.push` target (and that the disabled safety-plan row reaches

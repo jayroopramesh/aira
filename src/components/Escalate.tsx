@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { Linking, Modal, Pressable, ScrollView, View } from 'react-native';
+import { Linking, Modal, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   buildEscalateSections,
@@ -93,11 +93,11 @@ function EscalateSheet({ visible, clientId, clientToken, onClose }: { visible: b
   const c = theme.colors;
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { height: windowHeight } = useWindowDimensions();
 
-  // Narrow to a definite string once, so the safety-plan branch below can never route with undefined.
-  const activeClientId: string | undefined = clientId && clientId.trim() ? clientId : undefined;
-
-  const sections = buildEscalateSections({ activeClientId, clientToken });
+  // `buildEscalateSections` owns the blank-id rule (and the harness proves it), so the raw value
+  // goes straight through.
+  const sections = buildEscalateSections({ activeClientId: clientId, clientToken });
 
   // The last action the device refused to open, so the sheet can say so instead of dismissing onto
   // nothing. Cleared whenever the sheet is reopened.
@@ -146,6 +146,10 @@ function EscalateSheet({ visible, clientId, clientToken, onClose }: { visible: b
             maxWidth: 560,
             width: '100%',
             alignSelf: 'center',
+            // The sheet is bottom-anchored, so anything taller than the viewport is clipped off the
+            // TOP — the header and the crisis line, which must be reachable first. Bound it to the
+            // window and let the scroll region below absorb the shortfall instead.
+            maxHeight: windowHeight - insets.top - theme.spacing.md,
             ...theme.elevation.lg,
           }}
         >
@@ -169,7 +173,7 @@ function EscalateSheet({ visible, clientId, clientToken, onClose }: { visible: b
 
           <View style={{ height: theme.spacing.md }} />
 
-          <ScrollView style={{ maxHeight: 440 }}>
+          <ScrollView style={{ maxHeight: Math.min(440, windowHeight * 0.55), flexShrink: 1 }}>
             {sections.map((section, si) => {
               const tone = toneColors(section.tone, c);
               return (

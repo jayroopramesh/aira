@@ -24,6 +24,13 @@ export type EscalateAction = {
   disabled?: boolean;
   /** Resolved `tel:`/`https:`/`mailto:` target for kind tel|url|mailto. */
   href?: string;
+  /**
+   * The same target as a human reads and keys it — the brief's own digit grouping for a number
+   * ("04 219 2000"), the full address otherwise. `href` is machine form (`tel:` wants bare digits);
+   * this is the form shown to a counselor who has to dial it by hand, transcribed verbatim rather
+   * than re-derived from the stripped digits.
+   */
+  displayTarget?: string;
   /** Resolved in-app route for kind route. */
   route?: string;
 };
@@ -51,6 +58,7 @@ function telHref(displayNumber: string): string {
  * something dialable rather than swallow the rejection.
  */
 export function manualTargetLabel(action: EscalateAction): string {
+  if (action.displayTarget) return action.displayTarget;
   if (!action.href) return '';
   if (action.kind === 'mailto') return action.href.replace(/^mailto:/, '').split('?')[0];
   if (action.kind === 'tel') return action.href.replace(/^tel:/, '');
@@ -79,13 +87,21 @@ export const EMERGENCY_SECTION: EscalateSection = {
   label: 'If this is an emergency',
   description: 'If you feel you or someone else is at risk of harm',
   actions: [
-    { key: 'police', title: 'Police', sub: '999 · opens your dialer', kind: 'tel', href: telHref('999') },
+    {
+      key: 'police',
+      title: 'Police',
+      sub: '999 · opens your dialer',
+      kind: 'tel',
+      href: telHref('999'),
+      displayTarget: '999',
+    },
     {
       key: 'rashid-hospital',
       title: 'Rashid Hospital',
       sub: '04 219 2000 · opens your dialer',
       kind: 'tel',
       href: telHref('04 219 2000'),
+      displayTarget: '04 219 2000',
     },
     {
       key: 'dha',
@@ -93,6 +109,7 @@ export const EMERGENCY_SECTION: EscalateSection = {
       sub: 'https://www.dha.gov.ae/ · opens your browser',
       kind: 'url',
       href: 'https://www.dha.gov.ae/',
+      displayTarget: 'https://www.dha.gov.ae/',
     },
   ],
 };
@@ -110,6 +127,7 @@ export const NON_URGENT_SECTION: EscalateSection = {
       sub: '04 380 2088 · opens your dialer',
       kind: 'tel',
       href: telHref('04 380 2088'),
+      displayTarget: '04 380 2088',
     },
     {
       key: 'lighthouse-site',
@@ -117,6 +135,7 @@ export const NON_URGENT_SECTION: EscalateSection = {
       sub: 'https://www.lighthousearabia.com/ · opens your browser',
       kind: 'url',
       href: 'https://www.lighthousearabia.com/',
+      displayTarget: 'https://www.lighthousearabia.com/',
     },
   ],
 };
@@ -160,6 +179,9 @@ export function buildEscalateSections(
       : `Opens your dialer — no dedicated line configured, dials ${config.crisisLine.display}`,
     kind: 'tel',
     href: config.crisisLine.tel,
+    // Only the configured branch has a dialable display form; the fallback's `display` is prose
+    // ("999 · local emergency services"), so that branch derives its bare number from the href.
+    displayTarget: config.crisisLine.configured ? config.crisisLine.display : undefined,
   };
 
   const handoffAction: EscalateAction = {
@@ -170,6 +192,7 @@ export function buildEscalateSections(
       : 'Drafts a handoff email — no on-call address is set for this build, so add the recipient before sending',
     kind: 'mailto',
     href: onCallMailto(config.onCallEmail, opts.clientToken),
+    displayTarget: config.onCallEmail.address,
   };
 
   // Normalise a missing/blank id to undefined so an empty string is never treated as a real client.
