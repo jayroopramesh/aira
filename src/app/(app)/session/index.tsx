@@ -7,6 +7,7 @@ import { Waveform } from '../../../components/Waveform';
 import { AlertTriangleIcon, FileUpIcon, MicIcon, PencilIcon, PlusIcon, ShieldIcon, StopIcon } from '../../../components/icons';
 import { AppText, Avatar, Button, Card, Row, TrustPill } from '../../../components/ui';
 import { useClient, useData } from '../../../data/DataProvider';
+import { isValidEmiratesId } from '../../../data/sessionClient';
 import { DraftNote } from '../../../data/types';
 import {
   ActiveRecording,
@@ -75,6 +76,9 @@ export default function SessionCapture() {
 
   const [phase, setPhase] = useState<Phase>('precapture');
   const [name, setName] = useState('');
+  // Optional Emirates ID for a NEW client — the local uniqueness key. When it matches someone already
+  // on the caseload the capture folds into that record instead of minting a duplicate patient.
+  const [emiratesId, setEmiratesId] = useState('');
   const capture = useRef<CaptureRef | null>(null);
   const recording = useRef<ActiveRecording | null>(null);
   // Asked once for the whole screen so the pre-capture notice, the in-flight recording copy and the
@@ -133,8 +137,27 @@ export default function SessionCapture() {
   };
 
   const onDrafted = async (note: DraftNote) => {
-    const id = await saveSessionNote(note, { clientId: client?.id, name: client ? undefined : name });
-    router.replace(`/(app)/session/review?clientId=${id}`);
+    const { clientId: id, isDuplicate, adoptedEmiratesId, nameConflict, idNameConflict } = await saveSessionNote(note, {
+      clientId: client?.id,
+      name: client ? undefined : name,
+      emiratesId: client ? undefined : emiratesId,
+    });
+    // A duplicate Emirates ID folded into an existing client — open that record and tell the counselor
+    // plainly, rather than silently landing on what looks like a brand-new note. An ADOPTION folded too,
+    // but on the NAME (the id was saved onto that record just now, not already on file), so it gets its
+    // own honest wording. Otherwise a separate record was minted on purpose (never merge two people) and
+    // review says why: the Emirates ID is on file under another NAME (the likelier mis-entry, so it
+    // wins), or a same-named client exists that the id vetoed folding into. Mutually exclusive.
+    const notice = isDuplicate
+      ? adoptedEmiratesId
+        ? '&adopted=1'
+        : '&existing=1'
+      : idNameConflict
+        ? '&idconflict=1'
+        : nameConflict
+          ? '&conflict=1'
+          : '';
+    router.replace(`/(app)/session/review?clientId=${id}${notice}`);
   };
 
   const returnTo = client ? `/(app)/session?clientId=${client.id}` : '/(app)/session';
@@ -146,6 +169,8 @@ export default function SessionCapture() {
           client={client}
           name={name}
           onName={setName}
+          emiratesId={emiratesId}
+          onEmiratesId={setEmiratesId}
           onRecord={beginRecording}
           onUpload={onUpload}
           onUseSample={() => goAnalyse(mockCaptureRef())}
@@ -183,6 +208,8 @@ function PreCapture({
   client,
   name,
   onName,
+  emiratesId,
+  onEmiratesId,
   onRecord,
   onUpload,
   onUseSample,
@@ -192,6 +219,8 @@ function PreCapture({
   client: ReturnType<typeof useClient>;
   name: string;
   onName: (v: string) => void;
+  emiratesId: string;
+  onEmiratesId: (v: string) => void;
   onRecord: () => void;
   onUpload: () => void;
   onUseSample: () => void;
@@ -296,8 +325,44 @@ function PreCapture({
               fontSize: 15,
             }}
           />
-          <AppText variant="small" color="ink3" style={{ marginTop: 8, fontSize: 11.5 }}>
-            The captured session is added to your caseload afterwards. Names stay on this device.
+          <View style={{ height: 14 }} />
+          <AppText variant="label" color="ink3" uppercase style={{ marginBottom: 8 }}>
+            Emirates ID (optional)
+          </AppText>
+          <TextInput
+            value={emiratesId}
+            onChangeText={onEmiratesId}
+            placeholder="784-XXXX-XXXXXXX-X"
+            placeholderTextColor={c.ink3}
+            keyboardType="numbers-and-punctuation"
+            autoCapitalize="none"
+            style={{
+              borderWidth: 1,
+              borderColor: c.line,
+              borderRadius: theme.radii.sm,
+              paddingVertical: 12,
+              paddingHorizontal: 14,
+              color: c.ink,
+              fontFamily: theme.type.body.fontFamily,
+              fontSize: 15,
+            }}
+          />
+          {/* A malformed entry is not treated as an identity (a placeholder two patients might both
+              type would otherwise merge them), so say so here rather than letting the counselor believe
+              the field is doing work it isn't. Non-blocking — capture proceeds either way. */}
+          {emiratesId.trim() && !isValidEmiratesId(emiratesId) ? (
+            <AppText variant="small" tint={c.caution} style={{ marginTop: 8, fontSize: 11.5, lineHeight: 16 }}>
+              That isn’t a recognised Emirates ID (784 followed by 12 digits), so it won’t be used to identify
+              this client. You can still capture the session — it’ll be matched by name instead.
+            </AppText>
+          ) : null}
+          <AppText variant="small" color="ink3" style={{ marginTop: 8, fontSize: 11.5, lineHeight: 16 }}>
+            The captured session is added to your caseload afterwards. A valid Emirates ID (784 + 12 digits)
+            opens the client saved under it when the name agrees too, or — if the ID is new — saves it onto the
+            one client of that name who has no ID yet. If the ID is on file under a different name, or a client
+            of that name has a different ID, or more than one shares the name, a separate record is created and
+            you’ll be told. Without an ID, the session is matched by name to a client you’ve already captured.
+            It stays on this device.
           </AppText>
         </Card>
       )}

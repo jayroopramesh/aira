@@ -1,0 +1,681 @@
+/**
+ * Duplicate-identity harness. Proves the two duplicate-identity guards, by running the real code
+ * paths rather than by reading them.
+ *
+ *   1. DUPLICATE ACCOUNT never voids a saved recovery code. A returning counselor who taps "Create
+ *      account" (Supabase reports the email already registered) must have createAccount STOP: no new
+ *      recovery code, the persisted recovery hash UNTOUCHED, the vault NOT unlocked, no active/awaiting
+ *      status — and a distinct `AccountExistsError` so the UI can route them to sign in. The
+ *      genuine-new-account path still mints, persists, unlocks, and returns the code. The SAME rule
+ *      holds on the keyless build (`MockAuthService`), where a persisted recovery hash is the evidence.
+ *   2. DUPLICATE PATIENT within the local caseload. A WELL-FORMED Emirates ID is the local uniqueness
+ *      key: adding a client whose (normalised) Emirates ID already exists opens the EXISTING record and
+ *      creates nothing; a novel one creates a new client; the raw typed value is stored verbatim. The
+ *      governing rule is that a strong identifier decides a MATCH, a weak one never merges two patients,
+ *      and two strong signals that DISAGREE are a warning rather than a match — so a valid id resolves
+ *      by id ALONE, EXCEPT that an id no record holds attaches to the lone same-named record holding
+ *      none (absence of an id is new information, not disagreement). Ambiguity (two namesakes) and
+ *      disagreement (a namesake with a different id, or an id on file under another name) never merge;
+ *      every fork is REPORTED rather than silently splitting the caseload; and a malformed entry
+ *      ("N/A", a partial number) is no identity at all: it is neither stored nor matched on, and the
+ *      capture falls back to name folding.
+ *
+ * Run (Node ≥ 22.13, e.g. ~/.cache/fm-node/node-v22.23.2-darwin-arm64/bin/node):
+ *   node scripts/duplicate-identity-harness.mjs
+ * Exits non-zero on the first failed assertion.
+ */
+import { register } from 'node:module';
+
+register('./ts-service-loader.mjs', import.meta.url);
+
+// A localStorage shim so deviceStore's web backend actually persists in-process — this is what lets
+// the harness observe that the saved recovery hash survives an already-registered createAccount.
+const mem = new Map();
+globalThis.localStorage = {
+  getItem: (k) => (mem.has(k) ? mem.get(k) : null),
+  setItem: (k, v) => mem.set(k, String(v)),
+  removeItem: (k) => mem.delete(k),
+};
+
+const { AccountExistsError, MockAuthService, SupabaseAuthService } = await import('../src/services/auth.ts');
+const { deviceStore } = await import('../src/services/deviceStore.ts');
+const {
+  appendSessionToClient,
+  clientFromSession,
+  emiratesIdForNewClient,
+  findIdNameMismatch,
+  findNameConflict,
+  isValidEmiratesId,
+  matchExistingClient,
+  normalizeEmiratesId,
+  UNNAMED_CLIENT_NAME,
+} = await import('../src/data/sessionClient.ts');
+const { applySessionNote } = await import('../src/data/saveSession.ts');
+
+let failed = 0;
+function check(name, ok, detail) {
+  if (!ok) failed++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${ok ? '' : `  (${detail})`}`);
+}
+
+/** Minimal VaultStorage — tracks whether it was unlocked, since the duplicate path must NOT unlock. */
+function fakeVault() {
+  let unlocked = false;
+  return {
+    isUnlocked: () => unlocked,
+    unlock: async () => {
+      unlocked = true;
+      return { ok: true };
+    },
+    unlockWithRecoveryCode: async () => {
+      unlocked = true;
+      return { ok: true };
+    },
+    lock: async () => {
+      unlocked = false;
+    },
+    read: async () => null,
+    write: async () => {},
+  };
+}
+
+/** A stand-in Supabase client whose signUp returns whatever result we hand it. */
+function fakeSupabase(signUpResult) {
+  return {
+    auth: {
+      signUp: async () => signUpResult,
+      signInWithPassword: async () => ({ error: null }),
+      signOut: async () => ({}),
+      getSession: async () => ({ data: { session: null } }),
+    },
+  };
+}
+
+// deviceStore namespaces keys under 'aira.vault.'; the recovery hash key auth.ts persists is this one.
+const RECOVERY_HASH_KEY = 'auth.recovery-hash';
+// The credential the unguarded MOCK path actually destroyed: its recovery hash is deterministic (the
+// RECOVERY_WORDS constant through an unsalted fnv1a), so a second createAccount rewrote an IDENTICAL
+// recovery hash — but PASSWORD_HASH_KEY took the second attempt's password and the counselor's real
+// password stopped opening signIn.
+const PASSWORD_HASH_KEY = 'auth.password-hash';
+const DETAILS = {
+  emiratesId: '784-1988-1234567-1',
+  phone: '+971 50 123 4567',
+  fullName: 'Dr. Amina Okafor',
+  email: 'a.okafor@clinic.ae',
+  password: 'seafoam-harbor-42',
+};
+
+// --- 1. Genuine new account works end to end ------------------------------------------------------
+{
+  mem.clear();
+  const vault = fakeVault();
+  const svc = new SupabaseAuthService(vault, () => fakeSupabase({ error: null }));
+  const { recoveryCode } = await svc.createAccount(DETAILS);
+
+  check('new account: mints a 12-word recovery code', Array.isArray(recoveryCode) && recoveryCode.length === 12, JSON.stringify(recoveryCode));
+  check('new account: persists the recovery hash', !!(await deviceStore.get(RECOVERY_HASH_KEY)), 'no hash stored');
+  check('new account: unlocks the vault', vault.isUnlocked() === true, 'vault stayed locked');
+  check('new account: status → awaiting-recovery-save', svc.getStatus() === 'awaiting-recovery-save', svc.getStatus());
+  check('new account: known email persisted for the sign-in prefill', svc.getKnownEmail() === DETAILS.email, String(svc.getKnownEmail()));
+
+  // The persisted hash IS the minted code's — the saved code unlocks. (This is exactly the credential
+  // defect 1 must never silently overwrite.)
+  const unlock = await svc.signInWithRecoveryCode(recoveryCode.join(' '));
+  check('new account: the saved recovery code unlocks the vault', unlock.ok === true, JSON.stringify(unlock));
+}
+
+// --- 2. Duplicate account STOPS and leaves the saved recovery code intact -------------------------
+{
+  mem.clear();
+  // A returning counselor already has a saved recovery hash on this device.
+  const SAVED = 'the-counselors-saved-hash';
+  await deviceStore.set(RECOVERY_HASH_KEY, SAVED);
+  const vault = fakeVault();
+  const svc = new SupabaseAuthService(vault, () => fakeSupabase({ error: { message: 'User already registered' } }));
+
+  let thrown = null;
+  try {
+    await svc.createAccount(DETAILS);
+  } catch (e) {
+    thrown = e;
+  }
+
+  check('duplicate account: throws AccountExistsError', thrown instanceof AccountExistsError, String(thrown));
+  check('duplicate account: the error carries the email to prefill', thrown?.email === DETAILS.email, String(thrown?.email));
+  check('duplicate account: the saved recovery hash is UNTOUCHED', (await deviceStore.get(RECOVERY_HASH_KEY)) === SAVED, String(await deviceStore.get(RECOVERY_HASH_KEY)));
+  check('duplicate account: the vault is NOT unlocked', vault.isUnlocked() === false, 'vault was unlocked');
+  check('duplicate account: status stays none (not active/awaiting)', svc.getStatus() === 'none', svc.getStatus());
+}
+
+// --- 2b. A non-duplicate signUp failure is still a generic error (retry the form, not go sign in) --
+{
+  mem.clear();
+  const svc = new SupabaseAuthService(fakeVault(), () => fakeSupabase({ error: { message: 'Network unreachable' } }));
+  let thrown = null;
+  try {
+    await svc.createAccount(DETAILS);
+  } catch (e) {
+    thrown = e;
+  }
+  check('other signUp error: generic Error, NOT AccountExistsError', thrown instanceof Error && !(thrown instanceof AccountExistsError), String(thrown));
+}
+
+// --- 2c. The KEYLESS build obeys the same rule (MockAuthService) ----------------------------------
+// A genuine first account still works end to end; a second createAccount on a device that already
+// holds a recovery hash STOPS instead of overwriting the counselor's saved code.
+{
+  mem.clear();
+  const vault = fakeVault();
+  const svc = new MockAuthService(vault);
+  const { recoveryCode } = await svc.createAccount(DETAILS);
+
+  check('mock first account: mints a 12-word recovery code', Array.isArray(recoveryCode) && recoveryCode.length === 12, JSON.stringify(recoveryCode));
+  check('mock first account: persists the recovery hash', !!(await deviceStore.get(RECOVERY_HASH_KEY)), 'no hash stored');
+  check('mock first account: status → awaiting-recovery-save', svc.getStatus() === 'awaiting-recovery-save', svc.getStatus());
+  const unlock = await svc.signInWithRecoveryCode(recoveryCode.join(' '));
+  check('mock first account: the saved recovery code unlocks the vault', unlock.ok === true && vault.isUnlocked() === true, JSON.stringify(unlock));
+
+  // Reload: a fresh service + fresh vault over the SAME device store, as after a page refresh. The
+  // counselor taps "Create an account" again instead of "Sign in", with a DIFFERENT password typed in.
+  const savedHash = await deviceStore.get(RECOVERY_HASH_KEY);
+  const savedPasswordHash = await deviceStore.get(PASSWORD_HASH_KEY);
+  const vault2 = fakeVault();
+  const svc2 = new MockAuthService(vault2);
+  let thrown = null;
+  try {
+    await svc2.createAccount({ ...DETAILS, password: 'a-totally-different-password' });
+  } catch (e) {
+    thrown = e;
+  }
+
+  check('mock duplicate account: throws AccountExistsError', thrown instanceof AccountExistsError, String(thrown));
+  check('mock duplicate account: the error carries the email to prefill', thrown?.email === DETAILS.email, String(thrown?.email));
+  check('mock duplicate account: the saved recovery hash is UNTOUCHED', (await deviceStore.get(RECOVERY_HASH_KEY)) === savedHash, String(await deviceStore.get(RECOVERY_HASH_KEY)));
+  // THE credential this guard saves on the mock path — it is the password hash that a second
+  // createAccount overwrote (the recovery hash is deterministic, so rewriting it changed nothing).
+  check('mock duplicate account: the saved PASSWORD hash is UNTOUCHED', (await deviceStore.get(PASSWORD_HASH_KEY)) === savedPasswordHash, String(await deviceStore.get(PASSWORD_HASH_KEY)));
+  check('mock duplicate account: the vault is NOT unlocked', vault2.isUnlocked() === false, 'vault was unlocked');
+  check('mock duplicate account: status stays none (not active/awaiting)', svc2.getStatus() === 'none', svc2.getStatus());
+  // The observable consequence: the counselor's ORIGINAL password still opens signIn afterwards.
+  const vault3 = fakeVault();
+  const svc3 = new MockAuthService(vault3);
+  const signedIn = await svc3.signIn(DETAILS.email, DETAILS.password);
+  check('mock duplicate account: the ORIGINAL password still signs in', signedIn.ok === true, JSON.stringify(signedIn));
+  // And the saved recovery code still unlocks.
+  const stillWorks = await svc2.signInWithRecoveryCode(recoveryCode.join(' '));
+  check('mock duplicate account: the ORIGINAL saved code still unlocks', stillWorks.ok === true, JSON.stringify(stillWorks));
+}
+
+// --- Patient fixtures --------------------------------------------------------------------------
+const DATE = '13 Aug';
+const NOTE = {
+  sessionLabel: 'Session 1',
+  sourceLine: 'test',
+  status: 'draft',
+  sections: [{ id: 's', marker: 'S', title: 'Subjective', body: ['Discussed sleep and exam stress.'] }],
+  measures: [],
+  reviewCodes: [],
+  prescriptions: [],
+};
+
+// --- 3. A new patient is created (novel Emirates ID → no match) -----------------------------------
+{
+  const emid = '784-1988-7654321-9';
+  const match = matchExistingClient([], { name: 'Sam Ali', emiratesId: emid });
+  check('new patient: no existing client matches', match === undefined, JSON.stringify(match));
+
+  const client = clientFromSession('s-1', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE, emiratesId: emid });
+  check('new patient: Emirates ID stored EXACTLY as typed', client.emiratesId === emid, String(client.emiratesId));
+}
+
+// --- 4. A duplicate Emirates ID opens the existing record and creates nothing ---------------------
+{
+  const existing = clientFromSession('s-1', NOTE, {
+    name: 'Sam Ali',
+    sessionNumber: 1,
+    dateLabel: DATE,
+    emiratesId: '784-1988-1234567-1',
+  });
+  const caseload = [existing];
+
+  // Same ID, different formatting (spaces for dashes, stray padding), same client — the Emirates ID is
+  // the key, so it resolves to the existing record however the number was typed.
+  const match = matchExistingClient(caseload, { name: 'Sam Ali', emiratesId: ' 784 1988 1234567 1 ' });
+  check('duplicate patient: matched by Emirates ID', match?.matchedBy === 'emiratesId', JSON.stringify(match));
+  check('duplicate patient: opens the EXISTING record', match?.client?.id === existing.id, String(match?.client?.id));
+  check('normalizeEmiratesId collapses separators + case', normalizeEmiratesId('784-1988-1234567-1') === normalizeEmiratesId(' 784 1988 1234567 1 '), 'keys differ');
+
+  // A capture opened with NO typed name (from a client file, or the optional field left blank) has
+  // nothing to disagree with, so the id alone still folds.
+  const noName = matchExistingClient(caseload, { emiratesId: '784-1988-1234567-1' });
+  check('duplicate patient: folds with no typed name at all', noName?.matchedBy === 'emiratesId', JSON.stringify(noName));
+  check('duplicate patient: no name + no conflict flagged', findIdNameMismatch(caseload, { emiratesId: '784-1988-1234567-1' }) === undefined, 'flagged with no name');
+
+  // Casing/spacing differences in the NAME are not a disagreement either.
+  check(
+    'duplicate patient: a differently-spaced/cased name still agrees',
+    matchExistingClient(caseload, { name: '  sam   ali ', emiratesId: '784-1988-1234567-1' })?.matchedBy === 'emiratesId',
+    'normalised-equal name blocked the fold',
+  );
+}
+
+// --- 4b. An Emirates ID on file under ANOTHER name is a warning, not a match -----------------------
+// A clipboard carried over from another patient's form, autofill, or a transposed digit landing on a
+// real id. Folding would merge two patients under a confident "you already see this client".
+{
+  const existing = clientFromSession('s-1', NOTE, {
+    name: 'Sam Ali',
+    sessionNumber: 1,
+    dateLabel: DATE,
+    emiratesId: '784-1988-1234567-1',
+  });
+  const caseload = [existing];
+  const before = JSON.stringify(existing);
+
+  const match = matchExistingClient(caseload, { name: 'Fatima Noor', emiratesId: '784-1988-1234567-1' });
+  check('id/name disagree: does NOT fold (a separate record is minted)', match === undefined, JSON.stringify(match));
+  check('id/name disagree: the existing client is left untouched', JSON.stringify(caseload[0]) === before, 'existing record mutated');
+
+  const mismatch = findIdNameMismatch(caseload, { name: 'Fatima Noor', emiratesId: ' 784 1988 1234567 1 ' });
+  check('id/name disagree: the warning names the record holding that id', mismatch?.id === 's-1', JSON.stringify(mismatch));
+
+  // The veto and its explanation are exact complements — the branch never declines silently.
+  check(
+    'id/name disagree: warning fires exactly when the id fold was declined',
+    matchExistingClient(caseload, { name: 'Fatima Noor', emiratesId: '784-1988-1234567-1' }) === undefined &&
+      !!findIdNameMismatch(caseload, { name: 'Fatima Noor', emiratesId: '784-1988-1234567-1' }),
+    'veto and warning disagree',
+  );
+
+  // ...and it stays quiet whenever the signals do not actually disagree.
+  check(
+    'id/name warning: silent when the names AGREE (that folds)',
+    findIdNameMismatch(caseload, { name: 'Sam Ali', emiratesId: '784-1988-1234567-1' }) === undefined,
+    'flagged an agreeing name',
+  );
+  check(
+    'id/name warning: silent when no record holds that id',
+    findIdNameMismatch(caseload, { name: 'Fatima Noor', emiratesId: '784-9999-9999999-9' }) === undefined,
+    'flagged an unheld id',
+  );
+  check(
+    'id/name warning: silent when the entry is malformed (no identifier supplied)',
+    findIdNameMismatch(caseload, { name: 'Fatima Noor', emiratesId: 'N/A' }) === undefined,
+    'a placeholder produced an id warning',
+  );
+  // The two notices are mutually exclusive: an id that reaches a record is never a name conflict.
+  check(
+    'id/name disagree: the name-conflict notice stays quiet (this is the sharper warning)',
+    findNameConflict(caseload, { name: 'Fatima Noor', emiratesId: '784-1988-1234567-1' }) === undefined,
+    'both notices fired',
+  );
+}
+
+// --- 5. A CONFLICTING Emirates ID beats a name match — two different people never merge -----------
+{
+  const existing = clientFromSession('s-1', NOTE, {
+    name: 'Ahmed Ali',
+    sessionNumber: 1,
+    dateLabel: DATE,
+    emiratesId: '784-1988-1111111-1',
+  });
+  const caseload = [existing];
+  const before = JSON.stringify(existing);
+
+  // Same typed name, a DIFFERENT Emirates ID: a different person, so nothing may fold.
+  const match = matchExistingClient(caseload, { name: 'Ahmed Ali', emiratesId: '784-1988-2222222-2' });
+  check('conflicting id: name match is VETOED (a new record would be minted)', match === undefined, JSON.stringify(match));
+  check('conflicting id: the existing client is left untouched', JSON.stringify(caseload[0]) === before, 'existing record mutated');
+
+  // Guardrails on the veto: the SAME id (differently formatted) still folds by name, and a capture
+  // supplying no Emirates ID folds by name exactly as before.
+  check(
+    'matching id + same name: still folds',
+    matchExistingClient(caseload, { name: 'Ahmed Ali', emiratesId: ' 784 1988 1111111 1 ' })?.client?.id === 's-1',
+    'same-id fold broke',
+  );
+  check(
+    'no Emirates ID supplied: the name fold is unchanged',
+    matchExistingClient(caseload, { name: 'Ahmed Ali' })?.matchedBy === 'name',
+    'name fold broke',
+  );
+  check(
+    'a MALFORMED entry is no identifier: the name fold is unchanged',
+    matchExistingClient(caseload, { name: 'Ahmed Ali', emiratesId: 'N/A' })?.matchedBy === 'name',
+    'malformed entry changed the fold',
+  );
+
+  // The veto must never be SILENT: the same refusal that mints a separate record is reported, so the
+  // counselor is told why two same-named rows now exist instead of being left to guess at a typo.
+  const conflict = findNameConflict(caseload, { name: 'Ahmed Ali', emiratesId: '784-1988-2222222-2' });
+  check('conflict notice: the vetoed same-name record is reported', conflict?.id === 's-1', JSON.stringify(conflict));
+  check('conflict notice: it names the client the counselor already sees', conflict?.name === 'Ahmed Ali', String(conflict?.name));
+  check('conflict notice: the existing client is still left untouched', JSON.stringify(caseload[0]) === before, 'existing record mutated');
+
+  // ...and it must stay quiet whenever there is nothing to explain.
+  check(
+    'conflict notice: silent when the Emirates IDs MATCH (that folds)',
+    findNameConflict(caseload, { name: 'Ahmed Ali', emiratesId: ' 784 1988 1111111 1 ' }) === undefined,
+    'flagged a matching id',
+  );
+  check(
+    'conflict notice: silent when the NAME differs',
+    findNameConflict(caseload, { name: 'Someone Else', emiratesId: '784-1988-2222222-2' }) === undefined,
+    'flagged a different name',
+  );
+  check(
+    'conflict notice: silent when the capture supplies NO Emirates ID',
+    findNameConflict(caseload, { name: 'Ahmed Ali' }) === undefined && findNameConflict(caseload, { name: 'Ahmed Ali', emiratesId: '  ' }) === undefined,
+    'flagged with no supplied id',
+  );
+  check(
+    'conflict notice: silent when the entry is MALFORMED (no identifier was supplied)',
+    findNameConflict(caseload, { name: 'Ahmed Ali', emiratesId: 'N/A' }) === undefined,
+    'a placeholder produced a conflict',
+  );
+
+  // The veto and the notice are exact complements — every same-named candidate the fold refuses is one
+  // the notice can name, so the app can never refuse to fold for a reason it then fails to explain.
+  const supplied = '784-1988-2222222-2';
+  check(
+    'conflict notice: fires exactly when the name fold was vetoed',
+    matchExistingClient(caseload, { name: 'Ahmed Ali', emiratesId: supplied }) === undefined &&
+      !!findNameConflict(caseload, { name: 'Ahmed Ali', emiratesId: supplied }),
+    'veto and notice disagree',
+  );
+}
+
+// --- 6. ADOPTION: an unclaimed id attaches to the lone same-named record that has none --------------
+// The ordinary rollout case — an established client, captured before the field existed, having their
+// Emirates ID recorded for the first time. Nothing disagrees, so this is a match, not a fork.
+{
+  const first = clientFromSession('s-1', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE });
+  check('adopt: the earlier capture stored no Emirates ID', first.emiratesId === undefined, String(first.emiratesId));
+
+  const emid = '784-1988-1234567-1';
+  const match = matchExistingClient([first], { name: 'Sam Ali', emiratesId: emid });
+  check('adopt: the capture FOLDS onto the existing client', match?.client?.id === 's-1', JSON.stringify(match));
+  check('adopt: it is reported as the same client', match?.matchedBy === 'emiratesId', String(match?.matchedBy));
+  check('adopt: the id is carried through for adoption, verbatim', match?.adoptEmiratesId === emid, String(match?.adoptEmiratesId));
+  check('adopt: no conflict notice is raised', findNameConflict([first], { name: 'Sam Ali', emiratesId: emid }) === undefined, 'warned about a match');
+
+  // The fold records the id onto that record, so the next capture resolves by id alone.
+  const folded = appendSessionToClient(first, NOTE, { sessionNumber: 2, dateLabel: DATE, name: 'Sam Ali', adoptEmiratesId: match?.adoptEmiratesId });
+  check('adopt: the record now holds the Emirates ID', folded.emiratesId === emid, String(folded.emiratesId));
+  const later = matchExistingClient([folded], { name: 'Sam Ali', emiratesId: ' 784 1988 1234567 1 ' });
+  check('adopt: a later capture resolves by that id, however it is formatted', later?.client?.id === 's-1', JSON.stringify(later));
+  // ...and by the id alone once the name field is left blank.
+  const blank = matchExistingClient([folded], { emiratesId: '784-1988-1234567-1' });
+  check('adopt: and by that id alone with no name typed', blank?.client?.id === 's-1', JSON.stringify(blank));
+
+  // A plain name fold (no id supplied) still records nothing — adoption is never a blanket backfill.
+  const plain = appendSessionToClient(first, NOTE, { sessionNumber: 2, dateLabel: DATE, name: 'Sam Ali' });
+  check('adopt: a name fold with no id records none', plain.emiratesId === undefined, String(plain.emiratesId));
+  // ...and a record that already holds a key never has it overwritten.
+  const kept = appendSessionToClient(folded, NOTE, { sessionNumber: 3, dateLabel: DATE, adoptEmiratesId: '784-9999-9999999-9' });
+  check('adopt: a stored Emirates ID is never overwritten', kept.emiratesId === emid, String(kept.emiratesId));
+}
+
+// --- 6a. AMBIGUITY and DISAGREEMENT still fork — the app never guesses which patient this is --------
+{
+  const emid = '784-1988-1234567-1';
+  // Two namesakes, neither with an id: nothing tells them apart.
+  const twinA = clientFromSession('s-1', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE });
+  const twinB = clientFromSession('s-2', NOTE, { name: 'sam  ali', sessionNumber: 1, dateLabel: DATE });
+  const twins = [twinA, twinB];
+  const before = JSON.stringify(twins);
+  check('ambiguity: two namesakes never adopt', matchExistingClient(twins, { name: 'Sam Ali', emiratesId: emid }) === undefined, 'adopted under ambiguity');
+  check('ambiguity: the fork is explained', findNameConflict(twins, { name: 'Sam Ali', emiratesId: emid })?.id === 's-1', 'no notice');
+  check('ambiguity: neither existing record is touched', JSON.stringify(twins) === before, 'a record was mutated');
+
+  // A lone namesake holding a DIFFERENT valid id is a disagreement, not a match.
+  const other = [clientFromSession('s-1', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE, emiratesId: '784-1988-7654321-9' })];
+  const otherBefore = JSON.stringify(other);
+  check('disagreement: a namesake with another id never adopts', matchExistingClient(other, { name: 'Sam Ali', emiratesId: emid }) === undefined, 'adopted over a stored id');
+  check('disagreement: the fork is explained', findNameConflict(other, { name: 'Sam Ali', emiratesId: emid })?.id === 's-1', 'no notice');
+  check('disagreement: the stored id is left alone', JSON.stringify(other) === otherBefore, 'the stored id was changed');
+
+  // A capture with no real name supplies nothing to match on, so it simply mints.
+  check('no name: nothing to adopt onto', matchExistingClient([twinA], { emiratesId: emid }) === undefined, 'adopted with no name');
+  check('no name: and nothing to explain', findNameConflict([twinA], { emiratesId: emid }) === undefined, 'notice without a name');
+  check(
+    'placeholder name: the app’s own label never adopts',
+    matchExistingClient([twinA], { name: UNNAMED_CLIENT_NAME, emiratesId: emid }) === undefined,
+    'the placeholder acted as a name',
+  );
+}
+
+// --- 6b. The forked record must NOT carry the id the app just ruled belongs to someone else --------
+// Otherwise TWO records hold the same "unique" key, and the next capture entering that id with the
+// name left blank folds into whichever comes first — the merge the fork existed to prevent.
+{
+  const emid = '784-1988-1234567-1';
+  const sam = clientFromSession('s-1', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE, emiratesId: emid });
+
+  // The clipboard case: a genuinely different patient, that patient's id pasted in.
+  const mismatch = findIdNameMismatch([sam], { name: 'Fatima Noor', emiratesId: emid });
+  check('forked record: the mis-entry is detected', mismatch?.id === 's-1', JSON.stringify(mismatch));
+
+  // The rule at the helper level; block 8 drives the same decision through the real save path.
+  check(
+    'forked record: the mint is denied the ruled-out id',
+    emiratesIdForNewClient([sam], { name: 'Fatima Noor', emiratesId: emid }) === undefined,
+    String(emiratesIdForNewClient([sam], { name: 'Fatima Noor', emiratesId: emid })),
+  );
+  check(
+    'forked record: an unclaimed id is still kept, verbatim',
+    emiratesIdForNewClient([sam], { name: 'Fatima Noor', emiratesId: '784-1988-7654321-9' }) === '784-1988-7654321-9',
+    String(emiratesIdForNewClient([sam], { name: 'Fatima Noor', emiratesId: '784-1988-7654321-9' })),
+  );
+  const forked = clientFromSession('s-2', NOTE, {
+    name: 'Fatima Noor',
+    sessionNumber: 1,
+    dateLabel: DATE,
+    emiratesId: emiratesIdForNewClient([sam], { name: 'Fatima Noor', emiratesId: emid }),
+  });
+  check('forked record: carries NO Emirates ID', forked.emiratesId === undefined, String(forked.emiratesId));
+
+  // Newest-first, exactly as the caseload stores it.
+  const caseload = [forked, sam];
+  check(
+    'forked record: exactly one record holds the key',
+    caseload.filter((cl) => cl.emiratesId && normalizeEmiratesId(cl.emiratesId) === normalizeEmiratesId(emid)).length === 1,
+    'the key has more than one holder',
+  );
+
+  // The merge this closes: next session, that id entered with the name left blank.
+  const blank = matchExistingClient(caseload, { emiratesId: emid });
+  check('forked record: a blank-name capture folds by Emirates ID', blank?.matchedBy === 'emiratesId', JSON.stringify(blank));
+  check('forked record: it lands on the ORIGINAL holder, not the fork', blank?.client?.id === 's-1', String(blank?.client?.id));
+  check('forked record: and on the right patient', blank?.client?.name === 'Sam Ali', String(blank?.client?.name));
+}
+
+// --- 6c. The app's own "New client" placeholder is not a name, so it never vetoes an id fold -------
+{
+  // First capture: a valid id, the optional name left blank — filed under the display placeholder.
+  const unnamed = clientFromSession('s-1', NOTE, {
+    name: UNNAMED_CLIENT_NAME,
+    sessionNumber: 1,
+    dateLabel: DATE,
+    emiratesId: '784-1988-1234567-1',
+  });
+  check('placeholder: the first capture is filed under the placeholder', unnamed.name === UNNAMED_CLIENT_NAME, unnamed.name);
+  check('placeholder: it holds the Emirates ID', unnamed.emiratesId === '784-1988-1234567-1', String(unnamed.emiratesId));
+
+  // Next session: the SAME id, and this time a real name. A label nobody typed cannot contradict it.
+  const match = matchExistingClient([unnamed], { name: 'Sam Ali', emiratesId: ' 784 1988 1234567 1 ' });
+  check('placeholder: the id still FOLDS (no second record)', match?.matchedBy === 'emiratesId', JSON.stringify(match));
+  check('placeholder: no "different name" warning is raised', findIdNameMismatch([unnamed], { name: 'Sam Ali', emiratesId: '784-1988-1234567-1' }) === undefined, 'warned about a placeholder');
+
+  // And the fold UPGRADES the record to the real name rather than leaving "New client" forever.
+  const folded = appendSessionToClient(match.client, NOTE, { sessionNumber: 2, dateLabel: DATE, name: 'Sam Ali' });
+  check('placeholder: the stored name is upgraded to the typed one', folded.name === 'Sam Ali', folded.name);
+  check('placeholder: initials follow the upgraded name', folded.initials === 'SA', folded.initials);
+  check('placeholder: the identity key is unchanged', folded.emiratesId === '784-1988-1234567-1', String(folded.emiratesId));
+
+  // A name the counselor already gave is never overwritten by a later session's typing.
+  const named = clientFromSession('s-3', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE });
+  const kept = appendSessionToClient(named, NOTE, { sessionNumber: 2, dateLabel: DATE, name: 'Someone Else' });
+  check('placeholder: a REAL stored name is never overwritten', kept.name === 'Sam Ali', kept.name);
+}
+
+// --- 7. A malformed entry is not an identity — it can never merge two patients ---------------------
+{
+  check('valid id: a well-formed Emirates ID is accepted', isValidEmiratesId('784-1988-1234567-1') === true, 'rejected a valid id');
+  check('valid id: formatting is irrelevant', isValidEmiratesId(' 784 1988 1234567 1 ') === true, 'rejected an unformatted valid id');
+  check(
+    'valid id: placeholders and partials are REJECTED',
+    ['N/A', 'n/a', 'unknown', '784', '784-1988', '', '   ', '784-1988-1234567-12'].every((v) => isValidEmiratesId(v) === false),
+    'a placeholder passed validation',
+  );
+
+  // The failure this prevents: two unrelated patients whose counselor typed the same placeholder.
+  const a = clientFromSession('s-a', NOTE, { name: 'Patient A', sessionNumber: 1, dateLabel: DATE, emiratesId: 'N/A' });
+  check('malformed id: is NOT stored as this patient’s identity', a.emiratesId === undefined, String(a.emiratesId));
+  const match = matchExistingClient([a], { name: 'Patient B', emiratesId: 'n/a' });
+  check('malformed id: a second patient typing the same placeholder never matches', match === undefined, JSON.stringify(match));
+  check(
+    'malformed id: nor does it match a record that stored one before validation',
+    matchExistingClient([{ ...a, emiratesId: 'N/A' }], { name: 'Patient B', emiratesId: 'n/a' }) === undefined,
+    'legacy placeholder matched',
+  );
+  check(
+    'malformed id: a truncated number never matches a full one',
+    matchExistingClient(
+      [clientFromSession('s-c', NOTE, { name: 'C', sessionNumber: 1, dateLabel: DATE, emiratesId: '784-1988-1234567-1' })],
+      { name: 'D', emiratesId: '784-1988' },
+    ) === undefined,
+    'a partial matched',
+  );
+}
+
+// --- Priority + guards: id beats Emirates ID; a blank Emirates ID is never a match key -------------
+{
+  const a = clientFromSession('s-a', NOTE, { name: 'A', sessionNumber: 1, dateLabel: DATE, emiratesId: '784-1111-1111111-1' });
+  const b = clientFromSession('s-b', NOTE, { name: 'B', sessionNumber: 1, dateLabel: DATE, emiratesId: '784-2222-2222222-2' });
+  check('priority: an explicit clientId matches by id', matchExistingClient([a, b], { clientId: 's-b', emiratesId: '784-1111-1111111-1' })?.matchedBy === 'id', 'id did not win');
+  check('guard: a blank/whitespace Emirates ID is not a match key', matchExistingClient([a, b], { emiratesId: '   ' }) === undefined, 'blank matched');
+  check('guard: an Emirates ID with no caseload match falls through', matchExistingClient([a, b], { emiratesId: '784-9999-9999999-9' }) === undefined, 'phantom match');
+}
+
+// --- 8. The REAL save path, end to end ------------------------------------------------------------
+// The helper checks above prove the identity rules; these prove the code that CALLS them. That wiring
+// is where the Emirates ID was once silently dropped while every helper still behaved correctly, so it
+// is exercised here as a snapshot→snapshot decision: caseload in, caseload + flags out.
+{
+  const EMPTY = { clients: [], notes: {}, patientDetails: {}, day: null, sampleLoaded: false };
+  let seq = 0;
+  // One captured session, exactly as saveSessionNote calls it (it supplies the clock and the new id).
+  const capture = (snapshot, opts) => applySessionNote(snapshot, NOTE, { dateLabel: DATE, newClientId: `s-${++seq}`, ...opts });
+  const X = '784-1988-1234567-1';
+
+  // A fresh caseload: the capture mints a client, stores the typed id verbatim, and files the note.
+  const first = capture(EMPTY, { name: 'Sam Ali', emiratesId: X });
+  check('save: a fresh capture mints one client', first.snapshot.clients.length === 1, String(first.snapshot.clients.length));
+  check('save: the note is filed under that client', first.snapshot.notes[first.clientId]?.length === 1, JSON.stringify(Object.keys(first.snapshot.notes)));
+  check('save: the typed Emirates ID is stored verbatim', first.snapshot.clients[0].emiratesId === X, String(first.snapshot.clients[0].emiratesId));
+  check('save: a fresh mint raises no flags', !first.isDuplicate && !first.nameConflict && !first.idNameConflict, JSON.stringify(first));
+
+  // The same id and name again — the duplicate-patient guard: open the record, create nothing.
+  const again = capture(first.snapshot, { name: 'Sam Ali', emiratesId: ' 784 1988 1234567 1 ' });
+  check('save: a duplicate Emirates ID creates NO second record', again.snapshot.clients.length === 1, String(again.snapshot.clients.length));
+  check('save: it folds into the existing record', again.clientId === first.clientId, again.clientId);
+  check('save: and is reported as a duplicate', again.isDuplicate === true, JSON.stringify(again));
+  // A TRUE id match — the record already held the key — so review may say it was already on file.
+  check('save: a true id match is not flagged as an adoption', again.adoptedEmiratesId === false, JSON.stringify(again.adoptedEmiratesId));
+  check('save: the fold accumulates sessions', again.snapshot.clients[0].sessionNumber === 2, String(again.snapshot.clients[0].sessionNumber));
+  check('save: the fold retains both notes', again.snapshot.notes[again.clientId]?.length === 2, String(again.snapshot.notes[again.clientId]?.length));
+
+  // An explicit clientId (opened from the day board / client file) folds without any duplicate notice.
+  const byId = capture(again.snapshot, { clientId: first.clientId });
+  check('save: an id-opened capture folds', byId.clientId === first.clientId && byId.snapshot.clients.length === 1, JSON.stringify(byId.clientId));
+  check('save: an id-opened fold is not a "duplicate" moment', byId.isDuplicate === false, JSON.stringify(byId));
+
+  // No Emirates ID at all — the pre-existing name continuation.
+  const noIdFirst = capture(EMPTY, { name: 'Dana Farouk' });
+  const noIdAgain = capture(noIdFirst.snapshot, { name: 'dana  FAROUK' });
+  check('save: a no-id capture folds by name', noIdAgain.clientId === noIdFirst.clientId, noIdAgain.clientId);
+  check('save: the name fold creates no second record', noIdAgain.snapshot.clients.length === 1, String(noIdAgain.snapshot.clients.length));
+  check('save: a name fold is not flagged as a duplicate', noIdAgain.isDuplicate === false, JSON.stringify(noIdAgain));
+
+  // THE MERGE THIS ALL EXISTS TO PREVENT: that id pasted onto a different patient's capture.
+  const forked = capture(first.snapshot, { name: 'Fatima Noor', emiratesId: X });
+  check('save: an id under a different name mints a SEPARATE record', forked.snapshot.clients.length === 2, String(forked.snapshot.clients.length));
+  check('save: it is a new record, not the id holder', forked.clientId !== first.clientId, forked.clientId);
+  check('save: and the counselor is warned', forked.idNameConflict === true && forked.isDuplicate === false, JSON.stringify(forked));
+  const forkedClient = forked.snapshot.clients.find((cl) => cl.id === forked.clientId);
+  check('save: the fork carries NO Emirates ID', forkedClient.emiratesId === undefined, String(forkedClient.emiratesId));
+  check(
+    'save: the key still has exactly one holder',
+    forked.snapshot.clients.filter((cl) => cl.emiratesId && normalizeEmiratesId(cl.emiratesId) === normalizeEmiratesId(X)).length === 1,
+    'the key has more than one holder',
+  );
+  check("save: Sam Ali's record is untouched by the fork", forked.snapshot.clients.find((cl) => cl.id === first.clientId).sessionNumber === 1, 'the original was mutated');
+
+  // ...and the session after the fork, with the name left blank, still reaches the RIGHT patient.
+  const blankName = capture(forked.snapshot, { emiratesId: X });
+  check('save: a later blank-name capture folds by Emirates ID', blankName.isDuplicate === true, JSON.stringify(blankName));
+  check('save: it lands on the ORIGINAL holder, not the fork', blankName.clientId === first.clientId, blankName.clientId);
+
+  // ADOPTION through the real save path: Dana was captured with no id; this session records hers.
+  const Y = '784-1988-7654321-9';
+  const adopt = capture(noIdAgain.snapshot, { name: 'Dana Farouk', emiratesId: Y });
+  check('save: adoption creates NO second record', adopt.snapshot.clients.length === 1, String(adopt.snapshot.clients.length));
+  check('save: it folds onto the existing client', adopt.clientId === noIdFirst.clientId, adopt.clientId);
+  check(
+    'save: the id is saved onto THAT record, verbatim',
+    adopt.snapshot.clients.find((cl) => cl.id === noIdFirst.clientId)?.emiratesId === Y,
+    String(adopt.snapshot.clients.find((cl) => cl.id === noIdFirst.clientId)?.emiratesId),
+  );
+  check('save: the counselor is told it is the same client', adopt.isDuplicate === true && adopt.nameConflict === false, JSON.stringify(adopt));
+  // The match was made on the NAME and the id was written by this save, so review must say exactly that
+  // rather than borrowing the true-id-match sentence ("already on your caseload") it cannot support.
+  check('save: the fold is flagged as an ADOPTION, not a prior id match', adopt.adoptedEmiratesId === true, JSON.stringify(adopt.adoptedEmiratesId));
+  const afterAdopt = capture(adopt.snapshot, { emiratesId: ' 784 1988 7654321 9 ' });
+  check('save: the adopted key resolves the next capture by id alone', afterAdopt.clientId === noIdFirst.clientId && afterAdopt.snapshot.clients.length === 1, afterAdopt.clientId);
+  // Once adopted, the key IS on file — that later fold is a true id match, not another adoption.
+  check('save: the fold after adoption is NOT flagged an adoption', afterAdopt.adoptedEmiratesId === false, JSON.stringify(afterAdopt.adoptedEmiratesId));
+
+  // AMBIGUITY through the real save path: two namesakes, so the app refuses to guess.
+  const twinA = capture(EMPTY, { name: 'Omar Said' });
+  const twinB = { ...twinA.snapshot, clients: [clientFromSession('s-twin', NOTE, { name: 'Omar Said', sessionNumber: 1, dateLabel: DATE }), ...twinA.snapshot.clients] };
+  const ambiguous = capture(twinB, { name: 'Omar Said', emiratesId: '784-1988-3333333-3' });
+  check('save: ambiguity forks rather than guessing', ambiguous.snapshot.clients.length === 3, String(ambiguous.snapshot.clients.length));
+  check('save: the ambiguous fork is reported', ambiguous.nameConflict === true && ambiguous.idNameConflict === false, JSON.stringify(ambiguous));
+  check(
+    'save: neither namesake adopted the id',
+    ambiguous.snapshot.clients.filter((cl) => cl.emiratesId).length === 1,
+    'an existing namesake was written to',
+  );
+  check('save: the forked record carries the unclaimed id', ambiguous.snapshot.clients.find((cl) => cl.id === ambiguous.clientId).emiratesId === '784-1988-3333333-3', 'the unclaimed id was withheld');
+
+  // DISAGREEMENT through the real save path: the namesake already has an id of their own.
+  const disagree = capture(adopt.snapshot, { name: 'Dana Farouk', emiratesId: '784-1988-4444444-4' });
+  check('save: a namesake with another id forks', disagree.clientId !== noIdFirst.clientId, disagree.clientId);
+  check('save: the disagreement is reported', disagree.nameConflict === true, JSON.stringify(disagree));
+  check('save: the original keeps its own id', disagree.snapshot.clients.find((cl) => cl.id === noIdFirst.clientId).emiratesId === Y, 'the stored id was changed');
+
+  // Blank name + valid id mints under the placeholder; the next session names the patient.
+  const unnamed = capture(EMPTY, { emiratesId: '784-1988-5555555-5' });
+  check('save: a blank-name capture is filed under the placeholder', unnamed.snapshot.clients[0].name === UNNAMED_CLIENT_NAME, unnamed.snapshot.clients[0].name);
+  const named = capture(unnamed.snapshot, { name: 'Layla Haddad', emiratesId: '784-1988-5555555-5' });
+  check('save: the same id + a real name FOLDS (no second record)', named.snapshot.clients.length === 1 && named.clientId === unnamed.clientId, String(named.snapshot.clients.length));
+  check('save: no bogus "different name" warning', named.idNameConflict === false, JSON.stringify(named));
+  check('save: the placeholder name is upgraded to the real one', named.snapshot.clients[0].name === 'Layla Haddad', named.snapshot.clients[0].name);
+  check('save: initials follow the upgraded name', named.snapshot.clients[0].initials === 'LH', named.snapshot.clients[0].initials);
+
+  // A malformed entry is no identity: two unrelated patients typing the same placeholder never merge.
+  const naFirst = capture(EMPTY, { name: 'Patient A', emiratesId: 'N/A' });
+  check('save: a malformed entry is not stored as an identity', naFirst.snapshot.clients[0].emiratesId === undefined, String(naFirst.snapshot.clients[0].emiratesId));
+  const naSecond = capture(naFirst.snapshot, { name: 'Patient B', emiratesId: 'n/a' });
+  check('save: a second patient typing the same placeholder gets their OWN record', naSecond.snapshot.clients.length === 2, String(naSecond.snapshot.clients.length));
+  check('save: and is never announced as a duplicate', naSecond.isDuplicate === false, JSON.stringify(naSecond));
+
+  // Nothing above ever mutated the snapshot it was handed.
+  check('save: the input snapshot is never mutated', EMPTY.clients.length === 0 && Object.keys(EMPTY.notes).length === 0, 'EMPTY was mutated');
+  check('save: an earlier snapshot still reflects its own state', first.snapshot.clients.length === 1, String(first.snapshot.clients.length));
+}
+
+console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
+process.exit(failed ? 1 : 0);

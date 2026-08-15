@@ -113,6 +113,74 @@ function CopyNoteButton({ draft }: { draft: DraftNote }) {
   );
 }
 
+/**
+ * The one banner shape the duplicate-identity outcomes speak through: a fold into an existing record
+ * (brand tone, shield) and the two deliberate forks (caution tone, "!" badge — `strong` draws the
+ * border in the caution colour for the sharper mis-entry warning). One component so three cautions
+ * about the same subject cannot drift apart visually as the copy is edited.
+ */
+function IdentityNotice({
+  tone,
+  heading,
+  strong,
+  children,
+}: {
+  tone: 'brand' | 'caution';
+  heading: string;
+  strong?: boolean;
+  children: React.ReactNode;
+}) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const tint = tone === 'brand' ? c.brand : c.caution;
+  const background = tone === 'brand' ? c.brandBg : c.cautionBg;
+  const border = tone === 'brand' ? c.brandBd : strong ? c.caution : c.cautionBg;
+
+  return (
+    <Row
+      gap={9}
+      style={{
+        marginTop: theme.spacing.md,
+        alignItems: 'flex-start',
+        backgroundColor: background,
+        borderColor: border,
+        borderWidth: 1,
+        borderRadius: theme.radii.md,
+        padding: theme.spacing.md,
+      }}
+    >
+      {tone === 'brand' ? (
+        <View style={{ marginTop: 1 }}>
+          <ShieldIcon size={15} color={c.brand} />
+        </View>
+      ) : (
+        <View
+          style={{
+            width: 18,
+            height: 18,
+            borderRadius: 9,
+            borderWidth: 2,
+            borderColor: c.caution,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginTop: 1,
+          }}
+        >
+          <AppText variant="label" tint={c.caution} style={{ fontSize: 11 }}>
+            !
+          </AppText>
+        </View>
+      )}
+      <AppText variant="small" color="ink2" style={{ flex: 1, lineHeight: 17 }}>
+        <AppText variant="bodyStrong" tint={tint} style={{ fontSize: 12.5 }}>
+          {heading}
+        </AppText>{' '}
+        {children}
+      </AppText>
+    </Row>
+  );
+}
+
 export default function ReviewNote() {
   const theme = useTheme();
   const c = theme.colors;
@@ -120,7 +188,31 @@ export default function ReviewNote() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const wide = width >= 1040;
-  const { clientId, note: noteParam } = useLocalSearchParams<{ clientId: string; note?: string }>();
+  const { clientId, note: noteParam, existing, adopted, conflict, idconflict } = useLocalSearchParams<{
+    clientId: string;
+    note?: string;
+    existing?: string;
+    adopted?: string;
+    conflict?: string;
+    idconflict?: string;
+  }>();
+  // Set when this capture's Emirates ID matched a client already on the caseload: the session folded
+  // into that existing record rather than creating a duplicate patient, and we say so plainly.
+  const foldedIntoExisting = existing === '1';
+  // The ADOPTION fold: no record held this Emirates ID, so the match was made on the NAME and the id
+  // was saved onto that record by this capture. It must not borrow the sentence above — claiming the id
+  // was "already on your caseload" would invent corroboration on the one fold the counselor alone can
+  // check, and this is where a same-named different patient would be caught.
+  const foldedAndSavedTheId = !foldedIntoExisting && adopted === '1';
+  // The sharpest warning: the Emirates ID entered is already on file under a materially DIFFERENT name.
+  // Two strong signals disagreeing is a mis-entry far more often than a match, so a separate record was
+  // minted rather than merging two patients — and the counselor is told to check the id before signing.
+  const idOnFileUnderAnotherName = !foldedIntoExisting && !foldedAndSavedTheId && idconflict === '1';
+  // The app could not tell which patient this is: a namesake holds a different Emirates ID, or more
+  // than one client shares the name. Ambiguity is never resolved by merging, so a separate record was
+  // minted deliberately — said plainly here, because an unexplained second identical-looking row is how
+  // a caseload quietly fragments.
+  const mintedDespiteSameName = !foldedIntoExisting && !foldedAndSavedTheId && !idOnFileUnderAnotherName && conflict === '1';
   // Up to 3 notes are retained per client (C4); `note` selects which retained note to review (newest = 0).
   const notes = useClientNotes(clientId);
   const parsedIndex = noteParam ? Number(noteParam) : 0;
@@ -212,6 +304,37 @@ export default function ReviewNote() {
             <AppText variant="small" color="ink3" style={{ marginTop: 8 }}>
               {draft.sourceLine}
             </AppText>
+
+            {foldedIntoExisting ? (
+              <IdentityNotice tone="brand" heading="You already see this client.">
+                This Emirates ID is already on your caseload, so the session was added to their existing
+                record instead of creating a second — this is that record.
+              </IdentityNotice>
+            ) : null}
+
+            {foldedAndSavedTheId ? (
+              <IdentityNotice tone="brand" heading="You already see this client.">
+                The session was added to {client?.name ? `${client.name}’s` : 'their'} existing record — matched
+                by name — and the Emirates ID you entered was saved onto it. If that isn’t who you saw, check
+                the name and the ID.
+              </IdentityNotice>
+            ) : null}
+
+            {idOnFileUnderAnotherName ? (
+              <IdentityNotice tone="caution" strong heading="Check the Emirates ID.">
+                That Emirates ID is already on your caseload under a different name, so this session was kept
+                as a separate record rather than added to theirs. Check the ID for a mistake — this note stays
+                on its own record either way.
+              </IdentityNotice>
+            ) : null}
+
+            {mintedDespiteSameName ? (
+              <IdentityNotice tone="caution" heading="Check whether this is the same client.">
+                {client?.name ? `A client named ${client.name}` : 'A client with this name'} is already on your
+                caseload — under a different Emirates ID, or more than one client shares this name — so this
+                session was saved as a separate record rather than added to theirs.
+              </IdentityNotice>
+            ) : null}
 
             {/* Tabs */}
             <View style={{ height: theme.spacing.md }} />

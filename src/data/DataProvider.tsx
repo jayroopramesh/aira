@@ -8,16 +8,9 @@
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT, MAX_NOTES_PER_CLIENT, PatientDetailsEntry } from './repository';
+import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT, PatientDetailsEntry } from './repository';
 import { CaseloadKpi, Client, DayDashboard, DraftNote, NoteSection } from './types';
-import { appendSessionToClient, clientFromSession } from './sessionClient';
-
-const normalizeName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
-
-/** Prepend the newest note and keep at most MAX_NOTES_PER_CLIENT per client (C4) — oldest rotates out. */
-function withNote(existing: DraftNote[] | undefined, note: DraftNote): DraftNote[] {
-  return [note, ...(existing ?? [])].slice(0, MAX_NOTES_PER_CLIENT);
-}
+import { applySessionNote } from './saveSession';
 
 /**
  * Caseload KPI tiles computed from the ACTUAL caseload (F10). The tiles used to be static fixtures
@@ -68,9 +61,28 @@ type DataContextValue = {
   clearAll: () => Promise<void>;
   /**
    * Persist a session-generated draft. With no clientId, a lightweight client is created so the
-   * captured session appears in the caseload. Returns the clientId the note is stored under.
+   * captured session appears in the caseload — UNLESS a supplied Emirates ID already exists on the
+   * caseload, in which case the session folds into that client and NO second record is minted.
+   * Returns the clientId the note is stored under, plus `isDuplicate` (true only when an Emirates ID
+   * matched an existing client), so the UI can plainly say "you already see this client", and
+   * `nameConflict` (true only on the mint path, when a valid Emirates ID vetoed folding into a
+   * same-named client) so the deliberate refusal to fold two different people is explained rather than
+   * leaving two identical-looking rows on the caseload, and `idNameConflict` (true only on the mint
+   * path, when that Emirates ID is already on file under a materially different name) so a mis-entered
+   * id is visible before the note is signed. All three are mutually exclusive. `adoptedEmiratesId`
+   * qualifies a duplicate fold for PRESENTATION only — the match was made on the name and the id was
+   * saved onto that record by this capture, so review must not claim it was already on file.
    */
-  saveSessionNote: (note: DraftNote, opts?: { clientId?: string; name?: string }) => Promise<string>;
+  saveSessionNote: (
+    note: DraftNote,
+    opts?: { clientId?: string; name?: string; emiratesId?: string },
+  ) => Promise<{
+    clientId: string;
+    isDuplicate: boolean;
+    adoptedEmiratesId: boolean;
+    nameConflict: boolean;
+    idNameConflict: boolean;
+  }>;
   /** Persist the clinician-entered patient-details card edits for a client (C2) — device-local. */
   savePatientDetails: (clientId: string, patch: PatientDetailsEntry) => Promise<void>;
   /** Persist a sign-off onto the stored note (F8) so the attestation survives navigation/reload. */
@@ -135,56 +147,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [persist]);
 
   const saveSessionNote = useCallback(
-    async (note: DraftNote, opts?: { clientId?: string; name?: string }) => {
-      const snapshot = snapshotRef.current;
-      const existingId = opts?.clientId;
-      const dateLabel = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-      const typedName = opts?.name?.trim() ?? '';
-      const name = typedName || 'New client'; // display fallback only — NEVER a fold key
-
-      // A session for a client we already know → fold it in rather than minting a duplicate (F3),
-      // so trends accumulate, the session history stays reachable, and the note's risk reaches the
-      // caseload on EVERY capture path (F4) — whether the client arrived by id (day board → session)
-      // or by a REAL typed name. Folding by name is scoped to captured clients ('s-' ids) AND requires
-      // a non-blank typed name: a blank capture defaults to "New client" for display but must never
-      // fold, or two different unnamed patients would merge into one record and cross-contaminate risk
-      // and notes (fold-name-collision).
-      const existing = existingId
-        ? snapshot.clients.find((cl) => cl.id === existingId)
-        : typedName
-          ? snapshot.clients.find((cl) => cl.id.startsWith('s-') && normalizeName(cl.name) === normalizeName(typedName))
-          : undefined;
-      if (existing) {
-        const sessionNumber = existing.sessionNumber + 1;
-        const updated = appendSessionToClient(existing, note, { sessionNumber, dateLabel });
-        const noteForClient: DraftNote = { ...note, sessionLabel: `Session ${sessionNumber} — ${dateLabel}` };
-        await persist({
-          ...snapshot,
-          clients: snapshot.clients.map((cl) => (cl.id === existing.id ? updated : cl)),
-          // Retain up to 3 notes (C4) — the newer session no longer erases the prior note's full text.
-          notes: { ...snapshot.notes, [existing.id]: withNote(snapshot.notes[existing.id], noteForClient) },
-        });
-        return existing.id;
-      }
-
-      // A clientId whose client no longer exists (e.g. cleared data mid-session) — keep the note
-      // reachable under that id rather than silently minting an unrelated client.
-      if (existingId) {
-        await persist({ ...snapshot, notes: { ...snapshot.notes, [existingId]: withNote(snapshot.notes[existingId], note) } });
-        return existingId;
-      }
-
-      // Standalone session — mint a lightweight client so blank boot visibly populates.
-      const id = `s-${Date.now().toString(36)}`;
-      const sessionNumber = 1;
-      const client = clientFromSession(id, note, { name, sessionNumber, dateLabel });
-      const noteForClient: DraftNote = { ...note, sessionLabel: `Session ${sessionNumber} — ${dateLabel}` };
-      await persist({
-        ...snapshot,
-        clients: [client, ...snapshot.clients],
-        notes: { ...snapshot.notes, [id]: withNote(snapshot.notes[id], noteForClient) },
+    async (note: DraftNote, opts?: { clientId?: string; name?: string; emiratesId?: string }) => {
+      // The whole match/fold/mint decision — including every duplicate-identity rule — lives in
+      // `applySessionNote` so it can be driven end to end by the harness. This wrapper supplies the two
+      // impure values and persists what comes back; it must never re-decide anything itself.
+      const { snapshot, ...result } = applySessionNote(snapshotRef.current, note, {
+        ...opts,
+        dateLabel: new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
+        newClientId: `s-${Date.now().toString(36)}`,
       });
-      return id;
+      await persist(snapshot);
+      return result;
     },
     [persist],
   );

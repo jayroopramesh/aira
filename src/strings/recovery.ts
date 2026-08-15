@@ -22,6 +22,9 @@ export const recoveryStrings = {
   signInCta: 'Sign in & decrypt',
   demoWrongLink: 'See a wrong-password state',
   createAccountLink: 'New to Airava? Create an account',
+  // Shown on the sign-in screen when someone tapped "Create account" for an email that already has one
+  // — calm, not an error: nothing was changed, their saved recovery code is intact, they just sign in.
+  accountExistsNotice: 'You already have an account — sign in below. Nothing was changed, and your saved recovery code still works.',
   vaultLine: 'Encrypted with your login · notes stay on this device.',
   // Supanote-style trust note — HIPAA-ALIGNED phrasing only (never "compliant/certified"; counsel pending).
   hipaaLine: 'HIPAA-aligned safeguards · encrypted on this device — only you hold the key.',

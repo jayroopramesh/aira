@@ -176,6 +176,71 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   capture-time signal: it is NOT re-derived from later manual edits to a note's risk narrative (see
   `updateNoteSection`). See `scanNoteRisk` / `riskFromNote` / `appendSessionToClient` in
   `src/data/sessionClient.ts`, proved by `scripts/risk-floor-harness.mjs`.
+- **Duplicate identity never silently destroys or duplicates a record** (proved by
+  `scripts/duplicate-identity-harness.mjs`):
+  - **Account**: `SupabaseAuthService.createAccount` asks Supabase FIRST and STOPS on "already
+    registered" by throwing `AccountExistsError` — it mints no recovery code, leaves the persisted
+    recovery hash + local vault untouched, and sets no status, so a returning counselor who taps
+    "Create account" never has their saved recovery code overwritten. The create screen routes that
+    error to `/unlock?notice=account-exists&email=…` (calm notice + prefill); a generic signUp error
+    still throws a plain `Error` (retry the form). Never reinstate the swallow-and-continue.
+    The rule holds on **every** build: `MockAuthService.createAccount` (the keyless path) has no server
+    to ask, so it reads the device's own evidence — a persisted `RECOVERY_HASH_KEY` means an account
+    exists here — and throws the same `AccountExistsError` before writing anything. On that path the
+    credential a second create destroyed is the **password** hash, not the recovery one (the mock's code
+    is the `RECOVERY_WORDS` constant and `fnv1a` is unsalted, so the rewritten recovery hash was
+    identical; `PASSWORD_HASH_KEY` took the second attempt's password and the real password stopped
+    opening `signIn`) — same silent lockout, other credential. The guard is device-scoped, not
+    email-scoped: one account per device is the keyless model, and there is no email registry to consult.
+  - **Patient**: a **well-formed** Emirates ID is the **local** caseload uniqueness key
+    (`Client.emiratesId`, stored verbatim; compared via `normalizeEmiratesId`). The governing rule: a
+    strong identifier, present and well-formed, ALWAYS decides a MATCH; a weak one (a name, or a
+    malformed entry) NEVER merges two patients; and two strong signals that DISAGREE are a warning, not
+    a match — the app mints a separate record and surfaces a caution rather than merging.
+    - **Well-formed** = `isValidEmiratesId` — normalises to `^784[0-9]{12}$`. Anything else ("N/A",
+      "unknown", a truncated "784-1988") is a placeholder the counselor reached for without the number,
+      NOT an identity: `emiratesIdKey` yields `''`, so it never keys a match, and `clientFromSession`
+      stores `undefined`. Two unrelated patients typing the same placeholder must never collapse into
+      one record under a confident "you already see this client". The capture screen says so inline.
+    - `matchExistingClient` (`sessionClient.ts`) resolves by id → valid Emirates ID → captured-name, on
+      the rule **merge when nothing disagrees; never merge on ambiguity or on disagreement**. A capture
+      carrying a valid id resolves in two steps:
+      - **Step A — some record HOLDS that id.** Names agreeing (or none typed) is the duplicate-patient
+        fold (`saveSessionNote` returns `isDuplicate` → "You already see this client" on review). A
+        materially different REAL name does NOT fold: a clipboard carried over from another patient's
+        form or a transposed digit landing on a real id is likelier than a match, and folding is the
+        unrecoverable merge from the opposite direction. Only two REAL names can disagree — the app's own
+        `UNNAMED_CLIENT_NAME` placeholder (and a blank) never vetoes an id fold, and such a record has its
+        name upgraded when a session finally supplies a real one. The record that fork mints carries
+        **no** Emirates ID: the id was just ruled to be someone else's, and a second holder of the key
+        would let the next blank-name capture fold into the wrong one. One key, one holder.
+      - **Step B — NO record holds that id**, so the id contradicts nothing. Absence of an id is NEW
+        INFORMATION, not disagreement: exactly one same-named captured record holding no id of its own is
+        the same patient having their id recorded for the first time, so it FOLDS and the id is **adopted**
+        onto that record (`adoptEmiratesId` → `appendSessionToClient`, stored verbatim). This is the
+        ordinary rollout case — no record captured before the field existed carries an id. More than one
+        namesake (**ambiguity**) or a lone namesake holding a different valid id (**disagreement**) forks
+        instead, carrying the unclaimed id, and never writes onto the existing record.
+      The name fold survives unchanged for captures with no valid id (the pre-existing F3 continuation).
+    - Every veto mints a SEPARATE record. That is the SAFE direction by the asymmetry of harm: a fork
+      leaves two truthful records that a future repair surface can reconcile, while merging two patients
+      destroys whose note, plan, timeline and risk tier is whose and nothing can undo it. None of the
+      vetoes is silent. `findNameConflict` and
+      `findIdNameMismatch` are the exact complements of the branches that declined (so the app cannot
+      refuse to fold for a reason it fails to explain), `saveSessionNote` returns `nameConflict` /
+      `idNameConflict`, and review carries the matching caution — the id-under-another-name warning wins
+      when both could apply. `appendSessionToClient` writes an Emirates ID **only** for a resolved
+      adoption, never as a blanket backfill from whatever the capture carried and never over a stored
+      one — that backfill is how one patient's id got stamped onto another's.
+    - The whole match/fold/mint decision is `applySessionNote` (`src/data/saveSession.ts`), a pure
+      snapshot→snapshot function; `DataProvider.saveSessionNote` only supplies the clock/new id and
+      persists. It lives outside React so `scripts/duplicate-identity-harness.mjs` drives the real save
+      path — a rule is only as good as the wiring that calls it, and a dropped call there was a real bug.
+    - KNOWN FOLLOW-UP: a forked record has no in-app repair/merge surface — `Client.emiratesId` is written
+      only at mint time (`clientFromSession`) and on a resolved Step-B adoption (`appendSessionToClient`),
+      and no screen renders or edits it.
+    Scope is device-local ONLY — never a cross-device/therapist
+    existence check (captain, 2026-08-15): a global check would leak that a named person is in therapy.
 - Snapshot writes are **serialized** (`createWriteQueue` in `src/services/writeQueue.ts`, applied at
   `ClientRepository.save`): signing persists twice in one tick (pending section edit, then the
   sign-off) and on native each save is an independent file write, so without an ordered queue the

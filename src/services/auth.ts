@@ -75,6 +75,22 @@ export type AccountDetails = {
 
 export type AccountStatus = 'none' | 'awaiting-recovery-save' | 'active';
 
+/**
+ * Thrown by `createAccount` when Supabase reports the email is ALREADY registered. This is a
+ * returning counselor who tapped "Create account" instead of "Sign in" — and their saved recovery
+ * code is the one credential the app calls their only way back in, so create-account STOPS on this:
+ * it mints no new recovery code, leaves the persisted recovery hash and the local vault untouched,
+ * and sets no active/awaiting status. The create screen catches it, shows a calm "you already have
+ * an account" message, and routes to sign-in with the email prefilled. Distinct from a generic
+ * failure precisely because the remedy is different (sign in, don't retry the form).
+ */
+export class AccountExistsError extends Error {
+  constructor(readonly email: string) {
+    super('You already have an account — sign in.');
+    this.name = 'AccountExistsError';
+  }
+}
+
 /** The demo password the mock login accepts; anything else drives the wrong-password state. */
 const DEMO_PASSWORD = 'clinicvault';
 
@@ -174,6 +190,20 @@ export class MockAuthService implements AuthService {
   }
 
   async createAccount(details: AccountDetails): Promise<{ recoveryCode: string[] }> {
+    // The already-registered rule holds on EVERY build, not just the Supabase one. There is no server
+    // to ask here, but the device already carries the evidence: a persisted recovery hash means an
+    // account was created on it.
+    //
+    // The credential a second createAccount destroyed on THIS path is the PASSWORD hash, not the
+    // recovery one: the mock's code is the RECOVERY_WORDS constant and fnv1a is unsalted, so the
+    // rewritten recovery hash was identical and the saved code kept working — but PASSWORD_HASH_KEY was
+    // overwritten with the second attempt's password, so the counselor's real password stopped opening
+    // signIn. Same silent lockout as the Supabase path, reached through the other credential. So STOP
+    // the same way: no new code, no hash write, no password-hash write, no status change. The create
+    // screen already routes AccountExistsError to sign-in with the email prefilled.
+    if (await deviceStore.get(RECOVERY_HASH_KEY)) {
+      throw new AccountExistsError(details.email);
+    }
     // A real impl derives the vault key from the password and escrows a wrapped copy;
     // here we remember the chosen password, move state forward, and hand back the code.
     this.createdPassword = details.password;
@@ -263,7 +293,12 @@ export class SupabaseAuthService implements AuthService {
   private clinicianName: string | null = null;
   private readonly hydrated: Promise<void>;
 
-  constructor(private readonly vault: VaultStorage) {
+  // The Supabase client is resolved through a seam (default: the app singleton) so tests can drive
+  // the already-registered branch with a stand-in client without any network or env.
+  constructor(
+    private readonly vault: VaultStorage,
+    private readonly resolveSupabase: () => ReturnType<typeof getSupabase> = getSupabase,
+  ) {
     // Hydrate the clinician name + known email so a reload attributes the sign-off (F8) and prefills
     // the right login email, never a demo default (F17).
     this.hydrated = Promise.all([
@@ -304,10 +339,12 @@ export class SupabaseAuthService implements AuthService {
   }
 
   async createAccount(details: AccountDetails): Promise<{ recoveryCode: string[] }> {
-    const supabase = getSupabase();
-    this.knownEmail = details.email;
-    this.clinicianName = details.fullName;
-    this.recoveryCode = generateRecoveryCode();
+    const supabase = this.resolveSupabase();
+    // Ask Supabase FIRST, before minting or persisting anything. An "already registered" reply means
+    // this counselor already has an account (and, on their device, a saved recovery code). Carrying on
+    // would mint a NEW code and OVERWRITE the stored hash of the one they saved — silently voiding
+    // their only way back in. So we STOP here: no code, no hash write, no vault unlock, no status
+    // change. The genuine-new-account path below is only ever reached when signUp did NOT error.
     if (supabase) {
       const { error } = await supabase.auth.signUp({
         email: details.email,
@@ -316,14 +353,19 @@ export class SupabaseAuthService implements AuthService {
           data: { emiratesId: details.emiratesId, phone: details.phone, fullName: details.fullName },
         },
       });
-      // "already registered" is expected on repeated demo runs — the account exists, so the
-      // create → one-time-recovery → login walkthrough can still proceed.
-      if (error && !/already registered|already been registered/i.test(error.message)) {
+      if (error) {
+        if (/already registered|already been registered/i.test(error.message)) {
+          throw new AccountExistsError(details.email);
+        }
         throw new Error(error.message);
       }
     }
-    // Persist the code's hash + the clinician name + the email so recovery works, the sign-off is
-    // attributed, and login prefills the right email after a reload.
+    // Genuine new account. Remember the identity, mint the one-time code, and persist the code's hash
+    // + the clinician name + the email so recovery works, the sign-off is attributed, and login
+    // prefills the right email after a reload.
+    this.knownEmail = details.email;
+    this.clinicianName = details.fullName;
+    this.recoveryCode = generateRecoveryCode();
     await persistRecoveryHash(this.recoveryCode);
     await deviceStore.set(CLINICIAN_NAME_KEY, details.fullName);
     await deviceStore.set(KNOWN_EMAIL_KEY, details.email);
@@ -334,7 +376,7 @@ export class SupabaseAuthService implements AuthService {
   }
 
   async signIn(username: string, password: string): Promise<UnlockResult> {
-    const supabase = getSupabase();
+    const supabase = this.resolveSupabase();
     if (supabase) {
       const { error } = await supabase.auth.signInWithPassword({ email: username.trim(), password });
       if (error) return { ok: false, reason: 'wrong-key' };
@@ -357,7 +399,7 @@ export class SupabaseAuthService implements AuthService {
   }
 
   async signOut() {
-    const supabase = getSupabase();
+    const supabase = this.resolveSupabase();
     if (supabase) await supabase.auth.signOut().catch(() => {});
     // Re-lock the vault AND drop the session so the route guard re-challenges (F2).
     this.status = 'none';
