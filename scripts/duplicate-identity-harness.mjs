@@ -675,6 +675,40 @@ const NOTE = {
   // Nothing above ever mutated the snapshot it was handed.
   check('save: the input snapshot is never mutated', EMPTY.clients.length === 0 && Object.keys(EMPTY.notes).length === 0, 'EMPTY was mutated');
   check('save: an earlier snapshot still reflects its own state', first.snapshot.clients.length === 1, String(first.snapshot.clients.length));
+
+  // decision item 3: the reviewed transcript rides on the note through this exact save path — the
+  // review screen's Transcript tab reads whatever ends up filed here, on both the mint and fold routes.
+  const TRANSCRIPT_TEXT = 'Client described a steadier fortnight since the last session.';
+  const NOTE_WITH_TRANSCRIPT = { ...NOTE, transcript: TRANSCRIPT_TEXT };
+  const captureWithTranscript = (snapshot, opts) =>
+    applySessionNote(snapshot, NOTE_WITH_TRANSCRIPT, { dateLabel: DATE, newClientId: `s-${++seq}`, ...opts });
+
+  const minted = captureWithTranscript(EMPTY, { name: 'Priya Nair' });
+  check(
+    'save: a freshly minted client files the transcript with its note',
+    minted.snapshot.notes[minted.clientId][0].transcript === TRANSCRIPT_TEXT,
+    String(minted.snapshot.notes[minted.clientId][0].transcript),
+  );
+
+  const folded = captureWithTranscript(minted.snapshot, { name: 'Priya Nair' });
+  check(
+    'save: a folded (second) session keeps its OWN transcript, not the prior session\'s',
+    folded.snapshot.notes[folded.clientId][0].transcript === TRANSCRIPT_TEXT,
+    String(folded.snapshot.notes[folded.clientId][0].transcript),
+  );
+  check(
+    'save: the fold retains the prior session\'s transcript too (the 3-note cap, not an overwrite)',
+    folded.snapshot.notes[folded.clientId][1].transcript === TRANSCRIPT_TEXT,
+    String(folded.snapshot.notes[folded.clientId][1].transcript),
+  );
+
+  // A note with no transcript (older captures) must not have one invented for it by the save path.
+  const noTranscript = capture(EMPTY, { name: 'Omar Saeed' });
+  check(
+    'save: a note with no transcript stays without one — never invented at save time',
+    noTranscript.snapshot.notes[noTranscript.clientId][0].transcript === undefined,
+    String(noTranscript.snapshot.notes[noTranscript.clientId][0].transcript),
+  );
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');

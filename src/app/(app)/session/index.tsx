@@ -806,15 +806,11 @@ function Analysing({
       sampleCapture: isMockCapture,
     };
     try {
+      // The summarizer stamps transcript + every provenance field itself, from the input it was given
+      // and the service that really produced this draft, so the review screen's Transcript tab and its
+      // provenance line stay true for this note however the app is configured when it is later read.
       const note = await summarizationService.summarize(input, { signal: controller.current.signal });
-      // Persist the real transcript alongside the note (the exact text the clinician reviewed and drafted
-      // from) so the review screen's Transcript tab can show the actual session — not placeholder prose —
-      // and a clinician can later check the note against it. Rides on the note through the vault seam,
-      // together with how this capture was actually transcribed and drafted (the summarizer stamps
-      // every provenance field itself, from the input it was given and the service that really
-      // produced this draft), so every provenance line on the review screen stays true for this note
-      // however the app is configured when it is read.
-      onDrafted({ ...note, transcript: trimmed });
+      onDrafted(note);
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
       // Drafting has no no-session failure mode: with no token the summarizer drafts on-device over

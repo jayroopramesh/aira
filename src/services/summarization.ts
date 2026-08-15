@@ -443,6 +443,10 @@ function buildDraft(
       ? `From a ${durMin}-min voice note · ${provenance}`
       : provenance.charAt(0).toUpperCase() + provenance.slice(1),
     status: 'draft',
+    // Rides on the note itself — the single source of truth for the Transcript tab — rather than a
+    // caller re-attaching it after the fact. A blank/whitespace-only transcript stores as absent, same
+    // honesty rule as every other "nothing to show" case in this note.
+    transcript: input.transcript?.trim() || undefined,
     audioLeftDevice: audioLeft,
     transcriptFromCloud: cloudTranscript,
     draftedInCloud,
