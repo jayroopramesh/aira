@@ -22,7 +22,7 @@
 // static import.
 delete process.env.EXPO_PUBLIC_CRISIS_LINE;
 delete process.env.EXPO_PUBLIC_ONCALL_EMAIL;
-const { buildEscalateSections, manualTargetLabel, openFailureMessage } = await import(
+const { buildEscalateSections, manualTargetLabel, openFailureMessage, visibleTarget } = await import(
   '../src/config/escalateContacts.ts'
 );
 
@@ -62,19 +62,30 @@ const withOnCall = { crisisLine: configured.crisisLine, onCallEmail: { configure
 
   const crisis = findAction(sections, 'crisis');
   check('crisis line is configured (800 4673 default)', crisis?.href === 'tel:8004673', crisis?.href);
-  check('crisis line sub shows the number, no fallback copy', crisis?.sub === '800 4673 · opens your dialer', crisis?.sub);
+  check('crisis line has no fallback copy in its sub', crisis?.sub === 'Opens your dialer', crisis?.sub);
+  check(
+    'crisis line inline target is grouped exactly "800 4673", never "8004673"',
+    visibleTarget(crisis) === '800 4673',
+    visibleTarget(crisis),
+  );
 
   const police = findAction(sections, 'police');
   check('police tel: target is exactly 999', police?.href === 'tel:999', police?.href);
   check('police is a tel action', police?.kind === 'tel', police?.kind);
+  check('police inline target is exactly 999', visibleTarget(police) === '999', visibleTarget(police));
 
   const hospital = findAction(sections, 'rashid-hospital');
   check('Rashid Hospital tel: target matches 04 219 2000 digit-for-digit', hospital?.href === 'tel:042192000', hospital?.href);
-  check('Rashid Hospital sub displays the number verbatim', hospital?.sub.startsWith('04 219 2000'), hospital?.sub);
+  check(
+    'Rashid Hospital inline target is grouped exactly "04 219 2000", never "042192000"',
+    visibleTarget(hospital) === '04 219 2000',
+    visibleTarget(hospital),
+  );
 
   const dha = findAction(sections, 'dha');
   check('DHA url target matches the brief exactly', dha?.href === 'https://www.dha.gov.ae/', dha?.href);
   check('DHA is a url action (opens browser, not dialer)', dha?.kind === 'url', dha?.kind);
+  check('DHA inline target shows the full URL', visibleTarget(dha) === 'https://www.dha.gov.ae/', visibleTarget(dha));
 
   const lighthousePhone = findAction(sections, 'lighthouse-phone');
   check(
@@ -82,12 +93,22 @@ const withOnCall = { crisisLine: configured.crisisLine, onCallEmail: { configure
     lighthousePhone?.href === 'tel:043802088',
     lighthousePhone?.href,
   );
+  check(
+    'LightHouse Arabia inline target is grouped exactly "04 380 2088", never "043802088"',
+    visibleTarget(lighthousePhone) === '04 380 2088',
+    visibleTarget(lighthousePhone),
+  );
 
   const lighthouseSite = findAction(sections, 'lighthouse-site');
   check(
     'LightHouse Arabia url target matches the brief exactly',
     lighthouseSite?.href === 'https://www.lighthousearabia.com/',
     lighthouseSite?.href,
+  );
+  check(
+    'LightHouse Arabia website inline target shows the full URL',
+    visibleTarget(lighthouseSite) === 'https://www.lighthousearabia.com/',
+    visibleTarget(lighthouseSite),
   );
 
   // No control on the surface may be a dead promise: every action either has a resolvable
@@ -131,8 +152,13 @@ const withOnCall = { crisisLine: configured.crisisLine, onCallEmail: { configure
   check('unconfigured build dials 800 4673', realCrisis?.href === 'tel:8004673', realCrisis?.href);
   check(
     'unconfigured build presents the crisis line as configured, no fallback copy',
-    realCrisis?.sub === '800 4673 · opens your dialer',
+    realCrisis?.sub === 'Opens your dialer',
     realCrisis?.sub,
+  );
+  check(
+    'unconfigured build shows the crisis line inline target grouped as 800 4673',
+    visibleTarget(realCrisis) === '800 4673',
+    visibleTarget(realCrisis),
   );
 
   // The fixed tiers likewise need no configuration to be real.
@@ -224,6 +250,40 @@ const withOnCall = { crisisLine: configured.crisisLine, onCallEmail: { configure
     openFailureMessage(real).includes('oncall@clinic.ae'),
     openFailureMessage(real),
   );
+}
+
+// --- Inline visible target: shown for every real target, hidden for the known placeholder --------
+{
+  // The placeholder-backed on-call address must never render as if it were reachable — the row
+  // keeps its honest "no on-call address is set" copy instead (rule preserved from PR 20).
+  const unconfiguredHandoff = findAction(buildEscalateSections({}, configured), 'handoff');
+  check('unconfigured handoff is marked to hide its target', unconfiguredHandoff?.hideTarget === true, unconfiguredHandoff);
+  check(
+    'unconfigured handoff shows no inline target (would be the placeholder)',
+    visibleTarget(unconfiguredHandoff) === '',
+    visibleTarget(unconfiguredHandoff),
+  );
+
+  // A configured on-call address, by contrast, is real and must show inline.
+  const configuredHandoff = findAction(buildEscalateSections({}, withOnCall), 'handoff');
+  check('configured handoff does not hide its target', configuredHandoff?.hideTarget !== true, configuredHandoff);
+  check(
+    'configured handoff shows its real inline target',
+    visibleTarget(configuredHandoff) === 'oncall@clinic.ae',
+    visibleTarget(configuredHandoff),
+  );
+
+  // A route action (the safety plan) has nothing to dial/browse/mail — no inline target either way.
+  const safetyEnabled = findAction(buildEscalateSections({ activeClientId: 'client-42' }, configured), 'safety');
+  check('the safety-plan route shows no inline target', visibleTarget(safetyEnabled) === '', visibleTarget(safetyEnabled));
+
+  // Every non-route, non-hidden action on the live sheet must show a real, non-empty inline target —
+  // "readable, not just tappable" holds for the whole surface, not just the rows spot-checked above.
+  const allSections = buildEscalateSections({ activeClientId: 'client-42' }, configured);
+  for (const action of allSections.flatMap((s) => s.actions)) {
+    if (action.kind === 'route' || action.hideTarget) continue;
+    check(`"${action.key}" shows a non-empty inline target`, visibleTarget(action).length > 0, action);
+  }
 }
 
 // --- The no-dedicated-line fallback still hands back something dialable -------------------------

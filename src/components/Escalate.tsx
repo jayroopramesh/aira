@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   buildEscalateSections,
   openFailureMessage,
+  visibleTarget,
   type EscalateAction,
   type EscalateSectionTone,
 } from '../config/escalateContacts';
@@ -220,6 +221,12 @@ function EscalateSheet({ visible, clientId, clientToken, onClose }: { visible: b
                         <View style={{ flex: 1 }}>
                           <AppText variant="bodyStrong">{action.title}</AppText>
                           <AppText variant="small" color="ink3" style={{ marginTop: 2 }}>
+                            {/* Real target readable inline, always — never only revealed by a failed
+                                tap (web `Linking.openURL` essentially never rejects, so that signal
+                                can't be trusted). Weighted ink2 against the ink3 instruction so the
+                                number a counselor actually dials reads first. */}
+                            {visibleTarget(action) ? <AppText variant="small" color="ink2">{visibleTarget(action)}</AppText> : null}
+                            {visibleTarget(action) ? ' · ' : ''}
                             {action.sub}
                           </AppText>
                         </View>
