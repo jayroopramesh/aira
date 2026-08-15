@@ -7,6 +7,7 @@ import { Waveform } from '../../../components/Waveform';
 import { AlertTriangleIcon, FileUpIcon, MicIcon, PencilIcon, PlusIcon, ShieldIcon, StopIcon } from '../../../components/icons';
 import { AppText, Avatar, Button, Card, Row, TrustPill } from '../../../components/ui';
 import { useClient, useData } from '../../../data/DataProvider';
+import { isValidEmiratesId } from '../../../data/sessionClient';
 import { DraftNote } from '../../../data/types';
 import {
   ActiveRecording,
@@ -337,6 +338,15 @@ function PreCapture({
               fontSize: 15,
             }}
           />
+          {/* A malformed entry is not treated as an identity (a placeholder two patients might both
+              type would otherwise merge them), so say so here rather than letting the counselor believe
+              the field is doing work it isn't. Non-blocking — capture proceeds either way. */}
+          {emiratesId.trim() && !isValidEmiratesId(emiratesId) ? (
+            <AppText variant="small" tint={c.caution} style={{ marginTop: 8, fontSize: 11.5, lineHeight: 16 }}>
+              That isn’t a recognised Emirates ID (784 followed by 12 digits), so it won’t be used to identify
+              this client. You can still capture the session — it’ll be matched by name instead.
+            </AppText>
+          ) : null}
           <AppText variant="small" color="ink3" style={{ marginTop: 8, fontSize: 11.5 }}>
             The captured session is added to your caseload afterwards. If you already see this client, adding
             their Emirates ID opens their existing record instead of creating a second. It stays on this device.

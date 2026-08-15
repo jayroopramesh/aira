@@ -70,8 +70,8 @@ type DataContextValue = {
    * caseload, in which case the session folds into that client and NO second record is minted.
    * Returns the clientId the note is stored under, plus `isDuplicate` (true only when an Emirates ID
    * matched an existing client), so the UI can plainly say "you already see this client", and
-   * `nameConflict` (true only on the mint path, when a same-named client exists under a DIFFERENT
-   * Emirates ID) so the deliberate refusal to fold two different people is explained rather than
+   * `nameConflict` (true only on the mint path, when a valid Emirates ID vetoed folding into a
+   * same-named client) so the deliberate refusal to fold two different people is explained rather than
    * leaving two identical-looking rows on the caseload.
    */
   saveSessionNote: (
@@ -153,18 +153,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       // A session for a client we already know → fold it in rather than minting a duplicate, so
       // trends accumulate, the session history stays reachable, and the note's risk reaches the
       // caseload on EVERY capture path (F4). The match rules (id → Emirates ID → captured-client name)
-      // live in `matchExistingClient`: an Emirates ID already on the caseload is the local
+      // live in `matchExistingClient`: a VALID Emirates ID already on the caseload is the local
       // uniqueness key, so a capture supplying a duplicate one opens the existing record instead of
-      // creating a second (the duplicate-patient guard). Name folding stays scoped to captured
-      // clients ('s-' ids) and a non-blank name, so two different unnamed patients never merge.
+      // creating a second (the duplicate-patient guard) — and a valid one that matches nothing mints
+      // its own record rather than folding by name. Name folding stays scoped to captured clients
+      // ('s-' ids) and a non-blank name, so two different unnamed patients never merge.
       const match = matchExistingClient(snapshot.clients, { clientId: existingId, name: typedName, emiratesId });
       if (match) {
         const existing = match.client;
         const sessionNumber = existing.sessionNumber + 1;
-        // Pass the typed Emirates ID through so a record captured without one takes it here — the
-        // uniqueness key has to be RECORDED to work, or the next differently-spelled capture of the
-        // same person mints a duplicate. An already-stored id is left untouched.
-        const updated = appendSessionToClient(existing, note, { sessionNumber, dateLabel, emiratesId });
+        const updated = appendSessionToClient(existing, note, { sessionNumber, dateLabel });
         const noteForClient: DraftNote = { ...note, sessionLabel: `Session ${sessionNumber} — ${dateLabel}` };
         await persist({
           ...snapshot,
@@ -184,9 +182,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         return { clientId: existingId, isDuplicate: false, nameConflict: false };
       }
 
-      // Nothing matched, but a same-named client may exist under a DIFFERENT Emirates ID — different
-      // people, so a separate record is minted below. That refusal is reported, not silent: without it
-      // one mistyped digit forks a client into two identical-looking rows with no explanation.
+      // Nothing matched, but a same-named client may exist that this capture's Emirates ID vetoed the
+      // fold against — different people, so a separate record is minted below. That refusal is
+      // reported, not silent: without it one mistyped digit forks a client into two identical-looking
+      // rows with no explanation.
       const conflict = findNameConflict(snapshot.clients, { name: typedName, emiratesId });
 
       // Standalone session — mint a lightweight client so blank boot visibly populates.

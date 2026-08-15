@@ -129,9 +129,10 @@ export default function ReviewNote() {
   // Set when this capture's Emirates ID matched a client already on the caseload: the session folded
   // into that existing record rather than creating a duplicate patient, and we say so plainly.
   const foldedIntoExisting = existing === '1';
-  // The mirror case: a client of the same name is already on the caseload under a DIFFERENT Emirates
-  // ID. Those are two people, so a separate record was minted deliberately — said plainly here, because
-  // an unexplained second identical-looking row is how a mistyped digit silently forks a client.
+  // The mirror case: a client of the same name is already on the caseload, but this capture's Emirates
+  // ID does not resolve to them. A supplied identifier decides, so a separate record was minted
+  // deliberately — said plainly here, because an unexplained second identical-looking row is how a
+  // mistyped digit silently forks a client.
   const mintedDespiteSameName = !foldedIntoExisting && conflict === '1';
   // Up to 3 notes are retained per client (C4); `note` selects which retained note to review (newest = 0).
   const notes = useClientNotes(clientId);
@@ -284,9 +285,9 @@ export default function ReviewNote() {
                   <AppText variant="bodyStrong" tint={c.caution} style={{ fontSize: 12.5 }}>
                     This looks like a different person.
                   </AppText>{' '}
-                  {client?.name ? `A client named ${client.name}` : 'A client with this name'} already exists on
-                  your caseload with a different Emirates ID, so a new record was created for this session
-                  rather than adding it to theirs.
+                  {client?.name ? `A client named ${client.name}` : 'A client with this name'} is already on your
+                  caseload, but not under the Emirates ID you entered, so a new record was created for this
+                  session rather than adding it to theirs.
                 </AppText>
               </Row>
             ) : null}

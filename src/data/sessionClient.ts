@@ -29,13 +29,33 @@ export function normalizeEmiratesId(raw: string): string {
   return raw.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+/** A well-formed UAE Emirates ID, normalised: the 784 prefix + 12 digits = 15 digits, no more. */
+const EMIRATES_ID_SHAPE = /^784[0-9]{12}$/;
+
 /**
- * The comparison key for a typed Emirates ID, or '' when there is nothing to compare — a blank entry
- * and a punctuation-only one both normalise to nothing, and neither may ever act as a match key.
+ * Is this typed value a well-formed Emirates ID? An IDENTITY key has to be shaped like one, because
+ * anything else is a placeholder the counselor reached for when they didn't have the number — "N/A",
+ * "unknown", a half-remembered "784-1988" — and two unrelated patients typing the same placeholder
+ * would collapse into one record under a confident "you already see this client". Merging two patients
+ * is the unrecoverable outcome this whole guard exists to prevent, so a malformed entry is simply NOT
+ * an identity: it never keys a match and is never stored as one. The capture falls back to name-only
+ * folding, exactly as when the field is left blank.
  */
-function matchKey(raw?: string): string {
+export function isValidEmiratesId(raw: string): boolean {
+  return EMIRATES_ID_SHAPE.test(normalizeEmiratesId(raw));
+}
+
+/**
+ * The comparison key for a typed Emirates ID — the normalised digits when the value is a well-formed
+ * Emirates ID, and '' for everything else (blank, punctuation-only, or any malformed entry). Every
+ * identity comparison keys off THIS, never a raw non-empty string, so a placeholder can never act as
+ * one patient's identity.
+ */
+function emiratesIdKey(raw?: string): string {
   const trimmed = raw?.trim();
-  return trimmed ? normalizeEmiratesId(trimmed) : '';
+  if (!trimmed) return '';
+  const normalized = normalizeEmiratesId(trimmed);
+  return EMIRATES_ID_SHAPE.test(normalized) ? normalized : '';
 }
 
 /** The pre-existing F3 fold candidate: a prior CAPTURED client ('s-' id) under the same typed name. */
@@ -44,57 +64,52 @@ function isCapturedNameMatch(cl: Client, typedName: string): boolean {
 }
 
 /**
- * Does this client's STORED Emirates ID contradict the supplied one? Only a stored value that
- * normalises to a real key can contradict anything, so a record holding none — or a capture supplying
- * none — never conflicts.
- *
- * This single predicate is what `matchExistingClient` vetoes the name fold on and what
- * `findNameConflict` reports to the counselor, so the two are exact complements: the app can never
- * refuse to fold for a reason it then fails to explain.
- */
-function storedIdConflicts(cl: Client, key: string): boolean {
-  if (!key || !cl.emiratesId) return false;
-  const stored = normalizeEmiratesId(cl.emiratesId);
-  return !!stored && stored !== key;
-}
-
-/**
- * The same-named captured client this capture was NOT folded into, because its stored Emirates ID
- * contradicts the supplied one. Undefined when there is nothing to explain: no Emirates ID supplied,
- * no same-named captured client, the candidate stores none, or the two IDs normalise equal (that case
+ * The same-named captured client this capture was NOT folded into, because the capture carries a valid
+ * Emirates ID that no record on the caseload holds. Undefined when there is nothing to explain: no
+ * valid Emirates ID supplied, no same-named captured client, or an id that DOES match a record (that
  * folds through `matchExistingClient` and is no conflict at all).
+ *
+ * It fires in BOTH directions — the same-named record storing a different id, and the one storing none
+ * — because a valid id vetoes the name fold against either, and each is equally a moment where the
+ * counselor is about to see two identical-looking rows.
  *
  * Minting a separate record is the SAFE outcome — merging two different patients is unrecoverable
  * (notes, plan, timeline and a risk tier nothing lowers) — but it must not be a SILENT one: a mistyped
- * digit otherwise forks a client into two identical-looking caseload rows with no explanation. So the
- * capture flow asks for this and the review screen says plainly what happened. Device-local only; it
- * says nothing about anyone outside this caseload.
+ * digit otherwise forks a client with no explanation. So the review screen says plainly what happened.
+ * Device-local only; it says nothing about anyone outside this caseload.
  */
 export function findNameConflict(clients: Client[], opts: { name?: string; emiratesId?: string }): Client | undefined {
-  const key = matchKey(opts.emiratesId);
+  const key = emiratesIdKey(opts.emiratesId);
   const typedName = opts.name?.trim();
   if (!key || !typedName) return undefined;
-  return clients.find((cl) => isCapturedNameMatch(cl, typedName) && storedIdConflicts(cl, key));
+  // Only a capture that MINTS can conflict — one whose id resolves to a record simply folds into it.
+  if (clients.some((cl) => emiratesIdKey(cl.emiratesId) === key)) return undefined;
+  return clients.find((cl) => isCapturedNameMatch(cl, typedName));
 }
 
 /**
  * Decide which EXISTING caseload client (if any) a capture belongs to, so a second record is never
  * minted for someone already on the caseload. Priority:
  *   1. an explicit clientId (the day board / client file opened the capture) — matched by id;
- *   2. an Emirates ID already on the caseload — the local uniqueness key for a patient. This is the
- *      duplicate-patient guard: adding a client whose Emirates ID exists must open the existing record,
- *      not create a second (captain scope: local caseload only);
+ *   2. a VALID Emirates ID — the local uniqueness key for a patient. This is the duplicate-patient
+ *      guard: adding a client whose Emirates ID exists must open the existing record, not create a
+ *      second (captain scope: local caseload only);
  *   3. a non-blank typed name against a prior CAPTURED client ('s-' ids) — the pre-existing F3 fold,
- *      EXCEPT against a candidate whose own Emirates ID conflicts with the supplied one.
+ *      reached ONLY by a capture carrying no valid Emirates ID.
  * Returns undefined when nothing matches (the caller mints a fresh client). An explicit clientId that
  * no longer exists returns undefined too, so the caller can keep the note under that id.
  *
- * A supplied Emirates ID always beats a name: two people can share a name, but a different Emirates ID
- * makes them different people, and folding would merge strangers' notes, plan and timeline — and carry
- * one patient's risk tier onto the other, which nothing ever lowers. So the name branch skips any
- * candidate storing a DIFFERENT (normalised) Emirates ID; a candidate with none, or a capture that
- * supplies none, folds by name exactly as before. That veto is reported, never silent — the caller
- * pairs it with `findNameConflict`, which uses the SAME predicate to name what it refused to fold.
+ * THE GOVERNING RULE: a strong identifier, when present and well-formed, always decides; a weak one
+ * never merges two patients. So a capture carrying a valid Emirates ID resolves by that id ALONE — it
+ * folds into the record holding the same id, or it mints its own. The name branch is vetoed entirely
+ * for such a capture, in BOTH directions: against a record storing a different id (plainly a different
+ * person) and against one storing none (the counselor typed the id precisely to distinguish them, and
+ * folding would merge strangers' notes, plan and timeline and carry one patient's risk tier onto the
+ * other, which nothing ever lowers). A malformed entry is not an identifier at all, so it falls through
+ * to the name fold exactly as a blank one does.
+ *
+ * The veto is reported, never silent — the caller pairs it with `findNameConflict`, which is its exact
+ * complement, so the app can never refuse to fold for a reason it then fails to explain.
  */
 export function matchExistingClient(
   clients: Client[],
@@ -104,14 +119,14 @@ export function matchExistingClient(
     const byId = clients.find((cl) => cl.id === opts.clientId);
     return byId ? { client: byId, matchedBy: 'id' } : undefined;
   }
-  const key = matchKey(opts.emiratesId);
+  const key = emiratesIdKey(opts.emiratesId);
   if (key) {
-    const byEmid = clients.find((cl) => cl.emiratesId && normalizeEmiratesId(cl.emiratesId) === key);
-    if (byEmid) return { client: byEmid, matchedBy: 'emiratesId' };
+    const byEmid = clients.find((cl) => emiratesIdKey(cl.emiratesId) === key);
+    return byEmid ? { client: byEmid, matchedBy: 'emiratesId' } : undefined;
   }
   const typedName = opts.name?.trim();
   if (typedName) {
-    const byName = clients.find((cl) => isCapturedNameMatch(cl, typedName) && !storedIdConflicts(cl, key));
+    const byName = clients.find((cl) => isCapturedNameMatch(cl, typedName));
     if (byName) return { client: byName, matchedBy: 'name' };
   }
   return undefined;
@@ -353,8 +368,11 @@ export function clientFromSession(
   const subjective = note.sections.find((s) => s.marker === 'S');
   const summary = subjective?.body?.[0] ?? 'New session captured today.';
   // Store the Emirates ID EXACTLY as typed (spacing/dashes kept) — comparison normalises, storage
-  // preserves. A blank/whitespace-only entry stays undefined so it never becomes a false match key.
-  const emiratesId = opts.emiratesId?.trim() ? opts.emiratesId.trim() : undefined;
+  // preserves. Only a WELL-FORMED value is stored: a blank entry, or a placeholder like "N/A" that the
+  // counselor reached for without the number, is not this patient's identity and must never become one
+  // for the next capture that types the same thing.
+  const typedId = opts.emiratesId?.trim();
+  const emiratesId = typedId && isValidEmiratesId(typedId) ? typedId : undefined;
 
   return {
     id,
@@ -397,26 +415,23 @@ export function clientFromSession(
  * timeline entry, and raises risk from the newest note — a client's standing risk tier is never
  * auto-DOWNGRADED by a calmer session (captain ruling); lowering it is a deliberate clinician act.
  *
- * Also BACKFILLS the uniqueness key: a client first captured WITHOUT an Emirates ID takes the one this
- * capture supplied, so the key actually takes hold and the next capture — however that name is spelled
- * — resolves to this record instead of minting a duplicate. It only ever fills a record that has none;
- * an Emirates ID already stored is never overwritten (a conflicting one belongs to a different person,
- * and `matchExistingClient` never folds those together). Stored verbatim, exactly as on the mint path.
+ * It deliberately writes NO Emirates ID onto the record. A capture carrying a valid one never reaches
+ * here by name — it resolves by that id alone and otherwise mints its own record — so the only folds
+ * that land here are an id MATCH (the record already holds that identity) or a name continuation with
+ * no identifier to record. Backfilling from a name fold is exactly how one patient's id came to be
+ * stamped onto another's record.
  */
 export function appendSessionToClient(
   existing: Client,
   note: DraftNote,
-  opts: { sessionNumber: number; dateLabel: string; emiratesId?: string },
+  opts: { sessionNumber: number; dateLabel: string },
 ): Client {
   const subjective = note.sections.find((s) => s.marker === 'S');
   const summary = subjective?.body?.[0] ?? existing.summaryLine;
   const noteRisk = riskFromNote(note);
-  const supplied = opts.emiratesId?.trim();
-  const emiratesId = existing.emiratesId?.trim() ? existing.emiratesId : supplied || existing.emiratesId;
 
   return {
     ...existing,
-    emiratesId,
     risk: RISK_ORDER[noteRisk] > RISK_ORDER[existing.risk] ? noteRisk : existing.risk,
     sessionNumber: opts.sessionNumber,
     lastSessionLabel: `Today · ${opts.dateLabel}`,

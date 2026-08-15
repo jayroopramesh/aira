@@ -8,12 +8,14 @@
  *      status — and a distinct `AccountExistsError` so the UI can route them to sign in. The
  *      genuine-new-account path still mints, persists, unlocks, and returns the code. The SAME rule
  *      holds on the keyless build (`MockAuthService`), where a persisted recovery hash is the evidence.
- *   2. DUPLICATE PATIENT within the local caseload. Emirates ID is the local uniqueness key: adding a
- *      client whose (normalised) Emirates ID already exists opens the EXISTING record and creates
- *      nothing; a novel one creates a new client; the raw typed value is stored verbatim. A CONFLICTING
- *      Emirates ID beats a name match (two different people never merge) and is REPORTED rather than
- *      silently forking the caseload, and folding backfills a supplied Emirates ID onto a record that
- *      has none, so the key takes hold for the next capture.
+ *   2. DUPLICATE PATIENT within the local caseload. A WELL-FORMED Emirates ID is the local uniqueness
+ *      key: adding a client whose (normalised) Emirates ID already exists opens the EXISTING record and
+ *      creates nothing; a novel one creates a new client; the raw typed value is stored verbatim. The
+ *      governing rule is that a strong identifier always decides and a weak one never merges two
+ *      patients — so a valid id resolves by id ALONE (the name fold is vetoed in BOTH directions:
+ *      against a record storing a different id and against one storing none), the veto is REPORTED
+ *      rather than silently forking the caseload, and a malformed entry ("N/A", a partial number) is no
+ *      identity at all: it is neither stored nor matched on, and the capture falls back to name folding.
  *
  * Run (Node ≥ 22.13, e.g. ~/.cache/fm-node/node-v22.23.2-darwin-arm64/bin/node):
  *   node scripts/duplicate-identity-harness.mjs
@@ -34,8 +36,14 @@ globalThis.localStorage = {
 
 const { AccountExistsError, MockAuthService, SupabaseAuthService } = await import('../src/services/auth.ts');
 const { deviceStore } = await import('../src/services/deviceStore.ts');
-const { appendSessionToClient, clientFromSession, findNameConflict, matchExistingClient, normalizeEmiratesId } =
-  await import('../src/data/sessionClient.ts');
+const {
+  appendSessionToClient,
+  clientFromSession,
+  findNameConflict,
+  isValidEmiratesId,
+  matchExistingClient,
+  normalizeEmiratesId,
+} = await import('../src/data/sessionClient.ts');
 
 let failed = 0;
 function check(name, ok, detail) {
@@ -260,6 +268,11 @@ const NOTE = {
     matchExistingClient(caseload, { name: 'Ahmed Ali' })?.matchedBy === 'name',
     'name fold broke',
   );
+  check(
+    'a MALFORMED entry is no identifier: the name fold is unchanged',
+    matchExistingClient(caseload, { name: 'Ahmed Ali', emiratesId: 'N/A' })?.matchedBy === 'name',
+    'malformed entry changed the fold',
+  );
 
   // The veto must never be SILENT: the same refusal that mints a separate record is reported, so the
   // counselor is told why two same-named rows now exist instead of being left to guess at a typo.
@@ -284,11 +297,10 @@ const NOTE = {
     findNameConflict(caseload, { name: 'Ahmed Ali' }) === undefined && findNameConflict(caseload, { name: 'Ahmed Ali', emiratesId: '  ' }) === undefined,
     'flagged with no supplied id',
   );
-  const noStoredId = [clientFromSession('s-2', NOTE, { name: 'Ahmed Ali', sessionNumber: 1, dateLabel: DATE })];
   check(
-    'conflict notice: silent when the CANDIDATE stores no Emirates ID (it folds + backfills)',
-    findNameConflict(noStoredId, { name: 'Ahmed Ali', emiratesId: '784-1988-2222222-2' }) === undefined,
-    'flagged a candidate with no stored id',
+    'conflict notice: silent when the entry is MALFORMED (no identifier was supplied)',
+    findNameConflict(caseload, { name: 'Ahmed Ali', emiratesId: 'N/A' }) === undefined,
+    'a placeholder produced a conflict',
   );
 
   // The veto and the notice are exact complements — every same-named candidate the fold refuses is one
@@ -302,44 +314,70 @@ const NOTE = {
   );
 }
 
-// --- 6. Folding BACKFILLS the uniqueness key onto a record that had none ---------------------------
+// --- 6. The MIRROR direction: a valid id never folds into a same-named record holding none ---------
+// The counselor typed the id precisely to distinguish two people who share a name. Folding would merge
+// strangers' notes/plan/timeline and carry one patient's risk tier onto the other.
 {
-  // Captured first with no Emirates ID at all.
   const first = clientFromSession('s-1', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE });
-  check('backfill: the first capture stored no Emirates ID', first.emiratesId === undefined, String(first.emiratesId));
+  check('mirror: the earlier capture stored no Emirates ID', first.emiratesId === undefined, String(first.emiratesId));
+  const before = JSON.stringify(first);
 
-  // Second capture, same name, this time WITH the Emirates ID — folds by name.
   const emid = '784-1988-1234567-1';
   const match = matchExistingClient([first], { name: 'Sam Ali', emiratesId: emid });
-  check('backfill: the second capture folds by name', match?.matchedBy === 'name', JSON.stringify(match));
+  check('mirror: the name fold is VETOED (a new record would be minted)', match === undefined, JSON.stringify(match));
+  check('mirror: the existing client is left untouched', JSON.stringify(first) === before, 'existing record mutated');
+  const conflict = findNameConflict([first], { name: 'Sam Ali', emiratesId: emid });
+  check('mirror: the notice fires so the second row is explained', conflict?.id === 's-1', JSON.stringify(conflict));
 
-  const folded = appendSessionToClient(match.client, NOTE, { sessionNumber: 2, dateLabel: DATE, emiratesId: emid });
-  check('backfill: the supplied Emirates ID lands on the existing record, verbatim', folded.emiratesId === emid, String(folded.emiratesId));
+  // The identity takes hold through the record this capture MINTS, not by writing onto someone else's:
+  // a later capture with that id — under any spelling of the name — resolves to it.
+  const minted = clientFromSession('s-2', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE, emiratesId: emid });
+  const later = matchExistingClient([first, minted], { name: 'S. Ali', emiratesId: ' 784 1988 1234567 1 ' });
+  check('mirror: a later same-id capture resolves by Emirates ID', later?.matchedBy === 'emiratesId', JSON.stringify(later));
+  check('mirror: it lands on the id-carrying record, not the ID-less namesake', later?.client?.id === 's-2', String(later?.client?.id));
 
-  // The point of recording it: a LATER capture spelling the name differently, with that same id in
-  // another format, now resolves to the existing record instead of minting a duplicate.
-  const later = matchExistingClient([folded], { name: 'S. Ali', emiratesId: ' 784 1988 1234567 1 ' });
-  check('backfill: a differently-named later capture now matches by Emirates ID', later?.matchedBy === 'emiratesId', JSON.stringify(later));
-  check('backfill: it resolves to the SAME record (no duplicate minted)', later?.client?.id === 's-1', String(later?.client?.id));
+  // Folding writes no Emirates ID onto a record — that is how one patient's id got stamped on another's.
+  const folded = appendSessionToClient(first, NOTE, { sessionNumber: 2, dateLabel: DATE });
+  check('mirror: a name-fold never records an Emirates ID', folded.emiratesId === undefined, String(folded.emiratesId));
+}
 
-  // An Emirates ID already on the record is never overwritten by a later capture's value.
-  const kept = appendSessionToClient(folded, NOTE, { sessionNumber: 3, dateLabel: DATE, emiratesId: '999-9999-9999999-9' });
-  check('backfill: an already-stored Emirates ID is NEVER overwritten', kept.emiratesId === emid, String(kept.emiratesId));
+// --- 7. A malformed entry is not an identity — it can never merge two patients ---------------------
+{
+  check('valid id: a well-formed Emirates ID is accepted', isValidEmiratesId('784-1988-1234567-1') === true, 'rejected a valid id');
+  check('valid id: formatting is irrelevant', isValidEmiratesId(' 784 1988 1234567 1 ') === true, 'rejected an unformatted valid id');
+  check(
+    'valid id: placeholders and partials are REJECTED',
+    ['N/A', 'n/a', 'unknown', '784', '784-1988', '', '   ', '784-1988-1234567-12'].every((v) => isValidEmiratesId(v) === false),
+    'a placeholder passed validation',
+  );
 
-  // No id supplied → the record keeps whatever it had (including nothing).
-  const noneSupplied = appendSessionToClient(first, NOTE, { sessionNumber: 2, dateLabel: DATE });
-  check('backfill: no supplied id leaves the record without one', noneSupplied.emiratesId === undefined, String(noneSupplied.emiratesId));
-  const blankSupplied = appendSessionToClient(first, NOTE, { sessionNumber: 2, dateLabel: DATE, emiratesId: '   ' });
-  check('backfill: a whitespace-only entry is never recorded as a key', blankSupplied.emiratesId === undefined, String(blankSupplied.emiratesId));
+  // The failure this prevents: two unrelated patients whose counselor typed the same placeholder.
+  const a = clientFromSession('s-a', NOTE, { name: 'Patient A', sessionNumber: 1, dateLabel: DATE, emiratesId: 'N/A' });
+  check('malformed id: is NOT stored as this patient’s identity', a.emiratesId === undefined, String(a.emiratesId));
+  const match = matchExistingClient([a], { name: 'Patient B', emiratesId: 'n/a' });
+  check('malformed id: a second patient typing the same placeholder never matches', match === undefined, JSON.stringify(match));
+  check(
+    'malformed id: nor does it match a record that stored one before validation',
+    matchExistingClient([{ ...a, emiratesId: 'N/A' }], { name: 'Patient B', emiratesId: 'n/a' }) === undefined,
+    'legacy placeholder matched',
+  );
+  check(
+    'malformed id: a truncated number never matches a full one',
+    matchExistingClient(
+      [clientFromSession('s-c', NOTE, { name: 'C', sessionNumber: 1, dateLabel: DATE, emiratesId: '784-1988-1234567-1' })],
+      { name: 'D', emiratesId: '784-1988' },
+    ) === undefined,
+    'a partial matched',
+  );
 }
 
 // --- Priority + guards: id beats Emirates ID; a blank Emirates ID is never a match key -------------
 {
-  const a = clientFromSession('s-a', NOTE, { name: 'A', sessionNumber: 1, dateLabel: DATE, emiratesId: '111-1' });
-  const b = clientFromSession('s-b', NOTE, { name: 'B', sessionNumber: 1, dateLabel: DATE, emiratesId: '222-2' });
-  check('priority: an explicit clientId matches by id', matchExistingClient([a, b], { clientId: 's-b', emiratesId: '111-1' })?.matchedBy === 'id', 'id did not win');
+  const a = clientFromSession('s-a', NOTE, { name: 'A', sessionNumber: 1, dateLabel: DATE, emiratesId: '784-1111-1111111-1' });
+  const b = clientFromSession('s-b', NOTE, { name: 'B', sessionNumber: 1, dateLabel: DATE, emiratesId: '784-2222-2222222-2' });
+  check('priority: an explicit clientId matches by id', matchExistingClient([a, b], { clientId: 's-b', emiratesId: '784-1111-1111111-1' })?.matchedBy === 'id', 'id did not win');
   check('guard: a blank/whitespace Emirates ID is not a match key', matchExistingClient([a, b], { emiratesId: '   ' }) === undefined, 'blank matched');
-  check('guard: an Emirates ID with no caseload match falls through', matchExistingClient([a, b], { emiratesId: '999-9' }) === undefined, 'phantom match');
+  check('guard: an Emirates ID with no caseload match falls through', matchExistingClient([a, b], { emiratesId: '784-9999-9999999-9' }) === undefined, 'phantom match');
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');

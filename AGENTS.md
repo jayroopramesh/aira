@@ -185,21 +185,30 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
     identical; `PASSWORD_HASH_KEY` took the second attempt's password and the real password stopped
     opening `signIn`) — same silent lockout, other credential. The guard is device-scoped, not
     email-scoped: one account per device is the keyless model, and there is no email registry to consult.
-  - **Patient**: Emirates ID is the **local** caseload uniqueness key (`Client.emiratesId`, stored
-    verbatim; compared via `normalizeEmiratesId`). `matchExistingClient` (`sessionClient.ts`) resolves a
-    capture to an existing client by id → Emirates ID → captured-name, and `saveSessionNote` folds an
-    Emirates-ID match into that record (returns `isDuplicate`) instead of minting a second, surfacing
-    "You already see this client" on review. A supplied Emirates ID **vetoes** the captured-name fold
-    against a record storing a different one — same name, different ID = different people, and folding
-    would merge strangers' notes/plan/timeline and carry one patient's risk tier onto the other, which
-    nothing lowers. That veto mints a SEPARATE record — the safe residual, since a mistyped digit forking
-    a client is recoverable and merging two patients is not — but it is never silent: `findNameConflict`
-    reports it off the SAME predicate the veto uses (so the app cannot refuse to fold for a reason it
-    fails to explain), `saveSessionNote` returns `nameConflict`, and review says a same-named client
-    exists under a different Emirates ID. And the key has to be RECORDED to work, so
-    `appendSessionToClient` **backfills** it onto a record captured without one (never overwriting a
-    stored one); otherwise a later capture spelling the name differently mints the duplicate this guard
-    exists to prevent.
+  - **Patient**: a **well-formed** Emirates ID is the **local** caseload uniqueness key
+    (`Client.emiratesId`, stored verbatim; compared via `normalizeEmiratesId`). The governing rule: a
+    strong identifier, present and well-formed, ALWAYS decides; a weak one (a name, or a malformed
+    entry) NEVER merges two patients.
+    - **Well-formed** = `isValidEmiratesId` — normalises to `^784[0-9]{12}$`. Anything else ("N/A",
+      "unknown", a truncated "784-1988") is a placeholder the counselor reached for without the number,
+      NOT an identity: `emiratesIdKey` yields `''`, so it never keys a match, and `clientFromSession`
+      stores `undefined`. Two unrelated patients typing the same placeholder must never collapse into
+      one record under a confident "you already see this client". The capture screen says so inline.
+    - `matchExistingClient` (`sessionClient.ts`) resolves by id → valid Emirates ID → captured-name. A
+      capture carrying a valid id resolves by **that id alone**: it folds into the record holding the
+      same id (`saveSessionNote` returns `isDuplicate` → "You already see this client" on review), or it
+      mints its own. The name fold is vetoed for such a capture in **both** directions — against a record
+      storing a different id AND against one storing none (the counselor typed the id precisely to
+      distinguish two namesakes). Folding either way merges strangers' notes/plan/timeline and carries
+      one patient's risk tier onto the other, which nothing lowers. The name fold survives only for
+      captures with no valid id (the pre-existing F3 continuation).
+    - The veto mints a SEPARATE record — the safe residual, since a mistyped digit forking a client is
+      recoverable and merging two patients is not — but it is never silent: `findNameConflict` is its
+      exact complement (so the app cannot refuse to fold for a reason it fails to explain),
+      `saveSessionNote` returns `nameConflict`, and review says a same-named client exists but not under
+      that Emirates ID. `appendSessionToClient` deliberately writes **no** Emirates ID onto a record —
+      backfilling from a name fold is how one patient's id got stamped onto another's; the key takes hold
+      through the id-carrying record a non-matching valid-id capture mints.
     Scope is device-local ONLY — never a cross-device/therapist
     existence check (captain, 2026-08-15): a global check would leak that a named person is in therapy.
 - Snapshot writes are **serialized** (`createWriteQueue` in `src/services/writeQueue.ts`, applied at
