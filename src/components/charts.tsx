@@ -1,6 +1,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
+import { dateProportionalX } from '../data/chartLayout';
 import { ScaleDef } from '../data/scales';
 import { Reading } from '../data/types';
 import { useTheme } from '../theme/ThemeProvider';
@@ -64,7 +65,8 @@ export function BandedChart({ readings, max = 27 }: { readings: Reading[]; max?:
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
 
-  const xAt = (i: number) => padL + (i * plotW) / Math.max(readings.length - 1, 1);
+  const dateX = dateProportionalX(readings.map((r) => r.date), plotW, padL);
+  const xAt = (i: number) => dateX?.[i] ?? padL + (i * plotW) / Math.max(readings.length - 1, 1);
   const yAt = (v: number) => padT + (1 - v / max) * plotH;
 
   return (
@@ -160,7 +162,8 @@ export function ScaleChart({ scale, clientLabel = 'This client' }: { scale: Scal
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
   const n = scale.pts.length;
-  const xAt = (i: number) => padL + (i * plotW) / Math.max(n - 1, 1);
+  const dateX = dateProportionalX(scale.pts.map((p) => p.date), plotW, padL);
+  const xAt = (i: number) => dateX?.[i] ?? padL + (i * plotW) / Math.max(n - 1, 1);
   const yAt = (v: number) => padT + (1 - v / max) * plotH;
   const ticks = scale.ticks ?? [max, Math.round(max / 2), 0];
 

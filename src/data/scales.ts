@@ -23,7 +23,9 @@ export type ScaleDef = {
   sparse?: boolean; // ≤ 2 readings → dot-strip, no trend line
   higherBetter?: boolean;
   bands?: ScaleBand[];
-  pts: { label: string; value: number }[];
+  /** `date` (ISO) is optional so hand-authored points still work; when every point has one, the
+   *  chart spaces points proportionally to real elapsed time instead of by index. */
+  pts: { label: string; value: number; date?: string }[];
   cmp?: number[]; // muted caseload-average comparison stroke (this-vs-that)
   read: string; // plain-language, headline-first reading
 };
@@ -60,7 +62,7 @@ export const AMARA_SCALES: ScaleDef[] = [
     bands: PHQ_BANDS,
     // Single source: Amara's canonical PHQ-9 (fixtures.ts) — chart, sparkline, timeline and the
     // draft measures table all read from the same array (F13).
-    pts: AMARA_PHQ9.map((r) => ({ label: r.label, value: r.value })),
+    pts: AMARA_PHQ9.map((r) => ({ label: r.label, value: r.value, date: r.date })),
     cmp: [16, 16, 15, 15, 14, 13, 12, 11, 10],
     read: '18 → 9 across 9 readings · now in the mild band, down from moderate-severe at intake. Improving faster than the caseload average.',
   },
@@ -69,7 +71,7 @@ export const AMARA_SCALES: ScaleDef[] = [
     max: 21,
     ticks: [21, 10, 0],
     bands: GAD_BANDS,
-    pts: AMARA_GAD7.map((r) => ({ label: r.label, value: r.value })),
+    pts: AMARA_GAD7.map((r) => ({ label: r.label, value: r.value, date: r.date })),
     cmp: [12, 12, 12, 11, 11, 11, 10, 10, 9],
     read: '14 → 8 across 9 readings · into the mild band. Anxiety trails the depression trend by a few weeks.',
   },
@@ -79,8 +81,8 @@ export const AMARA_SCALES: ScaleDef[] = [
     unit: '/100',
     higherBetter: true,
     pts: [
-      { label: '5 Apr', value: 56 },
-      { label: '10 Aug', value: 68 },
+      { label: '5 Apr', value: 56, date: '2026-04-05' },
+      { label: '10 Aug', value: 68, date: '2026-08-10' },
     ],
     read: 'Only 2 readings so far — shown as points, not a trend. On MHI-5, higher is better.',
   },
@@ -90,17 +92,18 @@ export const AMARA_SCALES: ScaleDef[] = [
     max: 42,
     ticks: [42, 21, 0],
     bands: DASS_BANDS,
-    // Same nine readings as PHQ-9 / GAD-7 (captain C5) so the multi-point plot is exercised here too.
+    // Same nine readings as PHQ-9 / GAD-7 (captain C5) so the multi-point plot is exercised here too —
+    // same dates too, so the x-axis genuinely lines up across scale tabs.
     pts: [
-      { label: '12 Jan', value: 26 },
-      { label: '26 Jan', value: 25 },
-      { label: '9 Feb', value: 23 },
-      { label: '23 Feb', value: 21 },
-      { label: '8 Mar', value: 19 },
-      { label: '22 Mar', value: 16 },
-      { label: '5 Apr', value: 13 },
-      { label: '3 May', value: 11 },
-      { label: '12 Aug', value: 10 },
+      { label: '12 Jan', value: 26, date: '2026-01-12' },
+      { label: '26 Jan', value: 25, date: '2026-01-26' },
+      { label: '9 Feb', value: 23, date: '2026-02-09' },
+      { label: '23 Feb', value: 21, date: '2026-02-23' },
+      { label: '8 Mar', value: 19, date: '2026-03-08' },
+      { label: '22 Mar', value: 16, date: '2026-03-22' },
+      { label: '5 Apr', value: 13, date: '2026-04-05' },
+      { label: '3 May', value: 11, date: '2026-05-03' },
+      { label: '12 Aug', value: 10, date: '2026-08-12' },
     ],
     cmp: [17, 17, 16, 16, 15, 15, 14, 14, 13],
     read: '26 → 10 across 9 readings (depression subscale) · from severe toward the mild range.',
