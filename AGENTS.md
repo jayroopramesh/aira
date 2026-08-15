@@ -119,8 +119,13 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   ONCE in the root layout (`src/app/_layout.tsx`, inside `RootStack`, above the `Stack`) — every
   route (welcome/unlock/(app) alike) nests under that one `Stack`, so this is the only mount point;
   never add per-screen copies. Caution tone (`c.caution`/`cautionBg`), exact copy "Preview — not a
-  live medical service. Test with fictional client data only." Proved by
-  `scripts/wip-banner-mount-harness.mjs` (mount wiring, chained in `npm test`) and
+  live medical service. Test with fictional client data only." The banner consumes the window's top
+  safe-area inset itself, so the `Stack` below it is wrapped in a **nested `SafeAreaProvider`**
+  (same file) that re-measures relative to its own frame — descendants then see a ~0 top inset and
+  don't double-pad for a notch the banner already covered; don't remove it as redundant, and keep
+  the Escalate sheet (mounted above `RootStack`) on the OUTER provider's full-window insets. Proved
+  by `src/app/__tests__/RootLayout.test.tsx` (renders the real root layout and asserts the banner
+  is mounted outside the navigator — a jest render, so a commented-out mount fails it) and
   `src/components/__tests__/WipBanner.test.tsx` (renders the exact copy).
 - **noindex**: `src/app/+html.tsx` (the web-only root HTML wrapper) emits
   `<meta name="robots" content="noindex, nofollow">` in `<head>` — this is the one template every

@@ -1,6 +1,6 @@
 /**
  * WipBanner — proves the standing preview notice actually renders with the exact required copy.
- * `scripts/wip-banner-mount-harness.mjs` proves the WIRING (that the root layout actually mounts
+ * `src/app/__tests__/RootLayout.test.tsx` proves the WIRING (that the root layout actually mounts
  * it, so every route inherits it); this proves the component itself.
  */
 import { render, screen } from '@testing-library/react-native';

@@ -20,17 +20,23 @@ function RootStack() {
     <View style={{ flex: 1, backgroundColor: theme.colors.surface }}>
       <StatusBar style={theme.mode === 'dark' ? 'light' : 'dark'} />
       <WipBanner />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: theme.colors.surface },
-          animation: 'fade',
-        }}
-      >
-        <Stack.Screen name="welcome" />
-        <Stack.Screen name="unlock" />
-        <Stack.Screen name="(app)" />
-      </Stack>
+      {/* The banner above already consumes the window's top inset (its own paddingTop), so screens
+          must not pad for it again: this nested provider re-measures the safe area relative to its
+          own frame — which starts below the notch — so descendants observe a ~0 top inset instead
+          of the raw window one. Web is unaffected (all insets are already 0 there). */}
+      <SafeAreaProvider>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: theme.colors.surface },
+            animation: 'fade',
+          }}
+        >
+          <Stack.Screen name="welcome" />
+          <Stack.Screen name="unlock" />
+          <Stack.Screen name="(app)" />
+        </Stack>
+      </SafeAreaProvider>
     </View>
   );
 }
