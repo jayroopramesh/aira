@@ -1,8 +1,13 @@
 import { useRouter } from 'expo-router';
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { buildEscalateSections, type EscalateAction, type EscalateSectionTone } from '../config/escalateContacts';
+import {
+  buildEscalateSections,
+  openFailureMessage,
+  type EscalateAction,
+  type EscalateSectionTone,
+} from '../config/escalateContacts';
 import { useTheme } from '../theme/ThemeProvider';
 import { CloseIcon, GlobeIcon, MailIcon, PhoneIcon, ShieldIcon } from './icons';
 import { AppText, Card, Divider, Eyebrow, Row } from './ui';
@@ -94,16 +99,33 @@ function EscalateSheet({ visible, clientId, clientToken, onClose }: { visible: b
 
   const sections = buildEscalateSections({ activeClientId, clientToken });
 
+  // The last action the device refused to open, so the sheet can say so instead of dismissing onto
+  // nothing. Cleared whenever the sheet is reopened.
+  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
+  useEffect(() => {
+    if (!visible) setFailure(null);
+  }, [visible]);
+
   // Every option resolves to a real target here — no onPress may be a no-op (F6). tel/url/mailto
   // hand off to Linking; route hands off to the router; a disabled action (no client in context)
   // never reaches this at all (the Pressable below is itself disabled).
+  //
+  // The sheet closes only once the hand-off actually succeeded. If openURL rejects — a `tel:` on a
+  // desktop web build with no dialer, a platform refusing the scheme — we keep the sheet open and
+  // surface the bare number/address to use by hand, because a row saying "opens your dialer" that
+  // dismisses and does nothing is the dead promise this surface exists to remove.
   const runAction = (action: EscalateAction) => {
-    onClose();
+    setFailure(null);
     if (action.kind === 'route') {
+      onClose();
       if (action.route) router.push(action.route as Parameters<typeof router.push>[0]);
       return;
     }
-    if (action.href) Linking.openURL(action.href).catch(() => {});
+    if (!action.href) return;
+    Linking.openURL(action.href).then(
+      () => onClose(),
+      () => setFailure({ key: action.key, message: openFailureMessage(action) }),
+    );
   };
 
   return (
@@ -111,7 +133,7 @@ function EscalateSheet({ visible, clientId, clientToken, onClose }: { visible: b
       {/* Light scrim — this is a calm panel, not an alarm; tap outside to dismiss. */}
       <Pressable onPress={onClose} style={{ flex: 1, backgroundColor: 'rgba(12,28,25,0.32)', justifyContent: 'flex-end' }}>
         <Pressable
-          onPress={(e) => e.stopPropagation()}
+          onPress={(e) => e?.stopPropagation?.()}
           style={{
             backgroundColor: c.elevated,
             borderTopLeftRadius: theme.radii.lg,
@@ -198,6 +220,22 @@ function EscalateSheet({ visible, clientId, clientToken, onClose }: { visible: b
                           </AppText>
                         </View>
                       </Pressable>
+                      {failure?.key === action.key && (
+                        <View
+                          accessibilityLiveRegion="polite"
+                          style={{
+                            backgroundColor: c.riskBg,
+                            borderRadius: theme.radii.sm,
+                            paddingHorizontal: theme.spacing.sm,
+                            paddingVertical: 10,
+                            marginBottom: theme.spacing.sm,
+                          }}
+                        >
+                          <AppText variant="small" color="risk" selectable>
+                            {failure.message}
+                          </AppText>
+                        </View>
+                      )}
                     </View>
                   ))}
                 </View>

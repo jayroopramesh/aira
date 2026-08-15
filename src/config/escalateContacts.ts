@@ -43,6 +43,35 @@ function telHref(displayNumber: string): string {
   return `tel:${displayNumber.replace(/[^\d+]/g, '')}`;
 }
 
+/**
+ * The bare number / address / URL behind an action, for the counselor to use BY HAND when the
+ * device refuses to open it (a `tel:` press on a desktop browser with no dialer registered, a
+ * platform that rejects the scheme). A row that promises "opens your dialer" and then silently does
+ * nothing is the same dead promise as no onPress at all — so the failure path has to hand back
+ * something dialable rather than swallow the rejection.
+ */
+export function manualTargetLabel(action: EscalateAction): string {
+  if (!action.href) return '';
+  if (action.kind === 'mailto') return action.href.replace(/^mailto:/, '').split('?')[0];
+  if (action.kind === 'tel') return action.href.replace(/^tel:/, '');
+  return action.href;
+}
+
+/** Honest copy for a target the device would not open, naming what to reach by hand instead. */
+export function openFailureMessage(action: EscalateAction): string {
+  const target = manualTargetLabel(action);
+  switch (action.kind) {
+    case 'tel':
+      return `This device wouldn’t open the dialer. Dial ${target} yourself.`;
+    case 'mailto':
+      return `This device wouldn’t open your email app. Write to ${target} yourself.`;
+    case 'url':
+      return `This device wouldn’t open the browser. Visit ${target} yourself.`;
+    case 'route':
+      return 'This screen wouldn’t open.';
+  }
+}
+
 /** "If you feel you or someone else is at risk of harm." Fixed UAE emergency contacts. */
 export const EMERGENCY_SECTION: EscalateSection = {
   key: 'emergency',

@@ -19,11 +19,19 @@
  * its on-device MOCK and the UI shows a calm "demo services not configured" notice — never a crash.
  */
 
+/**
+ * The app's own crisis line — the UAE Mental Support Line, 800-HOPE ("800 4673"). Baked in as a
+ * literal, NOT sourced from `.env.example`, so it is the resolved line in EVERY build: CI, a fresh
+ * clone, no `.env.local`. A safety number that only appears once someone copies a template is a
+ * number the counselor doesn't have when it matters.
+ */
+const DEFAULT_CRISIS_LINE = '800 4673';
+
 const raw = {
   supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() ?? '',
   supabaseKey: process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ?? '',
   groqProxyUrl: (process.env.EXPO_PUBLIC_GROQ_PROXY_URL?.trim() ?? '').replace(/\/$/, ''),
-  crisisLine: process.env.EXPO_PUBLIC_CRISIS_LINE?.trim() ?? '',
+  crisisLine: process.env.EXPO_PUBLIC_CRISIS_LINE?.trim() || DEFAULT_CRISIS_LINE,
   onCallEmail: process.env.EXPO_PUBLIC_ONCALL_EMAIL?.trim() ?? '',
 };
 
@@ -64,12 +72,15 @@ export const hasGroq = hasSupabase && isRealValue(raw.groqProxyUrl);
 export const demoServicesConfigured = hasSupabase;
 
 /**
- * The crisis line the Escalate + safety surfaces dial (F6/F7). Set via EXPO_PUBLIC_CRISIS_LINE;
- * `.env.example` ships it defaulted to the UAE Mental Support Line, 800-HOPE ("800 4673"), the
- * app's main escalation number. A deployment can override it with its own regional line. When it
- * is blanked out (not just left at the template default) we do NOT fabricate a mental-health
- * number — we fall back to local emergency services (999) and label it honestly, and the UI says a
- * dedicated line isn't set for this build. `configured` drives that copy.
+ * The crisis line the Escalate + safety surfaces dial (F6/F7). It resolves to
+ * `DEFAULT_CRISIS_LINE` ("800 4673", the UAE Mental Support Line) in every build; a deployment
+ * overrides it with its own regional line via EXPO_PUBLIC_CRISIS_LINE.
+ *
+ * The `configured: false` branch below is the honest-fallback mechanism, kept for a deployment that
+ * signals "this build has NO dedicated mental-health line" — today that signal is a placeholder
+ * value (see `isRealValue`), and it remains the seam for a future distinct override. On that branch
+ * we do NOT fabricate a mental-health number: we dial local emergency services (999), label it as
+ * such, and the UI says a dedicated line isn't set for this build. `configured` drives that copy.
  */
 export const crisisLine: { configured: boolean; display: string; tel: string } = (() => {
   if (isRealValue(raw.crisisLine)) {

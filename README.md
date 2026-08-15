@@ -55,13 +55,17 @@ Five workflows, built to the s4 prototype's steps and phone-adapted:
 | **Patterns** | caseload table (search, status chips, sparklines with a dashed first-reading baseline, sober risk column carried over from each note's risk tier, Outreach mailto templates that grey out once used; tiles computed from the caseload itself) → client patterns (plain-language headline *before* charts; multi-scale tabs PHQ-9 · GAD-7 · MHI-5 · DASS-21 with a muted dashed "Caseload avg" comparison stroke + legend; sparse ≤2-reading dot-strip rule kept per scale; companion-app journal box) → history timeline (with the retained notes) → acute-risk review (reachable for **any** client rated acute, including one the app flagged from a captured session; with no structured safety snapshot on file it says so and points at the session note rather than inventing one, while still offering escalation and the safety plan) → safety-plan viewer |
 
 The standing calm **Escalate** affordance sits on every screen (never alarm-red, never modal — a
-dismissible sheet). No option in it is a dead promise: it dials the configured crisis line (defaults
-to the UAE Mental Support Line, 800-HOPE; local emergency services when blanked out), surfaces two
-visually distinct UAE safety-net tiers — **emergency** (police, Rashid Hospital, DHA) and **crisis but
-not urgent** (The LightHouse Arabia Centre for Wellbeing, phone + site) — drafts a warm-handoff mail to
-the on-call clinician, and opens the client's safety plan; where there is no client in context or a
-contact isn't configured, the control says so plainly instead of sitting inert. See
-`src/config/escalateContacts.ts` and `scripts/escalate-targets-harness.mjs`. The **mascot** (the captain's background-removed
+dismissible sheet). No option in it is a dead promise: it dials the crisis line (the UAE Mental
+Support Line, 800-HOPE / "800 4673", baked in as the default in **every** build — no `.env.local`
+needed), surfaces two visually distinct UAE safety-net tiers — **emergency** (police, Rashid
+Hospital, DHA) and **crisis but not urgent** (The LightHouse Arabia Centre for Wellbeing, phone +
+site) — drafts a warm-handoff mail to the on-call clinician, and opens the client's safety plan;
+where there is no client in context or a contact isn't configured, the control says so plainly
+instead of sitting inert, and when the device itself refuses to open a `tel:`/`https:`/`mailto:`
+target the sheet stays open and hands back the bare number or address to use by hand. See
+`src/config/escalateContacts.ts` (the resolved targets, proved by
+`scripts/escalate-targets-harness.mjs`) and `src/components/__tests__/Escalate.test.tsx` (the
+render-and-press wiring — pure data alone can't catch a deleted `onPress`). The **mascot** (the captain's background-removed
 mood set — hero moods on the welcome/login/recovery screens, a per-workflow mood beside the app-bar
 wordmark, which also returns you to the day board) appears only on human surfaces; it is banned from charts, tables, the risk queue, and the in-session capture
 content (see `src/components/mascotMoods.tsx`).
@@ -103,9 +107,11 @@ client var. See [Groq proxy (Edge Function)](#groq-proxy-edge-function) and
 [Demo-mode live services](#demo-mode-live-services).
 
 The same template also carries the deployment's **safety contacts** — the crisis line the Escalate
-sheet dials (defaulted to the UAE Mental Support Line, "800 4673") and the on-call address a warm
-handoff drafts to. `.env.example` documents each one and what the app says honestly when a value is
-blanked out instead of left at its template default (it never fabricates a mental-health number).
+sheet dials and the on-call address a warm handoff drafts to. The crisis line is *not* sourced from
+the template: "800 4673" (the UAE Mental Support Line) is a literal default in `src/config/env.ts`,
+so it is the number in every build including CI and a fresh clone; `EXPO_PUBLIC_CRISIS_LINE` only
+**overrides** it with a regional line. `.env.example` documents each one and what the app says
+honestly when a value isn't configured (it never fabricates a mental-health number).
 
 ### Web
 ```bash

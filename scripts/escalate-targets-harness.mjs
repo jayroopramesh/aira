@@ -3,7 +3,9 @@
  * verified `tel:`/`https:`/`mailto:`/route target — not the `onPress={() => {}}` dead promise
  * that left this surface inert once already. Runs against `buildEscalateSections`
  * (`src/config/escalateContacts.ts`), the pure data the component renders, so a future refactor
- * that drops an onPress or mistypes a number fails here without needing to render the UI.
+ * that mistypes a number fails here without needing to render the UI. (The component's own onPress
+ * wiring is a different question and pure data cannot see it — that is
+ * `src/components/__tests__/Escalate.test.tsx`.)
  *
  * Numbers/URLs below are transcribed character-for-character from the safety brief:
  *   crisis line 800 4673 · police 999 · Rashid Hospital 04 219 2000 · DHA https://www.dha.gov.ae/
@@ -13,7 +15,16 @@
  *   node --experimental-strip-types scripts/escalate-targets-harness.mjs
  * Exits non-zero on the first failed assertion.
  */
-import { buildEscalateSections } from '../src/config/escalateContacts.ts';
+// Loaded dynamically, AFTER scrubbing the safety env vars, so the "real shipped default" block
+// below observes the fresh-clone/CI environment (no `.env.local`, nothing exported) rather than
+// whatever the developer running this happens to have set. `src/config/env.ts` reads process.env at
+// module-evaluation time, so the scrub has to happen before the import evaluates — hence not a
+// static import.
+delete process.env.EXPO_PUBLIC_CRISIS_LINE;
+delete process.env.EXPO_PUBLIC_ONCALL_EMAIL;
+const { buildEscalateSections, manualTargetLabel, openFailureMessage } = await import(
+  '../src/config/escalateContacts.ts'
+);
 
 let failed = 0;
 function check(name, ok, detail) {
@@ -33,7 +44,7 @@ function findAction(sections, key) {
 const configured = { crisisLine: { configured: true, display: '800 4673', tel: 'tel:8004673' }, onCallEmail: { configured: false, address: 'on-call@clinic.example' } };
 const blank = { crisisLine: { configured: false, display: '999 · local emergency services', tel: 'tel:999' }, onCallEmail: { configured: false, address: 'on-call@clinic.example' } };
 
-// --- Default build: EXPO_PUBLIC_CRISIS_LINE at its .env.example default (800 4673) --------------
+// --- Injected config: crisis line resolved to 800 4673 ------------------------------------------
 {
   const sections = buildEscalateSections({}, configured);
 
@@ -99,14 +110,56 @@ const blank = { crisisLine: { configured: false, display: '999 · local emergenc
   check('emergency tier is unaffected by crisis-line config', dha?.href === 'https://www.dha.gov.ae/', dha?.href);
 }
 
-// --- The real shipped default (no injected config) matches the .env.example value ---------------
+// --- The real shipped default: NO env vars set at all (CI, a fresh clone, no `.env.local`) ------
+// This is the every-build guarantee. `800 4673` is baked into src/config/env.ts as a literal, so it
+// must resolve here without any configuration — a `tel:` prefix alone would also be satisfied by
+// the 999 local-emergency fallback, which is exactly how a missing default went unnoticed.
 {
   const realCrisis = findAction(buildEscalateSections(), 'crisis');
+  check('unconfigured build dials 800 4673', realCrisis?.href === 'tel:8004673', realCrisis?.href);
   check(
-    'with the process env exactly as this test process started, crisis line resolves to a real href',
-    typeof realCrisis?.href === 'string' && realCrisis.href.startsWith('tel:'),
-    realCrisis,
+    'unconfigured build presents the crisis line as configured, no fallback copy',
+    realCrisis?.sub === '800 4673 · opens your dialer',
+    realCrisis?.sub,
   );
+
+  // The fixed tiers likewise need no configuration to be real.
+  check('unconfigured build still dials police 999', findAction(buildEscalateSections(), 'police')?.href === 'tel:999');
+  check(
+    'unconfigured build still opens the DHA site',
+    findAction(buildEscalateSections(), 'dha')?.href === 'https://www.dha.gov.ae/',
+  );
+}
+
+// --- Honest failure copy: a refused hand-off hands back something usable by hand -----------------
+{
+  const sections = buildEscalateSections({ activeClientId: 'client-42' }, configured);
+  const police = findAction(sections, 'police');
+  check('a refused tel: hands back the bare number to dial', manualTargetLabel(police) === '999', manualTargetLabel(police));
+  check('tel failure copy names that number', openFailureMessage(police).includes('999'), openFailureMessage(police));
+
+  const dha = findAction(sections, 'dha');
+  check(
+    'a refused url hands back the full address',
+    manualTargetLabel(dha) === 'https://www.dha.gov.ae/',
+    manualTargetLabel(dha),
+  );
+
+  const handoff = findAction(sections, 'handoff');
+  check(
+    'a refused mailto hands back the bare address, without the subject/body query',
+    manualTargetLabel(handoff) === 'on-call@clinic.example',
+    manualTargetLabel(handoff),
+  );
+
+  for (const action of sections.flatMap((s) => s.actions)) {
+    if (action.disabled || action.kind === 'route') continue;
+    check(
+      `"${action.key}" failure copy is non-empty and quotes its target`,
+      openFailureMessage(action).includes(manualTargetLabel(action)) && manualTargetLabel(action).length > 0,
+      openFailureMessage(action),
+    );
+  }
 }
 
 // --- Safety plan: honest disable with no client, real route with one -----------------------------

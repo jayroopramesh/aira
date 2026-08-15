@@ -16,8 +16,10 @@ constraints — don't duplicate it here.
   later native export.
 - **CI** (`.github/workflows/ci.yml`, PRs + push to `main`, Node pinned via `actions/setup-node`,
   no secrets): `tsc --noEmit`, `npm test` (the `scripts/*-harness.mjs` suites — provenance,
-  persist-race, risk-floor, escalate-targets, groq-proxy — wired up as the `test` script in
-  `package.json`; that IS the project's test suite, there is no separate framework), then
+  persist-race, risk-floor, escalate-targets, groq-proxy — followed by `jest --ci`, all chained in
+  the `test` script in `package.json`; that IS the project's test suite. The harnesses are the
+  default lane for pure modules; jest (`jest.config.js`, preset `jest-expo/ios`, matching
+  `src/**/*.test.tsx?`) exists for tests that must RENDER a component to prove its wiring), then
   `expo export --platform web`. Lint is deliberately not wired in: `expo lint` auto-installs
   `eslint-config-expo` and currently flags real `react-hooks/refs` errors (refs read during
   render) that would require behaviour changes to fix — re-evaluate next time those files are touched.
@@ -146,9 +148,13 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
 - Risk is clay, never alarm-red; colour is never the only signal (always paired with a word).
 - Escalate is a standing, dismissible sheet — never modal, never alarm. No safety control may be a
   dead promise: the crisis line, warm handoff and safety plan each do a real thing or say plainly why
-  they can't (contacts come from `EXPO_PUBLIC_CRISIS_LINE` / `EXPO_PUBLIC_ONCALL_EMAIL`; `.env.example`
-  defaults the crisis line to the UAE Mental Support Line, "800 4673"; blanking it out falls back to
-  local emergency services and never invents a mental-health number). The sheet also carries two
+  they can't. **The crisis line's default is a literal in `src/config/env.ts`** (`DEFAULT_CRISIS_LINE`
+  = the UAE Mental Support Line, "800 4673"), NOT a `.env.example` value — a safety number that only
+  appears once someone copies a template is missing in CI and in a fresh clone, which is precisely
+  where it was missing. `EXPO_PUBLIC_CRISIS_LINE` only *overrides* it; the `configured: false`
+  branch (999 + honest "no dedicated line" copy) stays in source as the seam for a deployment that
+  signals it has none, and never invents a mental-health number. The on-call address still comes
+  from `EXPO_PUBLIC_ONCALL_EMAIL`. The sheet also carries two
   fixed, non-configurable UAE safety-net tiers below the crisis line — **emergency** (police, Rashid
   Hospital, DHA) and **crisis but not urgent** (The LightHouse Arabia Centre for Wellbeing) — visually
   distinct by tone so neither is mistaken for the other. All target-resolution (every `tel:`/`https:`/
@@ -156,6 +162,16 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   config-injectable for testing), proved by `scripts/escalate-targets-harness.mjs`; `Escalate.tsx` is
   a thin renderer over it. Any new contact must be transcribed verbatim from a source, never
   paraphrased or "corrected".
+  Pure data can't prove the WIRING, and a deleted `onPress` is how this surface went inert once — so
+  `src/components/__tests__/Escalate.test.tsx` mounts the real sheet, presses every row, and asserts
+  the exact `Linking.openURL` / `router.push` target (and that the disabled safety-plan row reaches
+  neither). It runs under **jest + jest-expo + @testing-library/react-native** (`jest.config.js`,
+  `jest --ci` at the end of the `test` script) — the project's only non-`.mjs` test lane; keep new
+  component-wiring tests here and pure-module proofs in `scripts/`.
+  A hand-off that the device REFUSES (a `tel:` on desktop web with no dialer) must not dismiss the
+  sheet onto nothing: `runAction` closes only on a resolved `openURL`, and on rejection keeps the
+  sheet open and renders `openFailureMessage` — the bare number/address to use by hand. Never
+  restore the `.catch(() => {})` swallow.
 - A note's risk reaches the caseload as a structured tier: the summarizer emits `riskLevel` and it is
   trusted for the ordinary case — never re-derived *down* by sniffing note prose. But `riskFromNote`
   applies an **up-only safety floor**: if the note's own structured risk **rows** disclose ideation (or

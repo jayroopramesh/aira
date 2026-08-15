@@ -33,7 +33,12 @@
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
+    "@testing-library/react-native": "^13.3.3",
+    "@types/jest": "^29.5.14",
     "@types/react": "~19.2.2",
+    "jest": "^29.7.0",
+    "jest-expo": "~57.0.4",
+    "react-test-renderer": "19.2.3",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -42,7 +47,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "node scripts/provenance-harness.mjs && node --experimental-strip-types scripts/persist-race-harness.mjs && node --experimental-strip-types scripts/risk-floor-harness.mjs && node --experimental-strip-types scripts/escalate-targets-harness.mjs && node scripts/groq-proxy-harness.mjs"
+    "test": "node scripts/provenance-harness.mjs && node --experimental-strip-types scripts/persist-race-harness.mjs && node --experimental-strip-types scripts/risk-floor-harness.mjs && node --experimental-strip-types scripts/escalate-targets-harness.mjs && node scripts/groq-proxy-harness.mjs && jest --ci"
   },
   "private": true
 }
