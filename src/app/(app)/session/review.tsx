@@ -188,25 +188,31 @@ export default function ReviewNote() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const wide = width >= 1040;
-  const { clientId, note: noteParam, existing, conflict, idconflict } = useLocalSearchParams<{
+  const { clientId, note: noteParam, existing, adopted, conflict, idconflict } = useLocalSearchParams<{
     clientId: string;
     note?: string;
     existing?: string;
+    adopted?: string;
     conflict?: string;
     idconflict?: string;
   }>();
   // Set when this capture's Emirates ID matched a client already on the caseload: the session folded
   // into that existing record rather than creating a duplicate patient, and we say so plainly.
   const foldedIntoExisting = existing === '1';
+  // The ADOPTION fold: no record held this Emirates ID, so the match was made on the NAME and the id
+  // was saved onto that record by this capture. It must not borrow the sentence above — claiming the id
+  // was "already on your caseload" would invent corroboration on the one fold the counselor alone can
+  // check, and this is where a same-named different patient would be caught.
+  const foldedAndSavedTheId = !foldedIntoExisting && adopted === '1';
   // The sharpest warning: the Emirates ID entered is already on file under a materially DIFFERENT name.
   // Two strong signals disagreeing is a mis-entry far more often than a match, so a separate record was
   // minted rather than merging two patients — and the counselor is told to check the id before signing.
-  const idOnFileUnderAnotherName = !foldedIntoExisting && idconflict === '1';
+  const idOnFileUnderAnotherName = !foldedIntoExisting && !foldedAndSavedTheId && idconflict === '1';
   // The app could not tell which patient this is: a namesake holds a different Emirates ID, or more
   // than one client shares the name. Ambiguity is never resolved by merging, so a separate record was
   // minted deliberately — said plainly here, because an unexplained second identical-looking row is how
   // a caseload quietly fragments.
-  const mintedDespiteSameName = !foldedIntoExisting && !idOnFileUnderAnotherName && conflict === '1';
+  const mintedDespiteSameName = !foldedIntoExisting && !foldedAndSavedTheId && !idOnFileUnderAnotherName && conflict === '1';
   // Up to 3 notes are retained per client (C4); `note` selects which retained note to review (newest = 0).
   const notes = useClientNotes(clientId);
   const parsedIndex = noteParam ? Number(noteParam) : 0;
@@ -303,6 +309,14 @@ export default function ReviewNote() {
               <IdentityNotice tone="brand" heading="You already see this client.">
                 This Emirates ID is already on your caseload, so the session was added to their existing
                 record instead of creating a second — this is that record.
+              </IdentityNotice>
+            ) : null}
+
+            {foldedAndSavedTheId ? (
+              <IdentityNotice tone="brand" heading="You already see this client.">
+                The session was added to {client?.name ? `${client.name}’s` : 'their'} existing record — matched
+                by name — and the Emirates ID you entered was saved onto it. If that isn’t who you saw, check
+                the name and the ID.
               </IdentityNotice>
             ) : null}
 

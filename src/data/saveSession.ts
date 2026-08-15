@@ -51,6 +51,14 @@ export type SessionSaveResult = {
   clientId: string;
   /** An Emirates ID already on the caseload opened its existing record — "you already see this client". */
   isDuplicate: boolean;
+  /**
+   * PRESENTATION ONLY — the fold above was a Step-B ADOPTION: no record held that Emirates ID, so the
+   * match was made on the NAME and the id was written onto that record by this save. The fold decision
+   * and `isDuplicate` are unaffected; this only picks which true sentence review shows, because telling
+   * the counselor the id was "already on file" would be invented corroboration on the one path where a
+   * wrong match is theirs to catch.
+   */
+  adoptedEmiratesId: boolean;
   /** A separate record was minted although a same-named client exists, because the id vetoed the fold. */
   nameConflict: boolean;
   /** A separate record was minted because that Emirates ID is on file under a different name. */
@@ -102,6 +110,7 @@ export function applySessionNote(
       // Only an Emirates-ID match is a "you already see this client" moment — an id-opened capture or a
       // same-name continuation is the expected fold, not a duplicate the counselor should be warned of.
       isDuplicate: match.matchedBy === 'emiratesId',
+      adoptedEmiratesId: !!match.adoptEmiratesId,
       nameConflict: false,
       idNameConflict: false,
     };
@@ -114,6 +123,7 @@ export function applySessionNote(
       snapshot: { ...snapshot, notes: { ...snapshot.notes, [existingId]: withNote(snapshot.notes[existingId], note) } },
       clientId: existingId,
       isDuplicate: false,
+      adoptedEmiratesId: false,
       nameConflict: false,
       idNameConflict: false,
     };
@@ -143,6 +153,7 @@ export function applySessionNote(
     },
     clientId: opts.newClientId,
     isDuplicate: false,
+    adoptedEmiratesId: false,
     nameConflict: !!conflict,
     idNameConflict: !!idMismatch,
   };

@@ -229,8 +229,9 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
       snapshot→snapshot function; `DataProvider.saveSessionNote` only supplies the clock/new id and
       persists. It lives outside React so `scripts/duplicate-identity-harness.mjs` drives the real save
       path — a rule is only as good as the wiring that calls it, and a dropped call there was a real bug.
-    - KNOWN FOLLOW-UP: a forked record has no in-app repair/merge surface — `Client.emiratesId` is only
-      ever written at mint time (`clientFromSession`) and no screen renders or edits it.
+    - KNOWN FOLLOW-UP: a forked record has no in-app repair/merge surface — `Client.emiratesId` is written
+      only at mint time (`clientFromSession`) and on a resolved Step-B adoption (`appendSessionToClient`),
+      and no screen renders or edits it.
     Scope is device-local ONLY — never a cross-device/therapist
     existence check (captain, 2026-08-15): a global check would leak that a named person is in therapy.
 - Snapshot writes are **serialized** (`createWriteQueue` in `src/services/writeQueue.ts`, applied at

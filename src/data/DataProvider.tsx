@@ -69,12 +69,20 @@ type DataContextValue = {
    * same-named client) so the deliberate refusal to fold two different people is explained rather than
    * leaving two identical-looking rows on the caseload, and `idNameConflict` (true only on the mint
    * path, when that Emirates ID is already on file under a materially different name) so a mis-entered
-   * id is visible before the note is signed. All three are mutually exclusive.
+   * id is visible before the note is signed. All three are mutually exclusive. `adoptedEmiratesId`
+   * qualifies a duplicate fold for PRESENTATION only — the match was made on the name and the id was
+   * saved onto that record by this capture, so review must not claim it was already on file.
    */
   saveSessionNote: (
     note: DraftNote,
     opts?: { clientId?: string; name?: string; emiratesId?: string },
-  ) => Promise<{ clientId: string; isDuplicate: boolean; nameConflict: boolean; idNameConflict: boolean }>;
+  ) => Promise<{
+    clientId: string;
+    isDuplicate: boolean;
+    adoptedEmiratesId: boolean;
+    nameConflict: boolean;
+    idNameConflict: boolean;
+  }>;
   /** Persist the clinician-entered patient-details card edits for a client (C2) — device-local. */
   savePatientDetails: (clientId: string, patch: PatientDetailsEntry) => Promise<void>;
   /** Persist a sign-off onto the stored note (F8) so the attestation survives navigation/reload. */

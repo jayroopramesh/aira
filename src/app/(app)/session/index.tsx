@@ -137,17 +137,26 @@ export default function SessionCapture() {
   };
 
   const onDrafted = async (note: DraftNote) => {
-    const { clientId: id, isDuplicate, nameConflict, idNameConflict } = await saveSessionNote(note, {
+    const { clientId: id, isDuplicate, adoptedEmiratesId, nameConflict, idNameConflict } = await saveSessionNote(note, {
       clientId: client?.id,
       name: client ? undefined : name,
       emiratesId: client ? undefined : emiratesId,
     });
     // A duplicate Emirates ID folded into an existing client — open that record and tell the counselor
-    // plainly, rather than silently landing on what looks like a brand-new note. Otherwise a separate
-    // record was minted on purpose (never merge two people) and review says why: the Emirates ID is on
-    // file under another NAME (the likelier mis-entry, so it wins), or a same-named client exists that
-    // the id vetoed folding into. Mutually exclusive — a fold is not a mint.
-    const notice = isDuplicate ? '&existing=1' : idNameConflict ? '&idconflict=1' : nameConflict ? '&conflict=1' : '';
+    // plainly, rather than silently landing on what looks like a brand-new note. An ADOPTION folded too,
+    // but on the NAME (the id was saved onto that record just now, not already on file), so it gets its
+    // own honest wording. Otherwise a separate record was minted on purpose (never merge two people) and
+    // review says why: the Emirates ID is on file under another NAME (the likelier mis-entry, so it
+    // wins), or a same-named client exists that the id vetoed folding into. Mutually exclusive.
+    const notice = isDuplicate
+      ? adoptedEmiratesId
+        ? '&adopted=1'
+        : '&existing=1'
+      : idNameConflict
+        ? '&idconflict=1'
+        : nameConflict
+          ? '&conflict=1'
+          : '';
     router.replace(`/(app)/session/review?clientId=${id}${notice}`);
   };
 
@@ -349,10 +358,11 @@ function PreCapture({
           ) : null}
           <AppText variant="small" color="ink3" style={{ marginTop: 8, fontSize: 11.5, lineHeight: 16 }}>
             The captured session is added to your caseload afterwards. A valid Emirates ID (784 + 12 digits)
-            opens the client already saved under it, or — if it’s new — saves it onto the one client of that
-            name who has no ID yet. If a client of that name has a different ID, or more than one shares the
-            name, a separate record is created and you’ll be told. Without an ID, the session is matched by
-            name to a client you’ve already captured. It stays on this device.
+            opens the client saved under it when the name agrees too, or — if the ID is new — saves it onto the
+            one client of that name who has no ID yet. If the ID is on file under a different name, or a client
+            of that name has a different ID, or more than one shares the name, a separate record is created and
+            you’ll be told. Without an ID, the session is matched by name to a client you’ve already captured.
+            It stays on this device.
           </AppText>
         </Card>
       )}

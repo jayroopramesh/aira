@@ -582,6 +582,8 @@ const NOTE = {
   check('save: a duplicate Emirates ID creates NO second record', again.snapshot.clients.length === 1, String(again.snapshot.clients.length));
   check('save: it folds into the existing record', again.clientId === first.clientId, again.clientId);
   check('save: and is reported as a duplicate', again.isDuplicate === true, JSON.stringify(again));
+  // A TRUE id match — the record already held the key — so review may say it was already on file.
+  check('save: a true id match is not flagged as an adoption', again.adoptedEmiratesId === false, JSON.stringify(again.adoptedEmiratesId));
   check('save: the fold accumulates sessions', again.snapshot.clients[0].sessionNumber === 2, String(again.snapshot.clients[0].sessionNumber));
   check('save: the fold retains both notes', again.snapshot.notes[again.clientId]?.length === 2, String(again.snapshot.notes[again.clientId]?.length));
 
@@ -627,8 +629,13 @@ const NOTE = {
     String(adopt.snapshot.clients.find((cl) => cl.id === noIdFirst.clientId)?.emiratesId),
   );
   check('save: the counselor is told it is the same client', adopt.isDuplicate === true && adopt.nameConflict === false, JSON.stringify(adopt));
+  // The match was made on the NAME and the id was written by this save, so review must say exactly that
+  // rather than borrowing the true-id-match sentence ("already on your caseload") it cannot support.
+  check('save: the fold is flagged as an ADOPTION, not a prior id match', adopt.adoptedEmiratesId === true, JSON.stringify(adopt.adoptedEmiratesId));
   const afterAdopt = capture(adopt.snapshot, { emiratesId: ' 784 1988 7654321 9 ' });
   check('save: the adopted key resolves the next capture by id alone', afterAdopt.clientId === noIdFirst.clientId && afterAdopt.snapshot.clients.length === 1, afterAdopt.clientId);
+  // Once adopted, the key IS on file — that later fold is a true id match, not another adoption.
+  check('save: the fold after adoption is NOT flagged an adoption', afterAdopt.adoptedEmiratesId === false, JSON.stringify(afterAdopt.adoptedEmiratesId));
 
   // AMBIGUITY through the real save path: two namesakes, so the app refuses to guess.
   const twinA = capture(EMPTY, { name: 'Omar Said' });
