@@ -16,11 +16,17 @@ constraints — don't duplicate it here.
   later native export.
 - **CI** (`.github/workflows/ci.yml`, PRs + push to `main`, Node pinned via `actions/setup-node`,
   no secrets): `tsc --noEmit`, `npm test` (the `scripts/*-harness.mjs` suites — provenance,
-  persist-race, risk-floor, groq-proxy — wired up as the `test` script in `package.json`; that IS
-  the project's test suite, there is no separate framework), then `expo export --platform web`.
-  Lint is deliberately not wired in: `expo lint` auto-installs `eslint-config-expo` and currently
-  flags real `react-hooks/refs` errors (refs read during render) that would require behaviour
-  changes to fix — re-evaluate next time those files are touched.
+  persist-race, risk-floor, escalate-targets, groq-proxy — wired up as the `test` script in
+  `package.json`; that IS the project's test suite, there is no separate framework), then
+  `expo export --platform web`. Lint is deliberately not wired in: `expo lint` auto-installs
+  `eslint-config-expo` and currently flags real `react-hooks/refs` errors (refs read during
+  render) that would require behaviour changes to fix — re-evaluate next time those files are touched.
+- A harness that runs a pure `src/` module directly under `node --experimental-strip-types` needs
+  an **explicit `.ts` extension** on every runtime (non-type-only) relative import inside that
+  module's own import chain — Node's stripped-types loader does not resolve extensionless
+  specifiers, unlike Metro/tsc. `tsconfig.json` sets `allowImportingTsExtensions: true` for exactly
+  this (see `src/config/escalateContacts.ts` importing `./env.ts`). Type-only imports (`import
+  type`) are erased before resolution and never hit this.
 - Design tokens come from `aira-ui-s3/design-direction.html` (light: verbatim; dark: revised
   turquoise in round 4 — see `README.md` "Theme / token architecture"); the prototype spec is
   `aira-ui-screens-s4/screens.html`. Treat those as source-of-truth for any UI change.
@@ -140,8 +146,16 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
 - Risk is clay, never alarm-red; colour is never the only signal (always paired with a word).
 - Escalate is a standing, dismissible sheet — never modal, never alarm. No safety control may be a
   dead promise: the crisis line, warm handoff and safety plan each do a real thing or say plainly why
-  they can't (contacts come from `EXPO_PUBLIC_CRISIS_LINE` / `EXPO_PUBLIC_ONCALL_EMAIL`; an unset
-  crisis line falls back to local emergency services and never invents a mental-health number).
+  they can't (contacts come from `EXPO_PUBLIC_CRISIS_LINE` / `EXPO_PUBLIC_ONCALL_EMAIL`; `.env.example`
+  defaults the crisis line to the UAE Mental Support Line, "800 4673"; blanking it out falls back to
+  local emergency services and never invents a mental-health number). The sheet also carries two
+  fixed, non-configurable UAE safety-net tiers below the crisis line — **emergency** (police, Rashid
+  Hospital, DHA) and **crisis but not urgent** (The LightHouse Arabia Centre for Wellbeing) — visually
+  distinct by tone so neither is mistaken for the other. All target-resolution (every `tel:`/`https:`/
+  `mailto:`/route href) is pure data in `src/config/escalateContacts.ts` (`buildEscalateSections`,
+  config-injectable for testing), proved by `scripts/escalate-targets-harness.mjs`; `Escalate.tsx` is
+  a thin renderer over it. Any new contact must be transcribed verbatim from a source, never
+  paraphrased or "corrected".
 - A note's risk reaches the caseload as a structured tier: the summarizer emits `riskLevel` and it is
   trusted for the ordinary case — never re-derived *down* by sniffing note prose. But `riskFromNote`
   applies an **up-only safety floor**: if the note's own structured risk **rows** disclose ideation (or

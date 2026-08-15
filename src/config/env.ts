@@ -64,10 +64,12 @@ export const hasGroq = hasSupabase && isRealValue(raw.groqProxyUrl);
 export const demoServicesConfigured = hasSupabase;
 
 /**
- * The crisis line the Escalate + safety surfaces dial (F6/F7). A deployment sets its regional 24/7
- * line via EXPO_PUBLIC_CRISIS_LINE. When none is configured we do NOT fabricate a mental-health
- * number — we fall back to local emergency services (always a correct 24/7 path) and label it
- * honestly, and the UI says a dedicated line isn't set for this build. `configured` drives that copy.
+ * The crisis line the Escalate + safety surfaces dial (F6/F7). Set via EXPO_PUBLIC_CRISIS_LINE;
+ * `.env.example` ships it defaulted to the UAE Mental Support Line, 800-HOPE ("800 4673"), the
+ * app's main escalation number. A deployment can override it with its own regional line. When it
+ * is blanked out (not just left at the template default) we do NOT fabricate a mental-health
+ * number — we fall back to local emergency services (999) and label it honestly, and the UI says a
+ * dedicated line isn't set for this build. `configured` drives that copy.
  */
 export const crisisLine: { configured: boolean; display: string; tel: string } = (() => {
   if (isRealValue(raw.crisisLine)) {
