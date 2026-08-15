@@ -137,17 +137,17 @@ export default function SessionCapture() {
   };
 
   const onDrafted = async (note: DraftNote) => {
-    const { clientId: id, isDuplicate, nameConflict } = await saveSessionNote(note, {
+    const { clientId: id, isDuplicate, nameConflict, idNameConflict } = await saveSessionNote(note, {
       clientId: client?.id,
       name: client ? undefined : name,
       emiratesId: client ? undefined : emiratesId,
     });
     // A duplicate Emirates ID folded into an existing client — open that record and tell the counselor
-    // plainly, rather than silently landing on what looks like a brand-new note. The mirror case is a
-    // same-named client under a DIFFERENT Emirates ID: a separate record was minted on purpose (never
-    // merge two people), and review says so instead of leaving two identical-looking caseload rows.
-    // Mutually exclusive — a fold is not a mint.
-    const notice = isDuplicate ? '&existing=1' : nameConflict ? '&conflict=1' : '';
+    // plainly, rather than silently landing on what looks like a brand-new note. Otherwise a separate
+    // record was minted on purpose (never merge two people) and review says why: the Emirates ID is on
+    // file under another NAME (the likelier mis-entry, so it wins), or a same-named client exists that
+    // the id vetoed folding into. Mutually exclusive — a fold is not a mint.
+    const notice = isDuplicate ? '&existing=1' : idNameConflict ? '&idconflict=1' : nameConflict ? '&conflict=1' : '';
     router.replace(`/(app)/session/review?clientId=${id}${notice}`);
   };
 
@@ -347,9 +347,10 @@ function PreCapture({
               this client. You can still capture the session — it’ll be matched by name instead.
             </AppText>
           ) : null}
-          <AppText variant="small" color="ink3" style={{ marginTop: 8, fontSize: 11.5 }}>
-            The captured session is added to your caseload afterwards. If you already see this client, adding
-            their Emirates ID opens their existing record instead of creating a second. It stays on this device.
+          <AppText variant="small" color="ink3" style={{ marginTop: 8, fontSize: 11.5, lineHeight: 16 }}>
+            The captured session is added to your caseload afterwards. A valid Emirates ID (784 + 12 digits)
+            links repeat sessions to the client already saved under that ID and the same name. If it matches no
+            saved record — or is left blank — a new record is created. It stays on this device.
           </AppText>
         </Card>
       )}

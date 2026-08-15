@@ -10,7 +10,13 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT, MAX_NOTES_PER_CLIENT, PatientDetailsEntry } from './repository';
 import { CaseloadKpi, Client, DayDashboard, DraftNote, NoteSection } from './types';
-import { appendSessionToClient, clientFromSession, findNameConflict, matchExistingClient } from './sessionClient';
+import {
+  appendSessionToClient,
+  clientFromSession,
+  findIdNameMismatch,
+  findNameConflict,
+  matchExistingClient,
+} from './sessionClient';
 
 /** Prepend the newest note and keep at most MAX_NOTES_PER_CLIENT per client (C4) — oldest rotates out. */
 function withNote(existing: DraftNote[] | undefined, note: DraftNote): DraftNote[] {
@@ -72,12 +78,14 @@ type DataContextValue = {
    * matched an existing client), so the UI can plainly say "you already see this client", and
    * `nameConflict` (true only on the mint path, when a valid Emirates ID vetoed folding into a
    * same-named client) so the deliberate refusal to fold two different people is explained rather than
-   * leaving two identical-looking rows on the caseload.
+   * leaving two identical-looking rows on the caseload, and `idNameConflict` (true only on the mint
+   * path, when that Emirates ID is already on file under a materially different name) so a mis-entered
+   * id is visible before the note is signed. All three are mutually exclusive.
    */
   saveSessionNote: (
     note: DraftNote,
     opts?: { clientId?: string; name?: string; emiratesId?: string },
-  ) => Promise<{ clientId: string; isDuplicate: boolean; nameConflict: boolean }>;
+  ) => Promise<{ clientId: string; isDuplicate: boolean; nameConflict: boolean; idNameConflict: boolean }>;
   /** Persist the clinician-entered patient-details card edits for a client (C2) — device-local. */
   savePatientDetails: (clientId: string, patch: PatientDetailsEntry) => Promise<void>;
   /** Persist a sign-off onto the stored note (F8) so the attestation survives navigation/reload. */
@@ -172,21 +180,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         });
         // Only an Emirates-ID match is a "you already see this client" moment — an id-opened capture or
         // a same-name continuation is the expected fold, not a duplicate the counselor should be warned of.
-        return { clientId: existing.id, isDuplicate: match.matchedBy === 'emiratesId', nameConflict: false };
+        return { clientId: existing.id, isDuplicate: match.matchedBy === 'emiratesId', nameConflict: false, idNameConflict: false };
       }
 
       // A clientId whose client no longer exists (e.g. cleared data mid-session) — keep the note
       // reachable under that id rather than silently minting an unrelated client.
       if (existingId) {
         await persist({ ...snapshot, notes: { ...snapshot.notes, [existingId]: withNote(snapshot.notes[existingId], note) } });
-        return { clientId: existingId, isDuplicate: false, nameConflict: false };
+        return { clientId: existingId, isDuplicate: false, nameConflict: false, idNameConflict: false };
       }
 
-      // Nothing matched, but a same-named client may exist that this capture's Emirates ID vetoed the
-      // fold against — different people, so a separate record is minted below. That refusal is
-      // reported, not silent: without it one mistyped digit forks a client into two identical-looking
-      // rows with no explanation.
+      // Nothing matched, so a separate record is minted below — but never silently. Two shapes of
+      // refusal, each reported by the exact complement of the branch that declined: a same-named client
+      // this capture's Emirates ID vetoed folding into, and an Emirates ID already on file under another
+      // name (the likelier mis-entry, so it takes precedence in the UI).
       const conflict = findNameConflict(snapshot.clients, { name: typedName, emiratesId });
+      const idMismatch = findIdNameMismatch(snapshot.clients, { name: typedName, emiratesId });
 
       // Standalone session — mint a lightweight client so blank boot visibly populates.
       const id = `s-${Date.now().toString(36)}`;
@@ -198,7 +207,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         clients: [client, ...snapshot.clients],
         notes: { ...snapshot.notes, [id]: withNote(snapshot.notes[id], noteForClient) },
       });
-      return { clientId: id, isDuplicate: false, nameConflict: !!conflict };
+      return { clientId: id, isDuplicate: false, nameConflict: !!conflict, idNameConflict: !!idMismatch };
     },
     [persist],
   );

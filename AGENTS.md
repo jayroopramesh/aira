@@ -187,8 +187,9 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
     email-scoped: one account per device is the keyless model, and there is no email registry to consult.
   - **Patient**: a **well-formed** Emirates ID is the **local** caseload uniqueness key
     (`Client.emiratesId`, stored verbatim; compared via `normalizeEmiratesId`). The governing rule: a
-    strong identifier, present and well-formed, ALWAYS decides; a weak one (a name, or a malformed
-    entry) NEVER merges two patients.
+    strong identifier, present and well-formed, ALWAYS decides a MATCH; a weak one (a name, or a
+    malformed entry) NEVER merges two patients; and two strong signals that DISAGREE are a warning, not
+    a match — the app mints a separate record and surfaces a caution rather than merging.
     - **Well-formed** = `isValidEmiratesId` — normalises to `^784[0-9]{12}$`. Anything else ("N/A",
       "unknown", a truncated "784-1988") is a placeholder the counselor reached for without the number,
       NOT an identity: `emiratesIdKey` yields `''`, so it never keys a match, and `clientFromSession`
@@ -196,19 +197,25 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
       one record under a confident "you already see this client". The capture screen says so inline.
     - `matchExistingClient` (`sessionClient.ts`) resolves by id → valid Emirates ID → captured-name. A
       capture carrying a valid id resolves by **that id alone**: it folds into the record holding the
-      same id (`saveSessionNote` returns `isDuplicate` → "You already see this client" on review), or it
-      mints its own. The name fold is vetoed for such a capture in **both** directions — against a record
-      storing a different id AND against one storing none (the counselor typed the id precisely to
-      distinguish two namesakes). Folding either way merges strangers' notes/plan/timeline and carries
-      one patient's risk tier onto the other, which nothing lowers. The name fold survives only for
-      captures with no valid id (the pre-existing F3 continuation).
-    - The veto mints a SEPARATE record — the safe residual, since a mistyped digit forking a client is
-      recoverable and merging two patients is not — but it is never silent: `findNameConflict` is its
-      exact complement (so the app cannot refuse to fold for a reason it fails to explain),
-      `saveSessionNote` returns `nameConflict`, and review says a same-named client exists but not under
-      that Emirates ID. `appendSessionToClient` deliberately writes **no** Emirates ID onto a record —
-      backfilling from a name fold is how one patient's id got stamped onto another's; the key takes hold
-      through the id-carrying record a non-matching valid-id capture mints.
+      same id **under an agreeing name** (`saveSessionNote` returns `isDuplicate` → "You already see this
+      client" on review), or it mints its own. The name fold is vetoed for such a capture in **both**
+      directions — against a record storing a different id AND against one storing none (the counselor
+      typed the id precisely to distinguish two namesakes). Folding either way merges strangers'
+      notes/plan/timeline and carries one patient's risk tier onto the other, which nothing lowers. The
+      name fold survives only for captures with no valid id (the pre-existing F3 continuation).
+    - An id reaching a record filed under a **materially different name** does NOT fold either: a
+      clipboard carried over from another patient's form or a transposed digit landing on a real id is
+      likelier than a match, and folding is the same unrecoverable merge from the opposite direction.
+    - Every veto mints a SEPARATE record — the safe residual, since a mistyped digit forking a client is
+      recoverable and merging two patients is not — but none is silent. `findNameConflict` and
+      `findIdNameMismatch` are the exact complements of the branches that declined (so the app cannot
+      refuse to fold for a reason it fails to explain), `saveSessionNote` returns `nameConflict` /
+      `idNameConflict`, and review carries the matching caution — the id-under-another-name warning wins
+      when both could apply. `appendSessionToClient` deliberately writes **no** Emirates ID onto a
+      record — backfilling from a name fold is how one patient's id got stamped onto another's; the key
+      takes hold through the id-carrying record a non-matching valid-id capture mints.
+    - KNOWN FOLLOW-UP: a forked record has no in-app repair/merge surface — `Client.emiratesId` is only
+      ever written at mint time (`clientFromSession`) and no screen renders or edits it.
     Scope is device-local ONLY — never a cross-device/therapist
     existence check (captain, 2026-08-15): a global check would leak that a named person is in therapy.
 - Snapshot writes are **serialized** (`createWriteQueue` in `src/services/writeQueue.ts`, applied at

@@ -63,6 +63,42 @@ function isCapturedNameMatch(cl: Client, typedName: string): boolean {
   return cl.id.startsWith('s-') && normalizeName(cl.name) === normalizeName(typedName);
 }
 
+/** Does this record carry the supplied identity key as its own stored (valid) Emirates ID? */
+function holdsIdKey(cl: Client, key: string): boolean {
+  return !!key && emiratesIdKey(cl.emiratesId) === key;
+}
+
+/**
+ * Does this record's name AGREE with what the counselor typed? A blank typed name agrees with
+ * everything — there is nothing to disagree with (the capture was opened from a client file, or the
+ * optional field was left empty).
+ */
+function nameAgrees(cl: Client, typedName: string): boolean {
+  return !typedName || normalizeName(cl.name) === normalizeName(typedName);
+}
+
+/**
+ * The record already holding this capture's Emirates ID under a MATERIALLY DIFFERENT name. Undefined
+ * when there is nothing to warn about: no valid id, no typed name, no record holding that id, or the
+ * names agree (that is the ordinary duplicate-patient fold).
+ *
+ * Two strong signals disagreeing is not a match, it is a warning. An Emirates ID reaching a record
+ * filed under another name is far more likely a mis-entry — a clipboard carried over from another
+ * patient's form, autofill, a transposed digit landing on a real id — than the same person renamed, and
+ * folding would merge two patients' notes/plan/timeline and carry one's risk tier onto the other, which
+ * nothing ever lowers, all under a confident "you already see this client". So the capture mints its own
+ * record and the review screen says plainly what to check.
+ *
+ * Built on the SAME predicates as `matchExistingClient`'s Emirates-ID branch, so the two are exact
+ * complements: a record that branch declines to fold into is precisely one this can name.
+ */
+export function findIdNameMismatch(clients: Client[], opts: { name?: string; emiratesId?: string }): Client | undefined {
+  const key = emiratesIdKey(opts.emiratesId);
+  const typedName = opts.name?.trim() ?? '';
+  if (!key || !typedName) return undefined;
+  return clients.find((cl) => holdsIdKey(cl, key) && !nameAgrees(cl, typedName));
+}
+
 /**
  * The same-named captured client this capture was NOT folded into, because the capture carries a valid
  * Emirates ID that no record on the caseload holds. Undefined when there is nothing to explain: no
@@ -82,8 +118,9 @@ export function findNameConflict(clients: Client[], opts: { name?: string; emira
   const key = emiratesIdKey(opts.emiratesId);
   const typedName = opts.name?.trim();
   if (!key || !typedName) return undefined;
-  // Only a capture that MINTS can conflict — one whose id resolves to a record simply folds into it.
-  if (clients.some((cl) => emiratesIdKey(cl.emiratesId) === key)) return undefined;
+  // A capture whose id reaches a record is not a name conflict — it either folds into it or, when the
+  // names disagree, is the sharper `findIdNameMismatch` warning instead.
+  if (clients.some((cl) => holdsIdKey(cl, key))) return undefined;
   return clients.find((cl) => isCapturedNameMatch(cl, typedName));
 }
 
@@ -100,16 +137,22 @@ export function findNameConflict(clients: Client[], opts: { name?: string; emira
  * no longer exists returns undefined too, so the caller can keep the note under that id.
  *
  * THE GOVERNING RULE: a strong identifier, when present and well-formed, always decides; a weak one
- * never merges two patients. So a capture carrying a valid Emirates ID resolves by that id ALONE — it
- * folds into the record holding the same id, or it mints its own. The name branch is vetoed entirely
- * for such a capture, in BOTH directions: against a record storing a different id (plainly a different
- * person) and against one storing none (the counselor typed the id precisely to distinguish them, and
- * folding would merge strangers' notes, plan and timeline and carry one patient's risk tier onto the
- * other, which nothing ever lowers). A malformed entry is not an identifier at all, so it falls through
- * to the name fold exactly as a blank one does.
+ * never merges two patients; and two strong signals that DISAGREE are a warning, never a match. So a
+ * capture carrying a valid Emirates ID resolves by that id ALONE — it folds into the record holding the
+ * same id, or it mints its own. The name branch is vetoed entirely for such a capture, in BOTH
+ * directions: against a record storing a different id (plainly a different person) and against one
+ * storing none (the counselor typed the id precisely to distinguish them, and folding would merge
+ * strangers' notes, plan and timeline and carry one patient's risk tier onto the other, which nothing
+ * ever lowers). A malformed entry is not an identifier at all, so it falls through to the name fold
+ * exactly as a blank one does.
  *
- * The veto is reported, never silent — the caller pairs it with `findNameConflict`, which is its exact
- * complement, so the app can never refuse to fold for a reason it then fails to explain.
+ * The id fold itself requires the names to AGREE. An id reaching a record filed under a materially
+ * different name is far more likely a mis-entry than a match, and folding on it is the same
+ * unrecoverable merge from the opposite direction — so that capture mints its own record too.
+ *
+ * Every veto is reported, never silent — the caller pairs this with `findNameConflict` and
+ * `findIdNameMismatch`, each an exact complement of the branch that declined, so the app can never
+ * refuse to fold for a reason it then fails to explain.
  */
 export function matchExistingClient(
   clients: Client[],
@@ -119,12 +162,12 @@ export function matchExistingClient(
     const byId = clients.find((cl) => cl.id === opts.clientId);
     return byId ? { client: byId, matchedBy: 'id' } : undefined;
   }
+  const typedName = opts.name?.trim() ?? '';
   const key = emiratesIdKey(opts.emiratesId);
   if (key) {
-    const byEmid = clients.find((cl) => emiratesIdKey(cl.emiratesId) === key);
+    const byEmid = clients.find((cl) => holdsIdKey(cl, key) && nameAgrees(cl, typedName));
     return byEmid ? { client: byEmid, matchedBy: 'emiratesId' } : undefined;
   }
-  const typedName = opts.name?.trim();
   if (typedName) {
     const byName = clients.find((cl) => isCapturedNameMatch(cl, typedName));
     if (byName) return { client: byName, matchedBy: 'name' };

@@ -11,11 +11,13 @@
  *   2. DUPLICATE PATIENT within the local caseload. A WELL-FORMED Emirates ID is the local uniqueness
  *      key: adding a client whose (normalised) Emirates ID already exists opens the EXISTING record and
  *      creates nothing; a novel one creates a new client; the raw typed value is stored verbatim. The
- *      governing rule is that a strong identifier always decides and a weak one never merges two
- *      patients — so a valid id resolves by id ALONE (the name fold is vetoed in BOTH directions:
- *      against a record storing a different id and against one storing none), the veto is REPORTED
- *      rather than silently forking the caseload, and a malformed entry ("N/A", a partial number) is no
- *      identity at all: it is neither stored nor matched on, and the capture falls back to name folding.
+ *      governing rule is that a strong identifier decides a MATCH, a weak one never merges two patients,
+ *      and two strong signals that DISAGREE are a warning rather than a match — so a valid id resolves
+ *      by id ALONE (the name fold is vetoed in BOTH directions: against a record storing a different id
+ *      and against one storing none), an id reaching a record filed under another NAME does not fold
+ *      either, every veto is REPORTED rather than silently forking the caseload, and a malformed entry
+ *      ("N/A", a partial number) is no identity at all: it is neither stored nor matched on, and the
+ *      capture falls back to name folding.
  *
  * Run (Node ≥ 22.13, e.g. ~/.cache/fm-node/node-v22.23.2-darwin-arm64/bin/node):
  *   node scripts/duplicate-identity-harness.mjs
@@ -39,6 +41,7 @@ const { deviceStore } = await import('../src/services/deviceStore.ts');
 const {
   appendSessionToClient,
   clientFromSession,
+  findIdNameMismatch,
   findNameConflict,
   isValidEmiratesId,
   matchExistingClient,
@@ -232,12 +235,77 @@ const NOTE = {
   });
   const caseload = [existing];
 
-  // Same ID, different formatting (spaces for dashes, stray padding) AND a different typed name — the
-  // Emirates ID is the key, so it must still resolve to the existing record.
-  const match = matchExistingClient(caseload, { name: 'A Different Name', emiratesId: ' 784 1988 1234567 1 ' });
+  // Same ID, different formatting (spaces for dashes, stray padding), same client — the Emirates ID is
+  // the key, so it resolves to the existing record however the number was typed.
+  const match = matchExistingClient(caseload, { name: 'Sam Ali', emiratesId: ' 784 1988 1234567 1 ' });
   check('duplicate patient: matched by Emirates ID', match?.matchedBy === 'emiratesId', JSON.stringify(match));
   check('duplicate patient: opens the EXISTING record', match?.client?.id === existing.id, String(match?.client?.id));
   check('normalizeEmiratesId collapses separators + case', normalizeEmiratesId('784-1988-1234567-1') === normalizeEmiratesId(' 784 1988 1234567 1 '), 'keys differ');
+
+  // A capture opened with NO typed name (from a client file, or the optional field left blank) has
+  // nothing to disagree with, so the id alone still folds.
+  const noName = matchExistingClient(caseload, { emiratesId: '784-1988-1234567-1' });
+  check('duplicate patient: folds with no typed name at all', noName?.matchedBy === 'emiratesId', JSON.stringify(noName));
+  check('duplicate patient: no name + no conflict flagged', findIdNameMismatch(caseload, { emiratesId: '784-1988-1234567-1' }) === undefined, 'flagged with no name');
+
+  // Casing/spacing differences in the NAME are not a disagreement either.
+  check(
+    'duplicate patient: a differently-spaced/cased name still agrees',
+    matchExistingClient(caseload, { name: '  sam   ali ', emiratesId: '784-1988-1234567-1' })?.matchedBy === 'emiratesId',
+    'normalised-equal name blocked the fold',
+  );
+}
+
+// --- 4b. An Emirates ID on file under ANOTHER name is a warning, not a match -----------------------
+// A clipboard carried over from another patient's form, autofill, or a transposed digit landing on a
+// real id. Folding would merge two patients under a confident "you already see this client".
+{
+  const existing = clientFromSession('s-1', NOTE, {
+    name: 'Sam Ali',
+    sessionNumber: 1,
+    dateLabel: DATE,
+    emiratesId: '784-1988-1234567-1',
+  });
+  const caseload = [existing];
+  const before = JSON.stringify(existing);
+
+  const match = matchExistingClient(caseload, { name: 'Fatima Noor', emiratesId: '784-1988-1234567-1' });
+  check('id/name disagree: does NOT fold (a separate record is minted)', match === undefined, JSON.stringify(match));
+  check('id/name disagree: the existing client is left untouched', JSON.stringify(caseload[0]) === before, 'existing record mutated');
+
+  const mismatch = findIdNameMismatch(caseload, { name: 'Fatima Noor', emiratesId: ' 784 1988 1234567 1 ' });
+  check('id/name disagree: the warning names the record holding that id', mismatch?.id === 's-1', JSON.stringify(mismatch));
+
+  // The veto and its explanation are exact complements — the branch never declines silently.
+  check(
+    'id/name disagree: warning fires exactly when the id fold was declined',
+    matchExistingClient(caseload, { name: 'Fatima Noor', emiratesId: '784-1988-1234567-1' }) === undefined &&
+      !!findIdNameMismatch(caseload, { name: 'Fatima Noor', emiratesId: '784-1988-1234567-1' }),
+    'veto and warning disagree',
+  );
+
+  // ...and it stays quiet whenever the signals do not actually disagree.
+  check(
+    'id/name warning: silent when the names AGREE (that folds)',
+    findIdNameMismatch(caseload, { name: 'Sam Ali', emiratesId: '784-1988-1234567-1' }) === undefined,
+    'flagged an agreeing name',
+  );
+  check(
+    'id/name warning: silent when no record holds that id',
+    findIdNameMismatch(caseload, { name: 'Fatima Noor', emiratesId: '784-9999-9999999-9' }) === undefined,
+    'flagged an unheld id',
+  );
+  check(
+    'id/name warning: silent when the entry is malformed (no identifier supplied)',
+    findIdNameMismatch(caseload, { name: 'Fatima Noor', emiratesId: 'N/A' }) === undefined,
+    'a placeholder produced an id warning',
+  );
+  // The two notices are mutually exclusive: an id that reaches a record is never a name conflict.
+  check(
+    'id/name disagree: the name-conflict notice stays quiet (this is the sharper warning)',
+    findNameConflict(caseload, { name: 'Fatima Noor', emiratesId: '784-1988-1234567-1' }) === undefined,
+    'both notices fired',
+  );
 }
 
 // --- 5. A CONFLICTING Emirates ID beats a name match — two different people never merge -----------
@@ -332,7 +400,7 @@ const NOTE = {
   // The identity takes hold through the record this capture MINTS, not by writing onto someone else's:
   // a later capture with that id — under any spelling of the name — resolves to it.
   const minted = clientFromSession('s-2', NOTE, { name: 'Sam Ali', sessionNumber: 1, dateLabel: DATE, emiratesId: emid });
-  const later = matchExistingClient([first, minted], { name: 'S. Ali', emiratesId: ' 784 1988 1234567 1 ' });
+  const later = matchExistingClient([first, minted], { name: 'Sam Ali', emiratesId: ' 784 1988 1234567 1 ' });
   check('mirror: a later same-id capture resolves by Emirates ID', later?.matchedBy === 'emiratesId', JSON.stringify(later));
   check('mirror: it lands on the id-carrying record, not the ID-less namesake', later?.client?.id === 's-2', String(later?.client?.id));
 
