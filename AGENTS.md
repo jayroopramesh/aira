@@ -146,6 +146,16 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
 (`.github/workflows/infra.yml`) — no Azure DevOps.
 
 ## Structural rules to preserve (locked design decisions)
+- **A client's name/avatar is always a link to their patient page** (`/(app)/today/[clientId]`),
+  wherever it's rendered as a discrete identity chip (list rows, detail headers) — never for a
+  client's first name mentioned inline in prose ("Back to Amara's patterns"). `src/components/
+  ClientLink.tsx` owns this: it wraps `Avatar` + caller-supplied name/subtitle content in a single
+  `Pressable` (`accessibilityRole="link"`, label `Open <name>'s page`) routed to that patient page —
+  every screen that renders a client identity chip reuses it rather than hand-rolling a Pressable, so
+  the affordance can't drift. When a row's own primary tap already does something else (e.g. the
+  caseload row opens patterns, not the patient page), `ClientLink` sits as a SIBLING Pressable next to
+  the row's own action, never nested inside it (nesting breaks web `<button>`-in-`<button>` semantics
+  — see the `patterns/index.tsx` `ClientRowWide`/`ClientRowNarrow` split for the pattern).
 - **Name vs. slug**: the user-visible product name is **Airava** (`app.json` `name`, the TopBar
   wordmark, onboarding/login lockups, the web `<title>`, and `public/manifest.json`). The shorthand
   **aira** stays for everything non-user-facing — repo, npm package, the `aira` `slug`/`scheme`, the

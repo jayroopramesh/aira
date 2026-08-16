@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 import { PageHeader, Screen } from '../../../components/Screen';
+import { ClientLink } from '../../../components/ClientLink';
 import { ArrowRight, ChevronRight } from '../../../components/icons';
 import { AppText, Avatar, Badge, Card, Divider, Eyebrow, RiskDot, Row } from '../../../components/ui';
 import { ZeroState } from '../../../components/ZeroState';
@@ -63,9 +64,22 @@ export default function TodayDashboard() {
               <AppText variant="small" tint={c.onBrand} style={{ opacity: 0.85 }}>
                 {nextClient?.summaryLine.includes('Session') ? '10:30 · INDIVIDUAL' : ''}
               </AppText>
-              <AppText variant="h2" tint={c.onBrand}>
-                {nextClient?.name ?? 'Your next client'}
-              </AppText>
+              {nextClient ? (
+                <Pressable
+                  onPress={() => router.push(`/(app)/today/${nextClient.id}`)}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Open ${nextClient.name}’s page`}
+                  style={({ pressed }) => ({ alignSelf: 'flex-start', opacity: pressed ? 0.75 : 1 })}
+                >
+                  <AppText variant="h2" tint={c.onBrand} style={{ textDecorationLine: 'underline' }}>
+                    {nextClient.name}
+                  </AppText>
+                </Pressable>
+              ) : (
+                <AppText variant="h2" tint={c.onBrand}>
+                  Your next client
+                </AppText>
+              )}
               <AppText variant="small" tint={c.onBrand} style={{ opacity: 0.85, marginTop: 2 }}>
                 Session 5 · academic anxiety, sleep · PHQ-9 trending down
               </AppText>
