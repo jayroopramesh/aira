@@ -1,16 +1,14 @@
 # Airava — rendered workflow captures
 
-> **Every capture in this folder predates the Airava brand rename.** The README hero strip,
-> `mobile/*`, and the `r4r5-`/`r2r3-` sets all still show the old **"Aira"** wordmark set in Lexend;
-> the shipped app now shows **"Airava"** in Atkinson Hyperlegible Mono. Judge layout and colour from
-> them as usual, but not the brand mark. A full refresh is queued as a separate task.
->
-> They also predate three later changes. The **encryption/server copy sweep**: the shipped app no
-> longer says "encrypted on this device" or "keys never leave this device" anywhere — read the live
-> copy from `src/strings/recovery.ts`, not from these images. The **date-proportional chart x-axis**,
-> so `06-patterns` still spaces its readings at equal intervals. And the **standing WIP preview
-> banner** (invite-only beta): the shipped app now tops every screen with a slim caution strip these
-> captures don't show.
+> **Refreshed 2026-08-16.** The `mobile/` set now shows the **Airava** wordmark (Atkinson
+> Hyperlegible Mono), the tuned seafoam palette, the date-proportional chart x-axis, the
+> post-copy-sweep trust strings (no more "encrypted on this device" language — read
+> `src/strings/recovery.ts` for the live wording), and the standing WIP preview banner ("Preview —
+> not a live medical service. Test with fictional client data only.") that now tops every screen —
+> the banner is kept in-frame deliberately, not cropped out, per the captain's 2026-08-16 decision.
+> The `r4r5-`/`r2r3-` sets below are **not** refreshed — they still show the pre-rename **"Aira"**
+> wordmark and are kept only as historical record of earlier design rounds; do not use them to judge
+> current UI.
 
 Real renders of the running **web** app (headless Chrome, 2× scale). The `mobile/` folder is the
 **current** set (phone-dimension signature screens, light + dark); the `r4r5-` prefix below it is the
@@ -19,7 +17,11 @@ the superseded round-2/3 refresh, kept as history.
 
 Regenerate after UI changes: `npx expo export --platform web && npx expo serve`, then drive the
 flows by **client-side navigation** — never load dynamic `[clientId]` routes directly against the
-static server. Dark shots emulate `prefers-color-scheme: dark`, which the theme follows.
+static server. Dark shots emulate `prefers-color-scheme: dark`, which the theme follows. A capture
+whose content scrolls internally (RN Web renders most screens as a fixed-height `ScrollView`, not a
+scrolling document) needs the browser viewport resized tall enough to fit the full content before
+the screenshot — see the capture note in the PR description for the exact technique; a plain
+`--full-page` screenshot only captures the document body, which stays pinned to the viewport height.
 
 ## Current signature set: mobile (`mobile/`)
 
@@ -31,14 +33,28 @@ directly — the in-memory vault would re-lock). The build is the on-device **mo
 `.env.local`), so nothing leaves the machine and login accepts the demo password.
 
 - `01-onboarding` · welcome intro: mascot hero, personal-scribe copy, endowed progress bar
-- `02-login` · unlock: vault-locked copy + both trust notes (pre-sweep wording — the shipped line is now
-  "Stored on this device · unlocked with your login"; the HIPAA-aligned note likewise no longer says "encrypted")
+- `02-login` · unlock: vault-locked copy + both trust notes, post-copy-sweep wording —
+  "Stored on this device · unlocked with your login"; the HIPAA-aligned note likewise no longer says "encrypted"
 - `03-day-dashboard` · Get ready: countdown, today's session cards, day-at-a-glance, standing safety
 - `04-client-drawer` · client details: latest scores, patient-details + SALAMA/EHR card, history timeline
 - `05-caseload` · caseload: per-row Outreach quick-actions (two pre-greyed), sparklines, sober risk chips
 - `06-patterns` · Amara's longitudinal PHQ-9 chart, multi-scale tabs, sparse ≤2-reading dot-strip, journal box
 - `07-soap-note` · session note with the **SOAP/DAP** format switcher, risk section, prescriptions, sign-off
 - `08-recording` · in-session capture: live timer + waveform, timestamp-synced comment-card strip
+  (real mic access, captured with Chrome's fake-device flags so the state is genuinely "Recording",
+  not the no-mic fallback)
+- `09-escalate` · the standing Escalate sheet, refreshed for the 2026-08-16 change: every contact row
+  now shows its real dial/browse/mail target inline (e.g. "800 4673"), grouped into the crisis line,
+  the "if this is an emergency" tier (police, Rashid Hospital, Dubai Health Authority), and "crisis
+  but not urgent" (The LightHouse Arabia Centre for Wellbeing), plus the clinician-tools row
+  (warm handoff, safety plan)
+- `10-duplicate-patient` · the "You already see this client" caution on session review — reached
+  honestly by signing off two session captures under the same synthetic Emirates ID (`Fatima Test`,
+  a fictional 784-format ID), which folds the second into the first's record instead of creating a
+  duplicate
+- `11-id-mismatch` · the "Check the Emirates ID" caution — the same synthetic ID captured a second
+  time under a different typed name (`Omar Mistake`), which the app refuses to fold and instead
+  mints a separate record with an explanation
 
 ## Prior set: rounds 4 + 5 (`r4r5-`)
 
