@@ -20,10 +20,36 @@ constraints — don't duplicate it here.
   followed by `jest --ci`, all chained in the `test` script in `package.json`; that IS the
   project's test suite. The harnesses are the default lane for pure modules; jest
   (`jest.config.js`, preset `jest-expo/ios`, matching `src/**/*.test.tsx?`) exists for tests that
-  must RENDER a component to prove its wiring), then `expo export --platform web`.
+  must RENDER a component to prove its wiring), then `expo export --platform web`, then two
+  dist-inspecting steps: every exported page is noindex, and interface font assets ship outside
+  any `node_modules` path (see the web-fonts sharp edge below).
   Lint is deliberately not wired in: `expo lint` auto-installs `eslint-config-expo` and currently
   flags real `react-hooks/refs` errors (refs read during render) that would require behaviour
   changes to fix — re-evaluate next time those files are touched.
+- **Web fonts must be `require()`d from `assets/fonts/`, never from an npm package.** Metro's static
+  web export names an asset's `dist/` path after its source module's path relative to the project
+  root, so a `require()` reaching into `node_modules/<pkg>/...` (as `@expo-google-fonts/lexend`'s
+  named exports do) lands the exported font under `dist/assets/node_modules/...`. Cloudflare Pages'
+  deploy uploader silently drops any `dist/assets/**` file whose path contains a `node_modules`
+  segment — the request still 200s (it serves the SPA-fallback `index.html` with `content-type:
+  text/html` instead of 404ing), so `document.fonts` reports the face `error` and interface text
+  silently renders in the system fallback. This shipped once for the whole Lexend ramp; the fix was
+  vendoring the four weights as local `.ttf` files in `assets/fonts/` (OFL-1.1, `Lexend-LICENSE.txt`
+  alongside them — same pattern the wordmark face already used) and `require()`-ing those directly in
+  `_layout.tsx`'s `useFonts` call instead of importing `@expo-google-fonts/lexend`. The CI step
+  "Interface fonts ship, and no font asset path crosses node_modules" (`ci.yml`, after the web
+  export) guards both ends — the four weights present under `assets/fonts/`, and no font asset
+  anywhere under `dist/assets/node_modules/**`. KNOWN FOLLOW-UP: `expo-router`'s own internal nav
+  chrome images (back/close/search icons under `dist/assets/node_modules/expo-router/assets/**`)
+  have the same latent problem but are out of scope — this app hides the stock header
+  (`headerShown: false`) everywhere, so they are never requested on the golden path. Any local
+  `expo export --platform web` + local static-server repro will NOT reproduce this class of bug —
+  the files exist and serve fine locally; it only manifests once deployed to Cloudflare Pages, so
+  diagnosing a "fonts not rendering on the deployed site" report needs the actual deployed URL (or
+  an equivalent host that drops `node_modules`-pathed assets), not just `dist/` served locally.
+  `RootLayout`'s font-load `error` branch renders instead of blocking (never reintroduce an infinite
+  blank screen on font-load failure — that would also take the standing Escalate affordance down
+  with it) but now also `console.error`s loudly so a failed load doesn't ship silently.
 - A harness that runs a pure `src/` module directly under `node --experimental-strip-types` needs
   an **explicit `.ts` extension** on every runtime (non-type-only) relative import inside that
   module's own import chain — Node's stripped-types loader does not resolve extensionless

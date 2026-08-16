@@ -209,7 +209,8 @@ export type TypeStyle = {
   letterSpacing?: number;
 };
 
-// Lexend family keys registered in ThemeProvider via @expo-google-fonts/lexend.
+// Lexend family keys registered by `useFonts` in `_layout.tsx` from the local .ttf assets in
+// `assets/fonts/` (vendored from @expo-google-fonts/lexend — see that file for why).
 export const fontFamily = {
   regular: 'Lexend_400Regular',
   medium: 'Lexend_500Medium',

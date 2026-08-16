@@ -53,3 +53,31 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Interface fonts ship, and no font asset path crosses node_modules
+        run: |
+          # Cloudflare Pages' deploy uploader silently drops any dist/assets/** file whose path
+          # contains a node_modules segment (confirmed live: the request 200s with the SPA-fallback
+          # index.html instead of the real asset, so document.fonts reports the face `error` and
+          # interface text renders in the system fallback). Metro names an asset's exported path
+          # after its source module's path relative to the project root, so requiring a font
+          # straight from an npm package (as @expo-google-fonts/lexend used to be) reintroduces
+          # exactly that path shape. This guards both ends: the four Lexend weights the type ramp
+          # needs are present under assets/fonts (vendored locally, not required from node_modules),
+          # and no dist/assets font ships under a node_modules path at all.
+          missing=0
+          for weight in 400Regular 500Medium 600SemiBold 700Bold; do
+            if ! find dist/assets -path '*/assets/fonts/*' -iname "Lexend_${weight}.*.ttf" | grep -q .; then
+              echo "missing exported Lexend_${weight} under dist/assets/**/assets/fonts/" >&2
+              missing=1
+            fi
+          done
+          bad_paths=$(find dist/assets -path '*node_modules*' \( -iname '*.ttf' -o -iname '*.otf' -o -iname '*.woff*' \))
+          if [ -n "$bad_paths" ]; then
+            echo "font asset(s) exported under a node_modules path — Cloudflare Pages will drop these:" >&2
+            echo "$bad_paths" >&2
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
