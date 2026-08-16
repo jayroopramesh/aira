@@ -14,6 +14,16 @@ constraints — don't duplicate it here.
 - Verify with `npx tsc --noEmit` and `npx expo export --platform web --platform ios --platform
   android`. `expo export` **overwrites `dist/`** per run — don't expect web HTML to survive a
   later native export.
+- **A first `expo export --platform web` in a fresh worktree/checkout can silently bake in EMPTY
+  `EXPO_PUBLIC_*` values even with a correct `.env.local` present** — Metro's bundler cache (shared
+  outside the worktree, e.g. from another task's cacheless run) can serve a stale transform for
+  `src/config/env.ts` that predates the env file. Symptom: `hasSupabase`/`hasGroq` are false in the
+  deployed bundle (grep the exported `dist/_expo/static/js/web/*.js` for your project ref/secret
+  substrings — zero hits means they didn't get inlined) even though the CLI printed `env: load
+  .env.local`. Fix: `npx expo export --platform web --clear` (or `rm -rf dist` first) once per fresh
+  checkout/worktree before trusting an export that depends on newly-written env vars; always grep the
+  built bundle for an expected env-derived string as a sanity check before deploying, not just the
+  CLI's "env: load" log line.
 - **CI** (`.github/workflows/ci.yml`, PRs + push to `main`, Node pinned via `actions/setup-node`,
   no secrets): `tsc --noEmit`, `npm test` (the `scripts/*-harness.mjs` suites — provenance,
   persist-race, risk-floor, escalate-targets, duplicate-identity, chart-axis, groq-proxy —
