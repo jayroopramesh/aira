@@ -5,10 +5,12 @@
 > the shipped app now shows **"Airava"** in Atkinson Hyperlegible Mono. Judge layout and colour from
 > them as usual, but not the brand mark. A full refresh is queued as a separate task.
 >
-> They also predate two later changes. The **encryption/server copy sweep**: the shipped app no longer
-> says "encrypted on this device" or "keys never leave this device" anywhere — read the live copy from
-> `src/strings/recovery.ts`, not from these images. And the **date-proportional chart x-axis**, so
-> `06-patterns` still spaces its readings at equal intervals.
+> They also predate three later changes. The **encryption/server copy sweep**: the shipped app no
+> longer says "encrypted on this device" or "keys never leave this device" anywhere — read the live
+> copy from `src/strings/recovery.ts`, not from these images. The **date-proportional chart x-axis**,
+> so `06-patterns` still spaces its readings at equal intervals. And the **standing WIP preview
+> banner** (invite-only beta): the shipped app now tops every screen with a slim caution strip these
+> captures don't show.
 
 Real renders of the running **web** app (headless Chrome, 2× scale). The `mobile/` folder is the
 **current** set (phone-dimension signature screens, light + dark); the `r4r5-` prefix below it is the

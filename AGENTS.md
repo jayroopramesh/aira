@@ -114,6 +114,29 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
 - **Demo banner**: `src/components/DemoBanner.tsx` (in `(app)/_layout`) states plainly that
   transcription/summarization use the cloud, so the on-device trust copy doesn't overclaim.
 
+## Invite-only beta preview (airavacare.com)
+- **`WipBanner`** (`src/components/WipBanner.tsx`) is a standing, non-dismissible strip mounted
+  ONCE in the root layout (`src/app/_layout.tsx`, inside `RootStack`, above the `Stack`) — every
+  route (welcome/unlock/(app) alike) nests under that one `Stack`, so this is the only mount point;
+  never add per-screen copies. Caution tone (`c.caution`/`cautionBg`), exact copy "Preview — not a
+  live medical service. Test with fictional client data only." The banner consumes the window's top
+  safe-area inset itself, so the `Stack` below it is wrapped in a **nested `SafeAreaProvider`**
+  (same file) that re-measures relative to its own frame — descendants then see a ~0 top inset and
+  don't double-pad for a notch the banner already covered; don't remove it as redundant, and keep
+  the Escalate sheet (mounted above `RootStack`) on the OUTER provider's full-window insets. Proved
+  by `src/app/__tests__/RootLayout.test.tsx` (renders the real root layout and asserts the banner
+  is mounted outside the navigator — a jest render, so a commented-out mount fails it) and
+  `src/components/__tests__/WipBanner.test.tsx` (renders the exact copy).
+- **noindex**: `src/app/+html.tsx` (the web-only root HTML wrapper) emits
+  `<meta name="robots" content="noindex, nofollow">` in `<head>` — this is the one template every
+  static-exported page shares, so one line covers all of them. CI (`.github/workflows/ci.yml`)
+  greps every `dist/**/*.html` for that exact meta tag after `expo export --platform web`, failing
+  the build if any exported page is missing it (that step also catches an accidentally-empty
+  export). Note: expo-router's static export pre-renders each route's HTML shell before the client
+  bundle hydrates fonts (`useFonts` gates `RootLayout`'s render), so app UI — the banner included —
+  is not literally present in the static HTML source, only after client hydration; only header
+  metadata (title, manifest links, this robots tag) is guaranteed present at the HTML-source level.
+
 ## Server infra (`infra/`)
 OpenTofu module for the v1 server on Azure (UAE North) — dummy-application phase, nothing applied
 yet. Runbook, decisions applied, cost table, and open items are all in `infra/README.md`; don't
