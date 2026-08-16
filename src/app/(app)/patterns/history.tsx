@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { BackLink, PageHeader, Screen } from '../../../components/Screen';
+import { ClientLink } from '../../../components/ClientLink';
 import { ClientNotFound } from '../../../components/ClientNotFound';
 import { HistoryTimeline } from '../../../components/clinical';
 import { AppText, Badge, Card, Eyebrow, Row } from '../../../components/ui';
@@ -10,6 +11,7 @@ import { useTheme } from '../../../theme/ThemeProvider';
 
 /** Chronological session-history timeline — typed feed, types never blurred. */
 export default function SessionHistory() {
+  const theme = useTheme();
   const router = useRouter();
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
   const client = useClient(clientId);
@@ -18,6 +20,9 @@ export default function SessionHistory() {
   return (
     <Screen maxWidth={820}>
       <BackLink label={`Back to ${client.name.split(' ')[0]}’s patterns`} onPress={() => router.back()} />
+      <ClientLink client={client} avatarSize={36} gap={10} style={{ marginBottom: theme.spacing.sm }}>
+        <AppText variant="bodyStrong">{client.name}</AppText>
+      </ClientLink>
       <PageHeader
         eyebrow={`${client.name} · chronological`}
         title="Session history"

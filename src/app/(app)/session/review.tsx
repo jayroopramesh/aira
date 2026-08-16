@@ -4,6 +4,7 @@ import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowRight, CheckIcon, CopyIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
 import { BackLink, PageHeader, Screen } from '../../../components/Screen';
+import { ClientLink } from '../../../components/ClientLink';
 import { AppText, Badge, Button, Card, Divider, Eyebrow, Row, TrustPill } from '../../../components/ui';
 import { ZeroState } from '../../../components/ZeroState';
 import { hasGroq } from '../../../config/env';
@@ -289,6 +290,16 @@ export default function ReviewNote() {
             {/* A note is now openable from the client file and session history, so review needs its
                 own way back — the tab bar won't re-navigate the tab it is already on. */}
             <BackLink label="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace('/(app)/today'))} />
+            {/* A note carrying no resolvable client (e.g. a fresh capture that never matched) has
+                nothing to link to — `client` stays undefined and this renders nothing rather than a
+                dead link. */}
+            {client ? (
+              <ClientLink client={client} avatarSize={28} gap={8} style={{ marginTop: 6, marginBottom: 4, alignSelf: 'flex-start' }}>
+                <AppText variant="bodyStrong" style={{ fontSize: 14 }}>
+                  {client.name}
+                </AppText>
+              </ClientLink>
+            ) : null}
             <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
               <Row gap={10} style={{ flexWrap: 'wrap' }}>
                 <AppText variant="h1" style={{ fontSize: 23 }}>

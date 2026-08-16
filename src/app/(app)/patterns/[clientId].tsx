@@ -2,11 +2,12 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, useWindowDimensions, View } from 'react-native';
 import { BackLink, Screen } from '../../../components/Screen';
+import { ClientLink } from '../../../components/ClientLink';
 import { ClientNotFound } from '../../../components/ClientNotFound';
 import { useEscalate } from '../../../components/Escalate';
 import { BandedChart, DotStrip, ScaleChart } from '../../../components/charts';
 import { ArrowRight, PhoneIcon, ShieldIcon } from '../../../components/icons';
-import { AppText, Avatar, Button, Card, Chip, Eyebrow, Row, RiskDot, TrustPill } from '../../../components/ui';
+import { AppText, Button, Card, Chip, Eyebrow, Row, RiskDot, TrustPill } from '../../../components/ui';
 import { AMARA_SCALES } from '../../../data/scales';
 import { useClient, useClientNotes } from '../../../data/DataProvider';
 import { Client } from '../../../data/types';
@@ -75,15 +76,14 @@ function NoReadingsYet({ client }: { client: Client }) {
     <Screen>
       <BackLink label="Back to caseload" onPress={() => router.replace('/(app)/patterns')} />
       <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginTop: theme.spacing.sm }}>
-        <Row gap={14} style={{ flex: 1, minWidth: 220 }}>
-          <Avatar initials={client.initials} size={52} />
+        <ClientLink client={client} avatarSize={52} gap={14} style={{ flex: 1, minWidth: 220 }}>
           <View style={{ flex: 1 }}>
             <AppText variant="h1">{client.name}</AppText>
             <AppText variant="small" color="ink3" style={{ marginTop: 4 }}>
               ID {client.tokenId} · client since {client.clientSince}
             </AppText>
           </View>
-        </Row>
+        </ClientLink>
         {/* A freshly-captured client's signed note is only reachable through here (F5) — the sparse
             state must still surface the note and history doors, not just the full patterns view. */}
         <ClientFileDoors clientId={client.id} />
@@ -145,8 +145,7 @@ function PatternsView({ clientId }: { clientId: string }) {
       <BackLink label="Back to caseload" onPress={() => router.replace('/(app)/patterns')} />
 
       <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <Row gap={14} style={{ flex: 1, minWidth: 260 }}>
-          <Avatar initials={client.initials} size={52} />
+        <ClientLink client={client} avatarSize={52} gap={14} style={{ flex: 1, minWidth: 260 }}>
           <View>
             <AppText variant="h1">{client.name}</AppText>
             <Row gap={8} style={{ marginTop: 4, flexWrap: 'wrap' }}>
@@ -156,7 +155,7 @@ function PatternsView({ clientId }: { clientId: string }) {
               <RiskDot level={client.risk} />
             </Row>
           </View>
-        </Row>
+        </ClientLink>
         <ClientFileDoors clientId={client.id} />
       </Row>
 
@@ -293,8 +292,7 @@ function RiskReview({ clientId }: { clientId: string }) {
     <Screen maxWidth={860}>
       <BackLink label="Back to caseload" onPress={() => router.replace('/(app)/patterns')} />
 
-      <Row gap={14} style={{ flexWrap: 'wrap' }}>
-        <Avatar initials={client.initials} size={52} tone="risk" />
+      <ClientLink client={client} avatarSize={52} avatarTone="risk" gap={14} style={{ flexWrap: 'wrap' }}>
         <View style={{ flex: 1 }}>
           <AppText variant="h1">{client.name}</AppText>
           <Row gap={8} style={{ marginTop: 4, flexWrap: 'wrap' }}>
@@ -307,7 +305,7 @@ function RiskReview({ clientId }: { clientId: string }) {
             <TrustPill label="Re-identified locally" icon={<ShieldIcon size={12} color={c.brand} />} />
           </Row>
         </View>
-      </Row>
+      </ClientLink>
 
       {/* Acute banner — clay, calm, the literal word "review". Never alarm-red, never modal. */}
       <Card tone="elevated" elevation="none" radius="lg" style={{ marginTop: theme.spacing.lg, backgroundColor: c.riskBg, borderColor: c.riskBg }}>

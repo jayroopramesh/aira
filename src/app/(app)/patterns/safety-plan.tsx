@@ -2,9 +2,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Linking, View } from 'react-native';
 import { BackLink, PageHeader, Screen } from '../../../components/Screen';
+import { ClientLink } from '../../../components/ClientLink';
 import { useEscalate } from '../../../components/Escalate';
 import { PhoneIcon, ShieldIcon } from '../../../components/icons';
-import { AppText, Avatar, Button, Card, Eyebrow, Row } from '../../../components/ui';
+import { AppText, Button, Card, Eyebrow, Row } from '../../../components/ui';
 import { buildCrisisAction, openFailureMessage, visibleTarget } from '../../../config/escalateContacts';
 import { useClient } from '../../../data/DataProvider';
 import { useTheme } from '../../../theme/ThemeProvider';
@@ -49,15 +50,14 @@ export default function SafetyPlan() {
     <Screen maxWidth={760}>
       <BackLink label={`Back to ${client.name.split(' ')[0]}’s review`} onPress={() => router.back()} />
 
-      <Row gap={14} style={{ marginTop: theme.spacing.sm }}>
-        <Avatar initials={client.initials} size={52} tone={client.risk === 'acute' ? 'risk' : 'brand'} />
+      <ClientLink client={client} avatarSize={52} gap={14} style={{ marginTop: theme.spacing.sm }}>
         <View style={{ flex: 1 }}>
           <AppText variant="h1">{client.name}</AppText>
           <AppText variant="small" color="ink3" style={{ marginTop: 4 }}>
             Safety plan · ID {client.tokenId}
           </AppText>
         </View>
-      </Row>
+      </ClientLink>
 
       <View style={{ height: theme.spacing.lg }} />
 

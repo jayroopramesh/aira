@@ -4,7 +4,8 @@ import { Linking, Pressable, useWindowDimensions, View } from 'react-native';
 import { PageHeader, Screen } from '../../../components/Screen';
 import { Sparkline } from '../../../components/charts';
 import { HeartIcon, MailIcon, SearchIcon, SendIcon } from '../../../components/icons';
-import { AppText, Avatar, Badge, Card, Chip, Eyebrow, Row, RiskDot } from '../../../components/ui';
+import { ClientLink } from '../../../components/ClientLink';
+import { AppText, Badge, Card, Chip, Eyebrow, Row, RiskDot } from '../../../components/ui';
 import { ZeroState } from '../../../components/ZeroState';
 import { useCaseloadKpis, useClients, useData } from '../../../data/DataProvider';
 import { Client } from '../../../data/types';
@@ -161,26 +162,26 @@ const STATUS_TONE = { active: 'brand', intake: 'draft', 'wind-down': 'neutral' }
 function ClientRowWide({ client, first, onPress }: { client: Client; first: boolean; onPress: () => void }) {
   const theme = useTheme();
   const c = theme.colors;
-  // The Outreach icons are their own buttons, so they must NOT sit inside the row's button, or the DOM
-  // nests <button> in <button> (N3). The pressable wraps the navigating cells (flex 9.1); Outreach is a
-  // sibling column (flex 1.2) — same proportions as before, no invalid nesting.
+  // The row's primary tap already opens patterns — it must not also swallow the name/avatar's own
+  // link to the patient page, and Outreach's icons are their own buttons — so all three are SIBLING
+  // pressables (never nested), or the DOM nests <button> in <button> (N3). Same flex proportions as
+  // the single pressable this replaced (name 2.4 / rest 6.7 / outreach 1.2, summing to 10.3).
   return (
     <Row style={{ paddingHorizontal: theme.spacing.lg, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.lineSoft, alignItems: 'center' }}>
+      <ClientLink client={client} avatarSize={38} gap={12} style={{ flex: 2.4 }}>
+        <View>
+          <AppText variant="bodyStrong">{client.name}</AppText>
+          <AppText variant="small" color="ink3" style={{ fontFamily: theme.type.numeric.fontFamily, fontSize: 11.5 }}>
+            {client.tokenId}
+          </AppText>
+        </View>
+      </ClientLink>
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
         accessibilityLabel={`Open ${client.name}’s patterns`}
-        style={({ pressed }) => ({ flex: 9.1, flexDirection: 'row', alignItems: 'center', backgroundColor: pressed ? c.sunken : 'transparent' })}
+        style={({ pressed }) => ({ flex: 6.7, flexDirection: 'row', alignItems: 'center', backgroundColor: pressed ? c.sunken : 'transparent' })}
       >
-        <Row gap={12} style={{ flex: 2.4 }}>
-          <Avatar initials={client.initials} size={38} tone={client.risk === 'acute' ? 'risk' : 'brand'} />
-          <View>
-            <AppText variant="bodyStrong">{client.name}</AppText>
-            <AppText variant="small" color="ink3" style={{ fontFamily: theme.type.numeric.fontFamily, fontSize: 11.5 }}>
-              {client.tokenId}
-            </AppText>
-          </View>
-        </Row>
         <View style={{ flex: 1.1 }}>
           <Badge label={cap(client.status)} tone={STATUS_TONE[client.status]} />
         </View>
@@ -290,32 +291,32 @@ function Outreach({ client }: { client: Client }) {
 function ClientRowNarrow({ client, first, onPress }: { client: Client; first: boolean; onPress: () => void }) {
   const theme = useTheme();
   const c = theme.colors;
-  // Outreach stays OUTSIDE the navigating pressable so its buttons don't nest inside the row button (N3).
+  // Same sibling-pressables split as ClientRowWide (N3): the name/avatar's own link to the patient
+  // page, the row's open-patterns action, and Outreach's buttons never nest inside one another.
   return (
-    <Row style={{ justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: theme.spacing.lg, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.lineSoft }}>
-      <Pressable
-        onPress={onPress}
-        accessibilityRole="button"
-        accessibilityLabel={`Open ${client.name}’s patterns`}
-        style={({ pressed }) => ({ flex: 1, backgroundColor: pressed ? c.sunken : 'transparent' })}
-      >
-        <Row gap={12} style={{ flex: 1 }}>
-          <Avatar initials={client.initials} size={40} tone={client.risk === 'acute' ? 'risk' : 'brand'} />
-          <View style={{ flex: 1 }}>
-            <Row gap={8}>
-              <AppText variant="bodyStrong">{client.name}</AppText>
-              <Badge label={cap(client.status)} tone={STATUS_TONE[client.status]} />
-            </Row>
-            <AppText variant="small" color="ink3" style={{ marginTop: 2 }}>
-              {client.lastSessionLabel} · latest {client.latestScore ?? '—'}
-            </AppText>
-            <Row gap={12} style={{ marginTop: 8, alignItems: 'center' }}>
-              <Sparkline values={client.sparkline} width={70} />
-              <RiskDot level={client.risk} />
-            </Row>
-          </View>
-        </Row>
-      </Pressable>
+    <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: theme.spacing.lg, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.lineSoft }}>
+      <View style={{ flex: 1 }}>
+        <ClientLink client={client} avatarSize={40} gap={12}>
+          <Row gap={8} style={{ flex: 1, flexWrap: 'wrap' }}>
+            <AppText variant="bodyStrong">{client.name}</AppText>
+            <Badge label={cap(client.status)} tone={STATUS_TONE[client.status]} />
+          </Row>
+        </ClientLink>
+        <Pressable
+          onPress={onPress}
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${client.name}’s patterns`}
+          style={({ pressed }) => ({ marginLeft: 52, marginTop: 2, backgroundColor: pressed ? c.sunken : 'transparent' })}
+        >
+          <AppText variant="small" color="ink3">
+            {client.lastSessionLabel} · latest {client.latestScore ?? '—'}
+          </AppText>
+          <Row gap={12} style={{ marginTop: 8, alignItems: 'center' }}>
+            <Sparkline values={client.sparkline} width={70} />
+            <RiskDot level={client.risk} />
+          </Row>
+        </Pressable>
+      </View>
       <View style={{ marginLeft: 12 }}>
         <Outreach client={client} />
       </View>

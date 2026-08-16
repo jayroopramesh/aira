@@ -1,11 +1,12 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ClientLink } from '../../../components/ClientLink';
 import { Highlights } from '../../../components/Highlights';
 import { Screen } from '../../../components/Screen';
 import { Waveform } from '../../../components/Waveform';
 import { AlertTriangleIcon, FileUpIcon, MicIcon, PencilIcon, PlusIcon, ShieldIcon, StopIcon } from '../../../components/icons';
-import { AppText, Avatar, Button, Card, Row, TrustPill } from '../../../components/ui';
+import { AppText, Button, Card, Row, TrustPill } from '../../../components/ui';
 import { useClient, useData } from '../../../data/DataProvider';
 import { isValidEmiratesId } from '../../../data/sessionClient';
 import { DraftNote } from '../../../data/types';
@@ -282,8 +283,7 @@ function PreCapture({
       {client ? (
         <Card style={{ width: '100%', marginTop: theme.spacing.xl }}>
           <Row style={{ justifyContent: 'space-between' }}>
-            <Row gap={12}>
-              <Avatar initials={client.initials} size={44} />
+            <ClientLink client={client} avatarSize={44} gap={12}>
               <View>
                 <AppText variant="bodyStrong" style={{ fontSize: 16 }}>
                   {client.name}
@@ -292,7 +292,7 @@ function PreCapture({
                   Session {client.sessionNumber} · latest PHQ-9 {client.latestScore ?? '—'}
                 </AppText>
               </View>
-            </Row>
+            </ClientLink>
           </Row>
           {client.lastPlan.length ? (
             <Card tone="sunken" elevation="none" radius="md" style={{ marginTop: 14, backgroundColor: c.brandBg, borderColor: c.brandBd }}>
