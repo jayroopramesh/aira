@@ -83,6 +83,36 @@ describe('pressing a row hands its exact target to the platform', () => {
     await waitFor(() => expect(screen.queryByText(title)).toBeNull());
   });
 
+  // Every row shows its real target inline, up front — never only revealed by a failed tap, since
+  // `Linking.openURL` essentially never rejects on web. Grouped numbers must render with the
+  // brief's own spacing ("800 4673"), never the stripped tel: digits ("8004673").
+  const INLINE_TARGETS: [string, string][] = [
+    ['800 4673', 'the crisis line'],
+    ['999', 'police'],
+    ['04 219 2000', 'Rashid Hospital'],
+    ['https://www.dha.gov.ae/', 'the DHA'],
+    ['04 380 2088', 'LightHouse Arabia'],
+    ['https://www.lighthousearabia.com/', 'the LightHouse Arabia website'],
+  ];
+
+  it.each(INLINE_TARGETS)('shows the inline target "%s" for %s, always visible', (target) => {
+    openSheet();
+    expect(screen.getByText(target, { exact: false })).toBeTruthy();
+  });
+
+  it('never renders the crisis line ungrouped as "8004673"', () => {
+    openSheet();
+    expect(screen.queryByText('8004673', { exact: false })).toBeNull();
+  });
+
+  it('does not show an inline target for the unconfigured on-call placeholder', () => {
+    // This lane runs with EXPO_PUBLIC_ONCALL_EMAIL scrubbed (jest.setup.js), so the row's real
+    // address is the deliberately undeliverable on-call@clinic.example — never shown as if reachable.
+    openSheet();
+    expect(screen.queryByText('on-call@clinic.example', { exact: false })).toBeNull();
+    expect(screen.getByText(/no on-call address is set for this build/)).toBeTruthy();
+  });
+
   it('the warm handoff drafts a mailto and never carries the raw client id', async () => {
     openSheet({ clientId: 'client-42', clientToken: 'TOKEN-9' });
     fireEvent.press(screen.getByText('Warm handoff to on-call'));

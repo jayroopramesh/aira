@@ -1,11 +1,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React from 'react';
+import React, { useState } from 'react';
 import { Linking, View } from 'react-native';
 import { BackLink, PageHeader, Screen } from '../../../components/Screen';
 import { useEscalate } from '../../../components/Escalate';
 import { PhoneIcon, ShieldIcon } from '../../../components/icons';
 import { AppText, Avatar, Button, Card, Eyebrow, Row } from '../../../components/ui';
-import { crisisLine } from '../../../config/env';
+import { buildCrisisAction, openFailureMessage, visibleTarget } from '../../../config/escalateContacts';
 import { useClient } from '../../../data/DataProvider';
 import { useTheme } from '../../../theme/ThemeProvider';
 
@@ -22,6 +22,10 @@ export default function SafetyPlan() {
   const escalate = useEscalate();
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
   const client = useClient(clientId);
+  const crisisAction = buildCrisisAction();
+  // Mirrors Escalate.tsx's own `failure` state (F6/F7): a rejected `tel:` keeps the row's promise
+  // honest instead of silently doing nothing, though the number below is already visible either way.
+  const [dialFailed, setDialFailed] = useState(false);
 
   if (!client) {
     // No client referent (e.g. reached without one) — say so honestly, don't invent a plan.
@@ -128,18 +132,42 @@ export default function SafetyPlan() {
           title="Call the crisis line"
           variant="secondary"
           leftIcon={<PhoneIcon size={18} color={c.ink} />}
-          onPress={() => Linking.openURL(crisisLine.tel).catch(() => {})}
+          onPress={() => {
+            setDialFailed(false);
+            Linking.openURL(crisisAction.href as string).then(
+              () => {},
+              () => setDialFailed(true),
+            );
+          }}
         />
       </Row>
       <Row gap={7} style={{ marginTop: 14, alignItems: 'flex-start' }}>
         <View style={{ marginTop: 1 }}>
           <ShieldIcon size={14} color={c.brand} />
         </View>
+        {/* Same always-visible-target pattern as the Escalate sheet: the number reads inline
+            regardless of tap outcome, so a device that refuses the dialer never leaves this dead. */}
         <AppText variant="small" color="ink3" style={{ flex: 1, lineHeight: 17 }}>
-          Crisis line dials {crisisLine.display}
-          {crisisLine.configured ? '' : ' — no dedicated crisis line is configured for this build'}.
+          Crisis line <AppText variant="small" color="ink2">{visibleTarget(crisisAction)}</AppText> ·{' '}
+          {crisisAction.sub}.
         </AppText>
       </Row>
+      {dialFailed && (
+        <View
+          accessibilityLiveRegion="polite"
+          style={{
+            backgroundColor: c.riskBg,
+            borderRadius: theme.radii.sm,
+            paddingHorizontal: theme.spacing.sm,
+            paddingVertical: 10,
+            marginTop: theme.spacing.sm,
+          }}
+        >
+          <AppText variant="small" color="risk" selectable>
+            {openFailureMessage(crisisAction)}
+          </AppText>
+        </View>
+      )}
     </Screen>
   );
 }

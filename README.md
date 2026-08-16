@@ -63,8 +63,12 @@ needed), surfaces two visually distinct UAE safety-net tiers — **emergency** (
 Hospital, DHA) and **crisis but not urgent** (The LightHouse Arabia Centre for Wellbeing, phone +
 site) — drafts a warm-handoff mail to the on-call clinician, and opens the client's safety plan;
 where there is no client in context or a contact isn't configured, the control says so plainly
-instead of sitting inert, and when the device itself refuses to open a `tel:`/`https:`/`mailto:`
-target the sheet stays open and hands back the bare number or address to use by hand. See
+instead of sitting inert. Every contact's real number/address/URL is also readable inline on its
+row, up front — not only revealed by a failed tap, which web can't reliably signal — except an
+unconfigured placeholder, which keeps the honest "not set" copy instead; and when the device itself
+refuses to open a `tel:`/`https:`/`mailto:` target the sheet stays open and hands back the bare
+number or address to use by hand (the safety-plan screen's own crisis-line row follows the same
+pattern). See
 `src/config/escalateContacts.ts` (the resolved targets, proved by
 `scripts/escalate-targets-harness.mjs`) and `src/components/__tests__/Escalate.test.tsx` (the
 render-and-press wiring — pure data alone can't catch a deleted `onPress`). The **mascot** (the captain's background-removed

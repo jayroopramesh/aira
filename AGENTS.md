@@ -183,6 +183,16 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   real: an unconfigured on-call address is the deliberate placeholder `on-call@clinic.example`, so
   that action carries a `failureMessage` override saying no address is configured rather than
   sending the counselor to an inbox that does not exist.
+  Every row's real target is also readable up front, not just tappable — on web `Linking.openURL`
+  essentially never rejects, so a row can't rely on a failed tap alone to reveal the number.
+  `visibleTarget(action)` (`escalateContacts.ts`) is that inline text — empty for a `route` action or
+  a `hideTarget: true` row (the on-call action sets this when the address is the unconfigured
+  placeholder, so it never renders as though reachable). `Escalate.tsx` renders it beside `sub` on the
+  same line, ink2 against `sub`'s ink3, so the number reads first without adding a row of height.
+  `buildCrisisAction` is the crisis-line action's single source of truth, shared by the Escalate sheet
+  and the safety-plan screen's own crisis-line control (`src/app/(app)/patterns/safety-plan.tsx`) so
+  the two never drift into separate copy for the same number; that screen's `tel:` press no longer
+  swallows a rejection silently — it surfaces `openFailureMessage` the same way Escalate.tsx does.
 - A note's risk reaches the caseload as a structured tier: the summarizer emits `riskLevel` and it is
   trusted for the ordinary case — never re-derived *down* by sniffing note prose. But `riskFromNote`
   applies an **up-only safety floor**: if the note's own structured risk **rows** disclose ideation (or

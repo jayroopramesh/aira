@@ -37,6 +37,13 @@ export type EscalateAction = {
    * it would send the counselor to an inbox that does not exist.
    */
   failureMessage?: string;
+  /**
+   * Suppresses the always-visible inline target (F6/F7 web-dial follow-up): set true ONLY for a
+   * target the app knows is a placeholder, never a real address — showing `on-call@clinic.example`
+   * as if it were reachable would be the same dead promise this surface exists to remove, just
+   * moved from the failure path to the row itself.
+   */
+  hideTarget?: boolean;
   /** Resolved in-app route for kind route. */
   route?: string;
 };
@@ -57,11 +64,13 @@ function telHref(displayNumber: string): string {
 }
 
 /**
- * The bare number / address / URL behind an action, for the counselor to use BY HAND when the
- * device refuses to open it (a `tel:` press on a desktop browser with no dialer registered, a
- * platform that rejects the scheme). A row that promises "opens your dialer" and then silently does
- * nothing is the same dead promise as no onPress at all — so the failure path has to hand back
- * something dialable rather than swallow the rejection.
+ * The bare number / address / URL behind an action. Two callers read this: the row itself renders
+ * it inline and always-visible (the web-dial follow-up — `Linking.openURL` essentially never
+ * rejects on web, so failure detection alone can't be trusted; the target has to be readable up
+ * front, not just tappable), and the failure path hands it back for the counselor to use BY HAND
+ * when the device does refuse to open it (a `tel:` press on a desktop browser with no dialer
+ * registered, a platform that rejects the scheme). A row that promises "opens your dialer" and then
+ * silently does nothing is the same dead promise as no onPress at all.
  */
 export function manualTargetLabel(action: EscalateAction): string {
   if (action.displayTarget) return action.displayTarget;
@@ -69,6 +78,17 @@ export function manualTargetLabel(action: EscalateAction): string {
   if (action.kind === 'mailto') return action.href.replace(/^mailto:/, '').split('?')[0];
   if (action.kind === 'tel') return action.href.replace(/^tel:/, '');
   return action.href;
+}
+
+/**
+ * The always-visible inline target a row renders beside its label — F6/F7's "readable, not just
+ * tappable" (`Linking.openURL` essentially never rejects on web, so a row can't rely on a failed
+ * tap to reveal the number). Empty for a route action (nothing to dial/browse/mail) and for a
+ * `hideTarget` row (a known placeholder — showing it would be its own dead promise).
+ */
+export function visibleTarget(action: EscalateAction): string {
+  if (action.hideTarget) return '';
+  return manualTargetLabel(action);
 }
 
 /** Honest copy for a target the device would not open, naming what to reach by hand instead. */
@@ -97,7 +117,7 @@ export const EMERGENCY_SECTION: EscalateSection = {
     {
       key: 'police',
       title: 'Police',
-      sub: '999 · opens your dialer',
+      sub: 'Opens your dialer',
       kind: 'tel',
       href: telHref('999'),
       displayTarget: '999',
@@ -105,7 +125,7 @@ export const EMERGENCY_SECTION: EscalateSection = {
     {
       key: 'rashid-hospital',
       title: 'Rashid Hospital',
-      sub: '04 219 2000 · opens your dialer',
+      sub: 'Opens your dialer',
       kind: 'tel',
       href: telHref('04 219 2000'),
       displayTarget: '04 219 2000',
@@ -113,7 +133,7 @@ export const EMERGENCY_SECTION: EscalateSection = {
     {
       key: 'dha',
       title: 'Dubai Health Authority',
-      sub: 'https://www.dha.gov.ae/ · opens your browser',
+      sub: 'Opens your browser',
       kind: 'url',
       href: 'https://www.dha.gov.ae/',
     },
@@ -130,7 +150,7 @@ export const NON_URGENT_SECTION: EscalateSection = {
     {
       key: 'lighthouse-phone',
       title: 'The LightHouse Arabia Centre for Wellbeing',
-      sub: '04 380 2088 · opens your dialer',
+      sub: 'Opens your dialer',
       kind: 'tel',
       href: telHref('04 380 2088'),
       displayTarget: '04 380 2088',
@@ -138,7 +158,7 @@ export const NON_URGENT_SECTION: EscalateSection = {
     {
       key: 'lighthouse-site',
       title: 'LightHouse Arabia website',
-      sub: 'https://www.lighthousearabia.com/ · opens your browser',
+      sub: 'Opens your browser',
       kind: 'url',
       href: 'https://www.lighthousearabia.com/',
     },
@@ -162,6 +182,27 @@ function onCallMailto(onCall: OnCallEmailConfig, clientToken?: string): string {
 }
 
 /**
+ * The standing crisis-line action — shared by the Escalate sheet (first, reachable-first row) and
+ * the safety-plan screen's own crisis-line control, so the two surfaces present the exact same
+ * title/target/instruction rather than each hand-rolling its own copy of "800 4673 · opens your
+ * dialer" and drifting apart.
+ */
+export function buildCrisisAction(config: { crisisLine: CrisisLineConfig } = { crisisLine }): EscalateAction {
+  return {
+    key: 'crisis',
+    title: 'Call a crisis line',
+    sub: config.crisisLine.configured ? 'Opens your dialer' : 'Opens your dialer — no dedicated line configured for this build',
+    kind: 'tel',
+    href: config.crisisLine.tel,
+    // Both branches carry `display` as the human-read form: the brief's grouping when configured
+    // ("800 4673"), and on the fallback the qualifier the locked env rule requires — "999 · local
+    // emergency services", so 999 is never mistaken for a dedicated mental-health line. The
+    // href-derived bare digits would drop that label.
+    displayTarget: config.crisisLine.display,
+  };
+}
+
+/**
  * The full Escalate sheet, in display order: the standing configured crisis line (reachable
  * first), the emergency tier, the non-urgent tier, then the clinician-facing tools (warm handoff,
  * safety plan). No option is a dead promise (F6): every tel/url/mailto action resolves to a real
@@ -176,27 +217,19 @@ export function buildEscalateSections(
   opts: { activeClientId?: string; clientToken?: string } = {},
   config: { crisisLine: CrisisLineConfig; onCallEmail: OnCallEmailConfig } = { crisisLine, onCallEmail },
 ): EscalateSection[] {
-  const crisisAction: EscalateAction = {
-    key: 'crisis',
-    title: 'Call a crisis line',
-    sub: config.crisisLine.configured
-      ? `${config.crisisLine.display} · opens your dialer`
-      : `Opens your dialer — no dedicated line configured, dials ${config.crisisLine.display}`,
-    kind: 'tel',
-    href: config.crisisLine.tel,
-    // Only the configured branch has a dialable display form; the fallback's `display` is prose
-    // ("999 · local emergency services"), so that branch derives its bare number from the href.
-    displayTarget: config.crisisLine.configured ? config.crisisLine.display : undefined,
-  };
+  const crisisAction = buildCrisisAction(config);
 
   const handoffAction: EscalateAction = {
     key: 'handoff',
     title: 'Warm handoff to on-call',
     sub: config.onCallEmail.configured
-      ? `Drafts an email to ${config.onCallEmail.address} — the client is never auto-messaged`
+      ? 'Drafts an email — the client is never auto-messaged'
       : 'Drafts a handoff email — no on-call address is set for this build, so add the recipient before sending',
     kind: 'mailto',
     href: onCallMailto(config.onCallEmail, opts.clientToken),
+    // The unconfigured address is a deliberate placeholder, not a real inbox — never show it as
+    // though it were a reachable target.
+    hideTarget: !config.onCallEmail.configured,
     failureMessage: config.onCallEmail.configured
       ? undefined
       : 'This device wouldn’t open your email app, and no on-call address is configured for this build — reach the on-call clinician the way you normally would.',
