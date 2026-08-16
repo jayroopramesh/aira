@@ -14,12 +14,8 @@ const BANNER_COPY = 'Preview — not a live medical service. Test with fictional
 
 const mockUseFonts = jest.fn();
 
-jest.mock('@expo-google-fonts/lexend', () => ({
+jest.mock('expo-font', () => ({
   useFonts: () => mockUseFonts(),
-  Lexend_400Regular: 'Lexend_400Regular',
-  Lexend_500Medium: 'Lexend_500Medium',
-  Lexend_600SemiBold: 'Lexend_600SemiBold',
-  Lexend_700Bold: 'Lexend_700Bold',
 }));
 
 jest.mock('react-native-safe-area-context', () =>
