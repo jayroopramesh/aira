@@ -79,3 +79,12 @@ it('links the next-session banner name to the same patient page', () => {
   fireEvent.press(link);
   expect(mockPush).toHaveBeenCalledWith(`/(app)/today/${AMARA.id}`);
 });
+
+// fix-these #8: the countdown banner's subline used to be a hardcoded literal ("10:30 · INDIVIDUAL",
+// "Session 5 · academic anxiety, sleep · PHQ-9 trending down") regardless of the real schedule entry.
+it('derives the countdown banner subline from the real schedule entry, not a hardcoded literal', () => {
+  renderScreen();
+  expect(screen.getByText('10:30 AM · INDIVIDUAL')).toBeTruthy();
+  expect(screen.getByText('Session 5')).toBeTruthy();
+  expect(screen.queryByText(/academic anxiety, sleep/)).toBeNull();
+});

@@ -23,6 +23,7 @@ export default function Settings() {
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [confirmingLoad, setConfirmingLoad] = useState(false);
   const [confirmingUndo, setConfirmingUndo] = useState(false);
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
   const [undoResult, setUndoResult] = useState<{ removedClients: number; keptWithUserData: number } | null>(null);
 
   const hasData = clients.length > 0 || sampleLoaded;
@@ -54,7 +55,10 @@ export default function Settings() {
     setUndoResult(result);
   };
   const signOut = async () => {
+    setBusy(true);
     await authService.signOut();
+    setBusy(false);
+    setConfirmingSignOut(false);
     router.replace('/unlock');
   };
 
@@ -207,7 +211,23 @@ export default function Settings() {
           Signing out re-locks the vault on this device.
         </AppText>
         <View style={{ height: 14 }} />
-        <Button title="Sign out & lock" variant="secondary" onPress={signOut} />
+        {confirmingSignOut ? (
+          <View style={{ backgroundColor: c.riskBg, borderRadius: 10, padding: 14 }}>
+            <AppText variant="bodyStrong" style={{ fontSize: 14 }}>
+              Sign out & lock?
+            </AppText>
+            <AppText variant="small" color="ink2" style={{ marginTop: 4, lineHeight: 17 }}>
+              You’ll need to sign in again to reopen this vault.
+            </AppText>
+            <View style={{ height: 12 }} />
+            <Row gap={10} wrap>
+              <Button title="Yes, sign out" variant="danger" loading={busy} onPress={signOut} />
+              <Button title="Cancel" variant="secondary" disabled={busy} onPress={() => setConfirmingSignOut(false)} />
+            </Row>
+          </View>
+        ) : (
+          <Button title="Sign out & lock" variant="secondary" onPress={() => setConfirmingSignOut(true)} />
+        )}
       </Card>
 
       <View style={{ height: theme.spacing.lg }} />

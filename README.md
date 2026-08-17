@@ -456,6 +456,20 @@ so a recording is never answered with words nobody said. Neither needs a native 
 
 ---
 
+## Deployment access gate (airavacare.com)
+
+The deployed preview at `airavacare.com` (Cloudflare Pages) sits behind an access gate — a Cloudflare
+Access application requiring an additional login before the site loads at all. That gate is configured
+entirely in the Cloudflare dashboard/zone for the domain, **outside this repository**: there is no
+`_headers`, `_redirects`, or Access-policy file checked in here, and CI has no knowledge of it. This is a
+different mechanism from the in-app mock-auth demo password (`clinicvault`, see `MockAuthService` above)
+— that one is this app's own sign-in fallback when no Supabase build is configured; the Cloudflare Access
+gate is a separate layer in front of the whole site, real or mock build alike. A contributor who needs to
+reach the deployed preview (as opposed to running locally per [How to run](#how-to-run)) should ask
+whoever manages the Cloudflare account for the current Access credentials — nothing here can grant them.
+
+---
+
 ## Project structure
 
 ```

@@ -19,6 +19,14 @@ import { hasSupabase } from '../../config/env';
 import { AccountExistsError, authService } from '../../services/auth';
 import { AppText, Row } from '../../components/ui';
 import { recoveryStrings as R } from '../../strings/recovery';
+import { isValidEmiratesId } from '../../data/sessionClient';
+
+type FieldErrors = {
+  emiratesId?: string;
+  phone?: string;
+  fullName?: string;
+  confirm?: string;
+};
 
 /**
  * Create account — single-column form. Collects the captain-mandated identity set
@@ -38,8 +46,25 @@ export default function WelcomeCreate() {
   const [consent, setConsent] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+
+  const validate = (): FieldErrors => {
+    const errors: FieldErrors = {};
+    if (!emiratesId.trim()) errors.emiratesId = 'Emirates ID is required.';
+    else if (!isValidEmiratesId(emiratesId)) errors.emiratesId = 'Enter a well-formed Emirates ID (784-XXXX-XXXXXXX-X).';
+    if (!phone.trim()) errors.phone = 'Phone number is required.';
+    if (!fullName.trim()) errors.fullName = 'Full name is required.';
+    if (confirm !== password) errors.confirm = 'Passwords don’t match.';
+    return errors;
+  };
 
   const onSubmit = async () => {
+    const errors = validate();
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setError('Please fix the highlighted fields before continuing.');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -71,10 +96,15 @@ export default function WelcomeCreate() {
           label={R.emiratesIdLabel}
           required
           value={emiratesId}
-          onChangeText={setEmiratesId}
+          onChangeText={(v) => {
+            setEmiratesId(v);
+            setFieldErrors((f) => ({ ...f, emiratesId: undefined }));
+          }}
           placeholder="784-XXXX-XXXXXXX-X"
           keyboardType="numbers-and-punctuation"
           autoCapitalize="none"
+          error={!!fieldErrors.emiratesId}
+          hint={fieldErrors.emiratesId}
         >
           <Pressable
             onPress={() => setWhyOpen((o) => !o)}
@@ -111,17 +141,27 @@ export default function WelcomeCreate() {
           label={R.phoneLabel}
           required
           value={phone}
-          onChangeText={setPhone}
+          onChangeText={(v) => {
+            setPhone(v);
+            setFieldErrors((f) => ({ ...f, phone: undefined }));
+          }}
           placeholder="+971 50 000 0000"
           keyboardType="phone-pad"
+          error={!!fieldErrors.phone}
+          hint={fieldErrors.phone}
         />
         <AuthField
           label={R.fullNameLabel}
           required
           value={fullName}
-          onChangeText={setFullName}
+          onChangeText={(v) => {
+            setFullName(v);
+            setFieldErrors((f) => ({ ...f, fullName: undefined }));
+          }}
           placeholder="Enter your full name…"
           autoCapitalize="words"
+          error={!!fieldErrors.fullName}
+          hint={fieldErrors.fullName}
         />
         <AuthField
           label={R.emailLabel}
@@ -135,8 +175,13 @@ export default function WelcomeCreate() {
         <AuthPasswordField
           label={R.confirmPasswordLabel}
           value={confirm}
-          onChangeText={setConfirm}
+          onChangeText={(v) => {
+            setConfirm(v);
+            setFieldErrors((f) => ({ ...f, confirm: undefined }));
+          }}
           autoComplete="new-password"
+          error={!!fieldErrors.confirm}
+          hint={fieldErrors.confirm}
         />
 
         <Pressable

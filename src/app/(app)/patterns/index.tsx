@@ -30,6 +30,7 @@ export default function Caseload() {
     if (filter === 'risk') return cl.risk === 'acute' || cl.risk === 'elevated';
     return true;
   });
+  const acuteExample = clients.find((cl) => cl.risk === 'acute');
 
   if (!hydrated) {
     return <Screen>{null}</Screen>;
@@ -145,7 +146,9 @@ export default function Caseload() {
       </Card>
       {filtered.length > 0 ? (
         <AppText variant="small" color="ink3" style={{ marginTop: 12 }}>
-          Click any client to open their patterns · Leah C. opens the safety-review state.
+          {acuteExample
+            ? `Click any client to open their patterns · ${acuteExample.name} opens the safety-review state.`
+            : 'Click any client to open their patterns · a client at acute risk opens the safety-review state.'}
         </AppText>
       ) : null}
     </Screen>

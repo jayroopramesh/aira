@@ -109,6 +109,10 @@ export default function SessionCapture() {
   const [emiratesId, setEmiratesId] = useState('');
   const capture = useRef<CaptureRef | null>(null);
   const recording = useRef<ActiveRecording | null>(null);
+  // Set when the recorder ends on its OWN (mic unplugged, permission revoked mid-session) rather than
+  // from an explicit Stop tap — lets the Recording screen say plainly why it stopped short instead of
+  // silently finalising whatever partial audio exists like an ordinary Stop.
+  const [streamInterrupted, setStreamInterrupted] = useState(false);
   // Asked once for the whole screen so the pre-capture notice, the in-flight recording copy and the
   // analysing label all promise the same thing. `null` while the check is in flight.
   const [cloudReady, setCloudReady] = useState<boolean | null>(null);
@@ -132,12 +136,25 @@ export default function SessionCapture() {
   const hasRealIdentity = !!client || name.trim().length > 0 || emiratesId.trim().length > 0;
 
   const beginRecording = async () => {
+    setStreamInterrupted(false);
     try {
-      recording.current = await startRecording();
+      recording.current = await startRecording(() => setStreamInterrupted(true));
     } catch {
       recording.current = null; // mic denied/unsupported — the recording screen offers fallbacks
     }
     setPhase('recording');
+  };
+
+  // Explicit Cancel on the recording screen (fix-these #12): stops any live tracks (no mic leak) and
+  // discards the in-progress clip rather than analysing it, back to precapture.
+  const cancelRecording = async () => {
+    if (recording.current) {
+      const active = recording.current;
+      recording.current = null;
+      await active.stop().catch(() => {});
+    }
+    setStreamInterrupted(false);
+    setPhase('precapture');
   };
 
   const goAnalyse = (ref: CaptureRef) => {
@@ -246,6 +263,8 @@ export default function SessionCapture() {
           activeRecording={recording.current ?? undefined}
           sampleOnStop={!hasRealIdentity}
           onStop={stopAndAnalyse}
+          onCancel={cancelRecording}
+          streamInterrupted={streamInterrupted}
           onUpload={onUpload}
           cloudReady={cloudReady}
           appendTarget={appendMode ? appendTarget : undefined}
@@ -599,6 +618,8 @@ function Recording({
   activeRecording,
   sampleOnStop,
   onStop,
+  onCancel,
+  streamInterrupted,
   onUpload,
   cloudReady,
   appendTarget,
@@ -613,6 +634,10 @@ function Recording({
    *  the type/paste recovery (a real client is attached, so the sample must not run under them). */
   sampleOnStop: boolean;
   onStop: () => void;
+  /** Stops any live tracks and discards the in-progress clip, back to precapture (fix-these #12). */
+  onCancel: () => void;
+  /** The recorder ended on its own (stream loss) rather than from a Stop tap (fix-these #13). */
+  streamInterrupted: boolean;
   onUpload: () => void;
   cloudReady: boolean | null;
   appendTarget?: DraftNote;
@@ -632,15 +657,16 @@ function Recording({
   // already-drafted note. Gated on `activeRecording.supportsPause` so a build/browser without
   // MediaRecorder.pause() never offers a control that would silently do nothing.
   const [paused, setPaused] = useState(false);
-  const canPause = live && !!activeRecording?.supportsPause;
+  const canPause = live && !streamInterrupted && !!activeRecording?.supportsPause;
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   useEffect(() => {
-    if (!live || paused) return;
+    if (!live || paused || streamInterrupted) return;
     timer.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
-  }, [live, paused]);
+  }, [live, paused, streamInterrupted]);
 
   // Pausing/resuming never changes screens, so this can't rely on a remount to reset — flip back to
   // false if a fresh (non-live) Recording mount somehow inherited a stale true from elsewhere.
@@ -662,6 +688,15 @@ function Recording({
   const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
   const ss = String(seconds % 60).padStart(2, '0');
 
+  // Nothing captured yet (mic never opened) needs no confirm — Cancel is a plain no-op return. A real
+  // in-progress clip does, mirroring the app's existing discard-confirm pattern (Re-record, Clear data).
+  // Stopping the tracks (no mic leak) is owned by the parent's `onCancel` — it holds the recorder ref.
+  const requestCancel = () => (live ? setConfirmingCancel(true) : onCancel());
+  const confirmCancel = () => {
+    setConfirmingCancel(false);
+    onCancel();
+  };
+
   return (
     <View style={{ alignItems: 'center', paddingTop: theme.spacing.xl }}>
       <View
@@ -677,7 +712,8 @@ function Recording({
       >
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: paused ? c.ink3 : c.riskFill }} />
         <AppText variant="bodyStrong" tint={paused ? c.ink2 : c.risk}>
-          {paused ? 'Paused' : live ? 'Recording' : 'Ready'} · Session {sessionNumber} with {displayName}
+          {paused ? 'Paused' : streamInterrupted ? 'Stopped' : live ? 'Recording' : 'Ready'} · Session {sessionNumber}{' '}
+          with {displayName}
         </AppText>
       </View>
       {appendTarget ? <AppendBanner sessionLabel={appendTarget.sessionLabel} /> : null}
@@ -692,7 +728,19 @@ function Recording({
         </AppText>
       ) : null}
 
-      {!live ? (
+      {streamInterrupted ? (
+        <Card tone="sunken" elevation="none" radius="md" style={{ marginTop: 20, maxWidth: 520, backgroundColor: c.cautionBg, borderColor: c.cautionBg }}>
+          <Row gap={9} style={{ alignItems: 'flex-start' }}>
+            <View style={{ marginTop: 1 }}>
+              <AlertTriangleIcon size={15} color={c.caution} />
+            </View>
+            <AppText variant="small" tint={c.caution} style={{ flex: 1, lineHeight: 17 }}>
+              The recording stopped on its own — the microphone stream ended (unplugged, permission revoked, or a
+              device change), not a Stop tap. Everything captured up to that point is saved; stop to transcribe it.
+            </AppText>
+          </Row>
+        </Card>
+      ) : !live ? (
         <Card tone="sunken" elevation="none" radius="md" style={{ marginTop: 20, maxWidth: 520, backgroundColor: c.cautionBg, borderColor: c.cautionBg }}>
           <Row gap={9} style={{ alignItems: 'flex-start' }}>
             <View style={{ marginTop: 1 }}>
@@ -723,22 +771,39 @@ function Recording({
       <RecordingNotes liveTs={`${mm}:${ss}`} />
 
       <View style={{ height: 22 }} />
-      <Row gap={12} style={{ flexWrap: 'wrap', justifyContent: 'center' }}>
-        {canPause ? (
-          <Button
-            title={paused ? 'Resume' : 'Pause'}
-            variant="secondary"
-            size="lg"
-            leftIcon={paused ? <PlayIcon size={15} color={c.brand} /> : <PauseIcon size={15} color={c.brand} />}
-            accessibilityLabel={paused ? 'Resume recording' : 'Pause recording — resume later without starting a new segment'}
-            onPress={togglePause}
-          />
-        ) : null}
-        <Button title="Stop & transcribe" variant="secondary" size="lg" leftIcon={<StopIcon size={16} color={c.risk} />} onPress={onStop} />
-        {isUploadSupported() ? (
-          <Button title="Upload a clip instead" variant="ghost" leftIcon={<FileUpIcon size={15} color={c.brand} strokeWidth={2} />} onPress={onUpload} />
-        ) : null}
-      </Row>
+      {confirmingCancel ? (
+        <Card tone="sunken" elevation="none" radius="md" style={{ maxWidth: 420, backgroundColor: c.riskBg, borderColor: c.riskBg }}>
+          <AppText variant="bodyStrong" style={{ fontSize: 14 }}>
+            Discard this recording?
+          </AppText>
+          <AppText variant="small" color="ink2" style={{ marginTop: 4, lineHeight: 17 }}>
+            This stops the microphone and throws away everything captured so far — it can’t be recovered.
+          </AppText>
+          <View style={{ height: 12 }} />
+          <Row gap={10} wrap>
+            <Button title="Yes, discard" variant="danger" onPress={confirmCancel} />
+            <Button title="Keep recording" variant="secondary" onPress={() => setConfirmingCancel(false)} />
+          </Row>
+        </Card>
+      ) : (
+        <Row gap={12} style={{ flexWrap: 'wrap', justifyContent: 'center' }}>
+          {canPause ? (
+            <Button
+              title={paused ? 'Resume' : 'Pause'}
+              variant="secondary"
+              size="lg"
+              leftIcon={paused ? <PlayIcon size={15} color={c.brand} /> : <PauseIcon size={15} color={c.brand} />}
+              accessibilityLabel={paused ? 'Resume recording' : 'Pause recording — resume later without starting a new segment'}
+              onPress={togglePause}
+            />
+          ) : null}
+          <Button title="Stop & transcribe" variant="secondary" size="lg" leftIcon={<StopIcon size={16} color={c.risk} />} onPress={onStop} />
+          {isUploadSupported() ? (
+            <Button title="Upload a clip instead" variant="ghost" leftIcon={<FileUpIcon size={15} color={c.brand} strokeWidth={2} />} onPress={onUpload} />
+          ) : null}
+          <Button title="Cancel" variant="ghost" accessibilityLabel="Cancel recording and discard it" onPress={requestCancel} />
+        </Row>
+      )}
       <AppText variant="small" color="ink3" center style={{ marginTop: 18, maxWidth: 420, lineHeight: 18 }}>
         <AppText variant="bodyStrong" color="ink2" style={{ fontSize: 12.5 }}>
           Nothing is authoritative yet — this is a draft you will review and sign.

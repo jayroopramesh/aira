@@ -19,6 +19,7 @@ export default function TodayDashboard() {
   const d = useDayDashboard();
   const { hydrated, loadSample } = useData();
   const nextClient = useClient(d?.nextClientId);
+  const nextEntry = d?.schedule.find((s) => s.clientId === d.nextClientId);
 
   if (!hydrated) {
     return <Screen>{null}</Screen>;
@@ -62,7 +63,7 @@ export default function TodayDashboard() {
             <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.16)' }} />
             <View style={{ flex: 1 }}>
               <AppText variant="small" tint={c.onBrand} style={{ opacity: 0.85 }}>
-                {nextClient?.summaryLine.includes('Session') ? '10:30 · INDIVIDUAL' : ''}
+                {nextEntry ? `${nextEntry.time} ${nextEntry.meridiem} · ${nextEntry.kind.toUpperCase()}` : ''}
               </AppText>
               {nextClient ? (
                 <Pressable
@@ -81,7 +82,7 @@ export default function TodayDashboard() {
                 </AppText>
               )}
               <AppText variant="small" tint={c.onBrand} style={{ opacity: 0.85, marginTop: 2 }}>
-                Session 5 · academic anxiety, sleep · PHQ-9 trending down
+                {nextEntry?.sessionLabel ?? nextClient?.summaryLine ?? ''}
               </AppText>
             </View>
           </Row>

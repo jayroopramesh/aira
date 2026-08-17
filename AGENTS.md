@@ -26,7 +26,7 @@ constraints — don't duplicate it here.
   CLI's "env: load" log line.
 - **CI** (`.github/workflows/ci.yml`, PRs + push to `main`, Node pinned via `actions/setup-node`,
   no secrets): `tsc --noEmit`, `npm test` (the `scripts/*-harness.mjs` suites — provenance,
-  persist-race, risk-floor, escalate-targets, duplicate-identity, chart-axis, groq-proxy —
+  persist-race, risk-floor, escalate-targets, duplicate-identity, chart-axis, chart-range, groq-proxy —
   followed by `jest --ci`, all chained in the `test` script in `package.json`; that IS the
   project's test suite. The harnesses are the default lane for pure modules; jest
   (`jest.config.js`, preset `jest-expo/ios`, matching `src/**/*.test.tsx?`) exists for tests that
@@ -330,6 +330,14 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   frame, flattens to the floor value the instant Pause is pressed, and resumes on Resume — plus the
   resulting clip's stitched playback actually plays in a real `<audio>` element, proving the whole
   capture→analyse→play pipeline end to end, not just each piece in isolation.
+- **Cancel on the recording screen** (round 3, 2026-08-17): stops the recorder (releasing the mic
+  track — no leak) and discards the in-progress clip back to precapture, never analysing it; two-step
+  confirm only when something real is being thrown away (`live`), same as Re-record/Clear-data. Also
+  round 3: `startRecording()` takes an optional `onInterrupted` callback, invoked from `finish()` only
+  when the recorder's own `onstop` fires WITHOUT a caller-invoked `stop()` having run first (tracked via
+  a `stopRequested` flag) — i.e. the mic stream ended on its own (unplugged, permission revoked, device
+  switch). The Recording screen surfaces a distinct caution banner for this case rather than silently
+  finalising the partial clip like an ordinary Stop tap.
 - **Name vs. slug**: the user-visible product name is **Airava** (`app.json` `name`, the TopBar
   wordmark, onboarding/login lockups, the web `<title>`, and `public/manifest.json`). The shorthand
   **aira** stays for everything non-user-facing — repo, npm package, the `aira` `slug`/`scheme`, the

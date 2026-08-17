@@ -9,6 +9,7 @@ import { AppText, Badge, Button, Card, Divider, Eyebrow, Row, TrustPill } from '
 import { ZeroState } from '../../../components/ZeroState';
 import { hasGroq } from '../../../config/env';
 import { useClient, useClientNotes, useData, useDraftNote } from '../../../data/DataProvider';
+import { MAX_NOTES_PER_CLIENT } from '../../../data/repository';
 import { DraftNote, NoteSection, PrepItem } from '../../../data/types';
 import { authService } from '../../../services/auth';
 import { AudioSegment, getAudioSegments } from '../../../services/audioVault';
@@ -209,7 +210,7 @@ export default function ReviewNote() {
   // minted deliberately — said plainly here, because an unexplained second identical-looking row is how
   // a caseload quietly fragments.
   const mintedDespiteSameName = !foldedIntoExisting && !foldedAndSavedTheId && !idOnFileUnderAnotherName && conflict === '1';
-  // Up to 3 notes are retained per client (C4); `note` selects which retained note to review (newest = 0).
+  // Up to MAX_NOTES_PER_CLIENT notes are retained per client (C4); `note` selects which retained note to review (newest = 0).
   const notes = useClientNotes(clientId);
   const parsedIndex = noteParam ? Number(noteParam) : 0;
   const noteIndex = Number.isInteger(parsedIndex) && parsedIndex >= 0 && parsedIndex < notes.length ? parsedIndex : 0;
@@ -1453,8 +1454,8 @@ function SignOffButton({ onSign }: { onSign: () => void }) {
  *
  * Two-step confirm (mirrors `UnlockNoteButton`'s arm/confirm shape — Cancel is the only way back, no
  * timeout) ONLY when it would actually discard something: an UNSIGNED draft is a review-in-progress
- * that a fresh recording could bury (up to 3 notes are retained per client — C4 — so a 4th capture
- * rotates the oldest out). A SIGNED note is already a finalised record nothing here can lose, so that
+ * that a fresh recording could bury (up to MAX_NOTES_PER_CLIENT notes are retained per client — C4 — so
+ * a new capture past that cap rotates the oldest out). A SIGNED note is already a finalised record nothing here can lose, so that
  * case re-records immediately with no confirm.
  */
 function ReRecordAction({ clientId, signed }: { clientId: string; signed: boolean }) {
@@ -1475,8 +1476,9 @@ function ReRecordAction({ clientId, signed }: { clientId: string; signed: boolea
     <View>
       <AppText variant="small" color="ink2">
         Start a new recording for this client? This draft stays saved as one of your recent notes — but
-        it hasn’t been signed yet, and only the 3 most recent notes are kept per client, so it can be
-        rotated out later. Sign or note it down first if you need to keep it front and center.
+        it hasn’t been signed yet, and only the {MAX_NOTES_PER_CLIENT} most recent notes are kept per
+        client, so it can be rotated out later. Sign or note it down first if you need to keep it front
+        and center.
       </AppText>
       <Row gap={10} style={{ marginTop: 10 }}>
         <Button title="Cancel" variant="secondary" onPress={() => setConfirming(false)} />
@@ -1554,7 +1556,7 @@ function SignOff({
     <Card tone="elevated" radius="md" elevation="sm">
       <AppText variant="bodyStrong">Sign-off</AppText>
       <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
-        You are the final authority. Signing marks this note authoritative and makes it read-only. You can still append an addendum later.
+        You are the final authority. Signing marks this note authoritative and makes it read-only. You can Unlock it later to make it an editable draft again — a full reopen, not a lightweight addendum.
       </AppText>
       <View style={{ height: 14 }} />
       <Row gap={10}>
@@ -1630,7 +1632,7 @@ function SessionList({
         );
       })}
       <AppText variant="small" color="ink3" style={{ marginTop: 2, fontSize: 11 }}>
-        Up to 3 recent notes are kept per client.
+        Up to {MAX_NOTES_PER_CLIENT} recent notes are kept per client.
       </AppText>
     </View>
   );
