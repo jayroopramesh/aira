@@ -11,6 +11,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT, PatientDetailsEntry } from './repository';
 import { CaseloadKpi, Client, DayDashboard, DraftNote, NoteSection, PrepItem } from './types';
 import { applySessionNote } from './saveSession';
+import { computeSampleUndo, SampleUndoResult } from './undoSample';
 
 /**
  * Caseload KPI tiles computed from the ACTUAL caseload (F10). The tiles used to be static fixtures
@@ -55,10 +56,18 @@ type DataContextValue = {
   notes: Record<string, DraftNote[]>;
   patientDetails: Record<string, PatientDetailsEntry>;
   sampleLoaded: boolean;
+  /** True while at least one sample-origin client (see `Client.sampleOrigin`) remains on the caseload. */
+  hasSampleData: boolean;
   /** Load the Amara K. sample cohort (Settings / dev affordance). */
   loadSample: () => Promise<void>;
   /** Wipe every device-local record back to a fresh-install blank state. */
   clearAll: () => Promise<void>;
+  /**
+   * Remove the sample cohort loaded by `loadSample`, preserving everything captured or edited since
+   * (see `computeSampleUndo` in `undoSample.ts` for the exact, stated policy). Returns the counts so
+   * Settings can say plainly what happened.
+   */
+  undoSample: () => Promise<Pick<SampleUndoResult, 'removedClients' | 'keptWithUserData'>>;
   /**
    * Persist a session-generated draft. With no clientId, a lightweight client is created so the
    * captured session appears in the caseload — UNLESS a supplied Emirates ID already exists on the
@@ -163,6 +172,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await persist({ ...EMPTY_SNAPSHOT, notes: {} });
   }, [persist]);
 
+  const undoSample = useCallback(async () => {
+    const { snapshot, removedClients, keptWithUserData } = computeSampleUndo(snapshotRef.current);
+    await persist(snapshot);
+    return { removedClients, keptWithUserData };
+  }, [persist]);
+
   const saveSessionNote = useCallback(
     async (note: DraftNote, opts?: { clientId?: string; name?: string; emiratesId?: string }) => {
       // The whole match/fold/mint decision — including every duplicate-identity rule — lives in
@@ -260,8 +275,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       notes: snapshot.notes,
       patientDetails: snapshot.patientDetails,
       sampleLoaded: snapshot.sampleLoaded,
+      hasSampleData: snapshot.clients.some((c) => c.sampleOrigin),
       loadSample,
       clearAll,
+      undoSample,
       saveSessionNote,
       savePatientDetails,
       signNote,
@@ -274,6 +291,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     hydrated,
     loadSample,
     clearAll,
+    undoSample,
     saveSessionNote,
     savePatientDetails,
     signNote,
@@ -314,7 +332,7 @@ export function useCaseloadKpis(): CaseloadKpi[] {
   return useContext(DataContext)?.caseloadKpis ?? [];
 }
 
-/** All retained session notes for a client (newest first, up to 3 — C4). Empty outside the provider. */
+/** All retained session notes for a client (newest first, up to MAX_NOTES_PER_CLIENT — C4). Empty outside the provider. */
 export function useClientNotes(id?: string): DraftNote[] {
   const ctx = useContext(DataContext);
   return ctx && id ? ctx.notes[id] ?? [] : [];

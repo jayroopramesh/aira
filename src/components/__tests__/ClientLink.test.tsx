@@ -39,3 +39,18 @@ it('is a link role labelled with the client’s name, and navigates to their pat
   expect(mockPush).toHaveBeenCalledTimes(1);
   expect(mockPush).toHaveBeenCalledWith('/(app)/today/leah');
 });
+
+it('showAvatar={false} (patterns caseload rows) still links, without rendering the avatar', () => {
+  render(
+    <ThemeProvider>
+      <ClientLink client={CLIENT} showAvatar={false}>
+        <Text>Leah C.</Text>
+      </ClientLink>
+    </ThemeProvider>,
+  );
+
+  expect(screen.queryByText('LC')).toBeNull(); // Avatar renders the client's initials as text
+  const link = screen.getByRole('link', { name: 'Open Leah C.’s page' });
+  fireEvent.press(link);
+  expect(mockPush).toHaveBeenCalledWith('/(app)/today/leah');
+});

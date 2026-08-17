@@ -1,4 +1,4 @@
-import { AMARA_DRAFT, CLIENTS, DAY_DASHBOARD } from './fixtures';
+import { CLIENTS, DAY_DASHBOARD, SAMPLE_NOTES } from './fixtures';
 import { CaseloadKpi, Client, DayDashboard, DraftNote } from './types';
 import { vaultStorage, VaultStorage } from '../services/storage';
 import { createWriteQueue } from '../services/writeQueue';
@@ -11,8 +11,12 @@ import { createWriteQueue } from '../services/writeQueue';
  * clientId. Everything here is written through the vault seam (VaultStorage) and never leaves the
  * device.
  */
-/** How many session notes are retained per client (captain C4) — newest first, oldest rotates out. */
-export const MAX_NOTES_PER_CLIENT = 3;
+/**
+ * How many session notes are retained per client (captain C4; raised 3→5 in captain feedback round 2
+ * so a client's trajectory — recurring review codes, repeated plan items, risk tier over time — has
+ * enough history to be visible) — newest first, oldest rotates out.
+ */
+export const MAX_NOTES_PER_CLIENT = 5;
 
 /** Clinician-entered patient-details card edits (C2) — device-local, keyed by clientId. */
 export type PatientDetailsEntry = { values?: string[]; extra?: string };
@@ -50,13 +54,18 @@ function todayLabel(): string {
   return `${weekday} · ${day} ${month}`.toUpperCase();
 }
 
-/** The Amara K. cohort + report clients, assembled as a loadable sample snapshot (no real PHI). */
+/**
+ * The Amara K. cohort + report clients, assembled as a loadable sample snapshot (no real PHI). Every
+ * client and every note is stamped `sampleOrigin: true` HERE, at load time — the one place "Undo sample
+ * data" needs to know what it is safe to remove (see `computeSampleUndo` in `undoSample.ts`) — rather
+ * than a removal-time guess by name or content.
+ */
 export function buildSampleSnapshot(): CaseloadSnapshot {
   return {
-    clients: CLIENTS.map((c) => ({ ...c })),
+    clients: CLIENTS.map((c) => ({ ...c, sampleOrigin: true })),
     dayDashboard: { ...DAY_DASHBOARD, dateLabel: todayLabel() },
     caseloadKpis: [], // computed from clients in DataProvider (F10) — no static tiles
-    notes: { amara: [AMARA_DRAFT] },
+    notes: Object.fromEntries(Object.entries(SAMPLE_NOTES).map(([id, list]) => [id, list.map((n) => ({ ...n, sampleOrigin: true }))])),
     patientDetails: {},
     sampleLoaded: true,
   };

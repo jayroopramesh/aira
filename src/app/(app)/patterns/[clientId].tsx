@@ -11,6 +11,7 @@ import { AppText, Button, Card, Chip, Eyebrow, Row, RiskDot, TrustPill } from '.
 import { AMARA_SCALES } from '../../../data/scales';
 import { useClient, useClientNotes } from '../../../data/DataProvider';
 import { Client } from '../../../data/types';
+import { deriveTrajectory, MIN_SESSIONS_FOR_TRAJECTORY } from '../../../data/trajectory';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 export default function ClientPatterns() {
@@ -232,7 +233,111 @@ function PatternsView({ clientId }: { clientId: string }) {
           ) : null}
         </View>
       </View>
+
+      <View style={{ height: theme.spacing.lg }} />
+      <TrajectoryCard clientId={clientId} />
     </Screen>
+  );
+}
+
+/**
+ * Longitudinal trajectory (captain round-2 item 2): across this client's retained session notes,
+ * recurring review codes, repeated plan/prescription items, and the risk-tier trend. Purely derived
+ * from `deriveTrajectory` (on-device, no cloud call) — every row here is traceable to a real note.
+ */
+function TrajectoryCard({ clientId }: { clientId: string }) {
+  const theme = useTheme();
+  const notes = useClientNotes(clientId);
+  const trajectory = deriveTrajectory(notes);
+
+  return (
+    <Card>
+      <Eyebrow>Trajectory</Eyebrow>
+      <AppText variant="h2" style={{ marginTop: 8 }}>
+        Across {notes.length} retained session{notes.length === 1 ? '' : 's'}
+      </AppText>
+      {!trajectory ? (
+        <AppText variant="body" color="ink2" style={{ marginTop: 8, lineHeight: 22 }}>
+          At least {MIN_SESSIONS_FOR_TRAJECTORY} sessions needed to show a trajectory — recurring review codes,
+          repeated plan items, and the risk trend appear once there’s enough history.
+        </AppText>
+      ) : (
+        <View style={{ marginTop: 12, gap: theme.spacing.lg }}>
+          <View>
+            <AppText variant="bodyStrong" style={{ fontSize: 13.5 }}>
+              Risk tier over time
+            </AppText>
+            <Row gap={16} wrap style={{ marginTop: 8, alignItems: 'center' }}>
+              {trajectory.riskTrend.map((p, i) => (
+                <Row key={`${p.sessionLabel}-${i}`} gap={6} style={{ alignItems: 'center' }}>
+                  <RiskDot level={p.riskLevel} />
+                  <AppText variant="small" color="ink3">
+                    {p.sessionLabel.replace(/^Session \d+ — /, '')}
+                  </AppText>
+                  {i < trajectory.riskTrend.length - 1 ? (
+                    <AppText variant="small" color="ink3">
+                      →
+                    </AppText>
+                  ) : null}
+                </Row>
+              ))}
+            </Row>
+          </View>
+
+          <View>
+            <AppText variant="bodyStrong" style={{ fontSize: 13.5 }}>
+              Recurring review codes
+            </AppText>
+            {trajectory.recurringCodes.length ? (
+              trajectory.recurringCodes.map((rc) => (
+                <Row key={rc.code} style={{ justifyContent: 'space-between', marginTop: 8, gap: 8 }}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <AppText variant="body" color="ink" style={{ fontFamily: theme.type.numeric.fontFamily }}>
+                      {rc.code}
+                    </AppText>
+                    <AppText variant="small" color="ink3">
+                      {rc.label}
+                    </AppText>
+                  </View>
+                  <AppText variant="small" color="ink3">
+                    {rc.count}× · {rc.sessions[0].replace(/^Session \d+ — /, '')} → {rc.sessions[rc.sessions.length - 1].replace(/^Session \d+ — /, '')}
+                  </AppText>
+                </Row>
+              ))
+            ) : (
+              <AppText variant="small" color="ink3" style={{ marginTop: 6 }}>
+                No review code repeats across these sessions yet.
+              </AppText>
+            )}
+          </View>
+
+          <View>
+            <AppText variant="bodyStrong" style={{ fontSize: 13.5 }}>
+              Repeated plan &amp; prescription items
+            </AppText>
+            {trajectory.repeatedPrescriptions.length ? (
+              trajectory.repeatedPrescriptions.map((item) => (
+                <Row key={item.text} style={{ justifyContent: 'space-between', marginTop: 8, gap: 8 }}>
+                  <AppText variant="body" color="ink" style={{ flex: 1, minWidth: 0 }}>
+                    {item.text}
+                  </AppText>
+                  <AppText variant="small" color="ink3">
+                    {item.count}×
+                  </AppText>
+                </Row>
+              ))
+            ) : (
+              <AppText variant="small" color="ink3" style={{ marginTop: 6 }}>
+                No plan or prescription item repeats across these sessions yet.
+              </AppText>
+            )}
+          </View>
+        </View>
+      )}
+      <AppText variant="small" color="ink3" style={{ marginTop: 14, fontSize: 11 }}>
+        Derived on this device from {notes.length} retained note{notes.length === 1 ? '' : 's'} — nothing here is inferred beyond what’s already in a signed note.
+      </AppText>
+    </Card>
   );
 }
 

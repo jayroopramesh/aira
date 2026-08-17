@@ -7,6 +7,7 @@ import { ClientNotFound } from '../../../components/ClientNotFound';
 import { HistoryTimeline } from '../../../components/clinical';
 import { AppText, Badge, Card, Eyebrow, Row } from '../../../components/ui';
 import { useClient, useClientNotes } from '../../../data/DataProvider';
+import { MAX_NOTES_PER_CLIENT } from '../../../data/repository';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 /** Chronological session-history timeline — typed feed, types never blurred. */
@@ -35,9 +36,9 @@ export default function SessionHistory() {
 }
 
 /**
- * The client's retained note text (up to 3, newest first — C4). The timeline below summarises what
- * happened; these open the full note and its sign-off, which otherwise have no entry point once the
- * post-capture review screen is left (F5).
+ * The client's retained note text (up to MAX_NOTES_PER_CLIENT, newest first — C4). The timeline below
+ * summarises what happened; these open the full note and its sign-off, which otherwise have no entry
+ * point once the post-capture review screen is left (F5).
  */
 function RetainedNotes({ clientId }: { clientId: string }) {
   const theme = useTheme();
@@ -74,7 +75,7 @@ function RetainedNotes({ clientId }: { clientId: string }) {
         </Pressable>
       ))}
       <AppText variant="small" color="ink3" style={{ marginTop: 2, fontSize: 11 }}>
-        Up to 3 recent notes are kept per client, on this device.
+        Up to {MAX_NOTES_PER_CLIENT} recent notes are kept per client, on this device.
       </AppText>
       <View style={{ height: theme.spacing.md }} />
     </View>
