@@ -646,7 +646,11 @@ function Section({
   const theme = useTheme();
   const c = theme.colors;
   const [editing, setEditing] = useState(false);
-  const [text, setText] = useState([...section.body, ...(section.bullets ?? [])].join('\n\n'));
+  // Body paragraphs separated by blank lines; bullets one per line (matching how `commitEdit` reads
+  // them back), so an existing list opens in the same shape the clinician is asked to type it in.
+  const [text, setText] = useState(
+    [section.body.join('\n\n'), (section.bullets ?? []).join('\n')].filter(Boolean).join('\n\n'),
+  );
 
   const isRisk = section.isRisk;
 
@@ -656,16 +660,24 @@ function Section({
    * stay bullets — a bulleted section (Plan) keeps its bullets, and any block the clinician adds joins
    * them. Nothing typed is dropped.
    *
-   * Scope: this persists the edited SECTION onto the note and deliberately nothing else. It does not
-   * retroactively rewrite `draft.prescriptions` (which the rail seeds from, copied from the plan
-   * bullets at draft time) or a client's `lastPlan`. The prescriptions rail is independently editable,
-   * and "Generate from notes" re-pulls from the current Plan bullets on demand.
+   * In the bullets region, EVERY line is its own item — a clinician typing a plan list presses Enter
+   * once between items (blank-line separation is a formatting convention nobody is told about), and
+   * items that silently merge into one bullet become one merged reminder on the prep screen and one
+   * merged prescription in "Generate from notes". A leading `- `/`• `/`* ` marker the clinician types
+   * is stripped, since the rendered list draws its own bullet glyph (a bare "-5 on the PHQ-9" keeps
+   * its hyphen — only a marker followed by whitespace is markup). Body paragraphs keep the blank-line
+   * split so prose with a manual line wrap stays one paragraph.
    */
   const commitEdit = () => {
     const blocks = text.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
     if (section.bullets === undefined) return onSave(section.id, blocks);
     const cut = Math.min(section.body.length, blocks.length);
-    onSave(section.id, blocks.slice(0, cut), blocks.slice(cut));
+    const bullets = blocks
+      .slice(cut)
+      .flatMap((b) => b.split('\n'))
+      .map((l) => l.trim().replace(/^[-•*]\s+/, ''))
+      .filter(Boolean);
+    onSave(section.id, blocks.slice(0, cut), bullets);
   };
 
   // Every exit from the editor must persist, not just "Done": blur, unmount, and the sign-off flush
@@ -770,24 +782,31 @@ function Section({
       ) : null}
 
       {editing && editable ? (
-        <TextInput
-          multiline
-          value={text}
-          onChangeText={edit}
-          onBlur={flush}
-          style={{
-            fontFamily: theme.type.body.fontFamily,
-            fontSize: 15,
-            lineHeight: 23,
-            color: c.ink,
-            borderWidth: 1,
-            borderColor: c.brandBd,
-            borderRadius: theme.radii.sm,
-            padding: 12,
-            minHeight: 120,
-            backgroundColor: c.elevated,
-          }}
-        />
+        <View>
+          <TextInput
+            multiline
+            value={text}
+            onChangeText={edit}
+            onBlur={flush}
+            style={{
+              fontFamily: theme.type.body.fontFamily,
+              fontSize: 15,
+              lineHeight: 23,
+              color: c.ink,
+              borderWidth: 1,
+              borderColor: c.brandBd,
+              borderRadius: theme.radii.sm,
+              padding: 12,
+              minHeight: 120,
+              backgroundColor: c.elevated,
+            }}
+          />
+          {section.bullets !== undefined ? (
+            <AppText variant="small" color="ink3" style={{ marginTop: 6 }}>
+              One item per line — each line becomes its own bullet, reminder and generated prescription.
+            </AppText>
+          ) : null}
+        </View>
       ) : (
         <View>
           {section.body.map((p, i) => (

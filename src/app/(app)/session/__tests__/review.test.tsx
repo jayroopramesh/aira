@@ -93,6 +93,7 @@ let mockDraft: DraftNote = DRAFT;
 const mockSignNote = jest.fn();
 const mockUnlockNote = jest.fn();
 const mockGeneratePrescriptions = jest.fn();
+const mockUpdateNoteSection = jest.fn();
 
 jest.mock('../../../../data/DataProvider', () => ({
   useClient: () => CLIENT,
@@ -101,7 +102,7 @@ jest.mock('../../../../data/DataProvider', () => ({
   useData: () => ({
     signNote: mockSignNote,
     unlockNote: mockUnlockNote,
-    updateNoteSection: jest.fn(),
+    updateNoteSection: mockUpdateNoteSection,
     generatePrescriptions: mockGeneratePrescriptions,
   }),
 }));
@@ -124,6 +125,7 @@ beforeEach(() => {
   mockSignNote.mockClear();
   mockUnlockNote.mockClear();
   mockGeneratePrescriptions.mockClear();
+  mockUpdateNoteSection.mockClear();
 });
 
 afterEach(() => {
@@ -321,4 +323,75 @@ it('recording comments still render when no transcript is stored (typed-recovery
   expect(screen.getByText(/No transcript is stored/)).toBeTruthy();
   expect(screen.getByText('00:41')).toBeTruthy();
   expect(screen.getByText('Ask about sleep next time')).toBeTruthy();
+});
+
+/**
+ * Section-editor list handling (round 3, 2026-08-18): a clinician typing a Plan list presses Enter
+ * once between items — the editor must not silently merge those lines into ONE bullet (which then
+ * becomes one merged reminder on prep and one merged prescription in "Generate from notes"). Each
+ * line in the bullets region is its own item, typed `- `/`• ` markers are stripped (the list renders
+ * its own glyph), and prose sections keep blank-line paragraph splitting so a manual line wrap
+ * doesn't shatter a paragraph.
+ */
+const EDITABLE_DRAFT: DraftNote = {
+  ...DRAFT,
+  sections: [
+    { id: 'subjective', marker: 'S', title: 'Subjective', body: ['Original subjective text.'] },
+    { id: 'plan', marker: 'P', title: 'Plan & Next Steps', body: [], bullets: ['Not captured in this draft — review required'] },
+  ],
+};
+
+it('plan items typed one per line become separate bullets, not one merged bullet', () => {
+  mockDraft = EDITABLE_DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Plan & Next Steps' }));
+  const editor = screen.getByDisplayValue('Not captured in this draft — review required');
+  fireEvent.changeText(editor, 'Send sister one short message\nNo screens after 23:00\nWorry journal once nightly');
+  fireEvent.press(screen.getByRole('button', { name: 'Save your edits to Plan & Next Steps' }));
+  expect(mockUpdateNoteSection).toHaveBeenCalledWith(CLIENT.id, 0, 'plan', [], [
+    'Send sister one short message',
+    'No screens after 23:00',
+    'Worry journal once nightly',
+  ]);
+});
+
+it('typed bullet markers are stripped from list items; a bare leading hyphen is kept', () => {
+  mockDraft = EDITABLE_DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Plan & Next Steps' }));
+  const editor = screen.getByDisplayValue('Not captured in this draft — review required');
+  fireEvent.changeText(editor, '- Sleep log daily\n• Message sister\n* Review next session\n-5 on the PHQ-9 is the target');
+  fireEvent.press(screen.getByRole('button', { name: 'Save your edits to Plan & Next Steps' }));
+  expect(mockUpdateNoteSection).toHaveBeenCalledWith(CLIENT.id, 0, 'plan', [], [
+    'Sleep log daily',
+    'Message sister',
+    'Review next session',
+    '-5 on the PHQ-9 is the target',
+  ]);
+});
+
+it('prose sections keep blank-line paragraph splitting — a manual line wrap stays one paragraph', () => {
+  mockDraft = EDITABLE_DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Subjective' }));
+  const editor = screen.getByDisplayValue('Original subjective text.');
+  fireEvent.changeText(editor, 'Low mood for two weeks,\nworse at night.\n\nDenies thoughts of self-harm.');
+  fireEvent.press(screen.getByRole('button', { name: 'Save your edits to Subjective' }));
+  expect(mockUpdateNoteSection).toHaveBeenCalledWith(
+    CLIENT.id,
+    0,
+    'subjective',
+    ['Low mood for two weeks,\nworse at night.', 'Denies thoughts of self-harm.'],
+    undefined,
+  );
+});
+
+it('an existing multi-bullet list opens in the editor one item per line', () => {
+  mockDraft = {
+    ...DRAFT,
+    sections: [{ id: 'plan', marker: 'P', title: 'Plan & Next Steps', body: [], bullets: ['Sleep log daily', 'Message sister'] }],
+  };
+  renderScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Plan & Next Steps' }));
+  expect(screen.getByDisplayValue('Sleep log daily\nMessage sister')).toBeTruthy();
 });
