@@ -29,7 +29,7 @@ renamed.
 > **Status:** v1 foundation with a **live demo mode**. Five navigable workflows. A fresh install
 > boots **blank** (zero-states everywhere; load the sample cohort from Settings). Behind the existing
 > seams, accounts run against **Supabase** and transcription/summarization against **Groq**
-> (whisper-large-v3 + llama-3.3-70b); with no keys the app degrades to on-device mocks. Clinical data
+> (whisper-large-v3 + openai/gpt-oss-120b); with no keys the app degrades to on-device mocks. Clinical data
 > stays device-local. Crypto is still stubbed. The build is an **invite-only beta preview**: a
 > standing banner on every screen says it is not a live medical service, and the web export is
 > noindexed (details in `AGENTS.md` → "Invite-only beta preview"). See
@@ -206,7 +206,7 @@ report which are live). Configuration is `EXPO_PUBLIC_*` in `.env.local`, read v
 |---|---|---|
 | **Accounts** | Supabase `signUp` / `signInWithPassword` (`SupabaseAuthService`). Email confirmation OFF; Emirates ID/phone/name → user metadata. The one-time recovery code stays app-side (local vault key). | `MockAuthService` |
 | **Transcription** | Groq **whisper-large-v3** over recorded/uploaded audio (`GroqTranscriptionService`), via the `groq-proxy` Edge Function. Web capture via MediaRecorder + a file-picker fallback (`services/audioCapture.ts`). | `MockTranscriptionService` — replays the canned transcript **only for the built-in `mock://` sample clip**; any real capture is refused (`TranscriptionUnavailableError`) so the clinician types or pastes it |
-| **Summarization** | Groq **llama-3.3-70b** → SOAP sections + risk/safety + plan → `DraftNote` (`services/summarization.ts`), via the `groq-proxy` Edge Function. | `MockSummarizationService` — the full walkthrough note **only for the sample clip**; a real session gets derive-only sections |
+| **Summarization** | Groq **gpt-oss-120b** → SOAP sections + risk/safety + plan → `DraftNote` (`services/summarization.ts`), via the `groq-proxy` Edge Function. | `MockSummarizationService` — the full walkthrough note **only for the sample clip**; a real session gets derive-only sections |
 
 Both Groq calls go through a **server-side proxy** so the Groq API key never ships in the bundle —
 see [Groq proxy (Edge Function)](#groq-proxy-edge-function). Transcription + summarization are two
@@ -233,7 +233,7 @@ holds only the **proxy URL** (`EXPO_PUBLIC_GROQ_PROXY_URL`, a public function en
 with the signed-in counselor's Supabase **session token**.
 
 The function proxies both Groq calls — `POST /groq-proxy/transcriptions` (multipart audio →
-whisper-large-v3) and `POST /groq-proxy/chat/completions` (JSON messages → llama-3.3-70b) — and:
+whisper-large-v3) and `POST /groq-proxy/chat/completions` (JSON messages → openai/gpt-oss-120b) — and:
 
 - **Verifies the caller.** The `Authorization: Bearer` must be a valid *user* session JWT (role
   `authenticated` and not an anonymous sign-in, checked against GoTrue `/auth/v1/user`). Anonymous
@@ -246,7 +246,7 @@ whisper-large-v3) and `POST /groq-proxy/chat/completions` (JSON messages → lla
   defers to production/Azure; for the demo the pinned models and the rate limit are what bound the
   damage a registered stranger can do.
 - **Reads `GROQ_API_KEY` from the function environment** (a Supabase secret), never from a client var.
-- **Pins the models server-side.** `whisper-large-v3` for transcription, `llama-3.3-70b-versatile` for
+- **Pins the models server-side.** `whisper-large-v3` for transcription, `openai/gpt-oss-120b` for
   chat; a caller-supplied `model` is **overwritten, not honoured**, so no one can aim the project's
   quota at an arbitrary, more expensive Groq model.
 - **Rate-limits per caller.** A best-effort **in-memory fixed window** (default 20 req / 60 s per user
@@ -338,10 +338,10 @@ Then set `EXPO_PUBLIC_GROQ_PROXY_URL` in `.env.local` to
 # 200 + a completion (signed-in counselor)
 curl -s -X POST "$PROXY/chat/completions" -H "Authorization: Bearer $USER_JWT" \
   -H "Content-Type: application/json" \
-  -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"ping"}]}'
+  -d '{"model":"openai/gpt-oss-120b","messages":[{"role":"user","content":"ping"}]}'
 # 401 (anonymous — no bearer, or the anon publishable key)
 curl -s -X POST "$PROXY/chat/completions" -H "Content-Type: application/json" \
-  -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"ping"}]}'
+  -d '{"model":"openai/gpt-oss-120b","messages":[{"role":"user","content":"ping"}]}'
 ```
 
 ## Duplicate identity
@@ -449,7 +449,7 @@ so a recording is never answered with words nobody said. Neither needs a native 
 |---|---|
 | Auth (account creation, sign-in) | **Live (demo)** — Supabase when configured, else `MockAuthService`. One-time recovery code stays app-side, verified against a device-local hash so it survives reloads. |
 | Transcription | **Live (demo)** — Groq whisper-large-v3 when configured, else `MockTranscriptionService`. |
-| Summarization → SOAP draft | **Live (demo)** — Groq llama-3.3-70b when configured, else `MockSummarizationService`. |
+| Summarization → SOAP draft | **Live (demo)** — Groq gpt-oss-120b when configured, else `MockSummarizationService`. |
 | Persisted data | **Device-local** — reactive store behind `ClientRepository` → `VaultStorage`; blank on first boot. |
 | Encryption / vault crypto (Argon2id, recovery-code unlock, export/import) | **Stubbed** — `LocalVaultStorage` persists plaintext blobs; no crypto yet. |
 | Server-side key escrow (manual recovery path) | **Not built** — policy-only; never surfaced in UI |

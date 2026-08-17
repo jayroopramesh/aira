@@ -2,7 +2,7 @@
  * SummarizationService — the clinical-drafting seam: a de-identified transcript in, a structured
  * SOAP DraftNote out. Nothing here is authoritative; the clinician reviews and signs every note.
  *
- * DEMO mode uses Groq chat completions (llama-3.3-70b-versatile) with a clinical system prompt that
+ * DEMO mode uses Groq chat completions (openai/gpt-oss-120b) with a clinical system prompt that
  * produces SOAP sections + a routine risk & safety check + plan items (which feed the Prescriptions
  * rail). This is a CLOUD hop over the transcript text — disclosed by the demo-mode banner. It reaches
  * Groq through the server-side groq-proxy Edge Function (the Groq key is a Supabase secret, not a
@@ -92,7 +92,7 @@ Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY this shape
 }`;
 
 /**
- * GroqSummarizationService — DEMO-mode drafting (llama-3.3-70b) via the server-side groq-proxy Edge
+ * GroqSummarizationService — DEMO-mode drafting (gpt-oss-120b) via the server-side groq-proxy Edge
  * Function, NOT Groq directly: the Groq key is a Supabase secret and never ships in the bundle. The
  * transcript text is POSTed to the proxy with the counselor's Supabase session token; only the
  * transcript + a bare session number are sent — never the client's name (the proxy also rejects any

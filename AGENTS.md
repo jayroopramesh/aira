@@ -87,7 +87,7 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   `/unlock?next=<in-app route>`, validated by `safeNext`) plus the paste fallback. See `README.md`.
 - **Groq is server-side** — the Groq API key is NO LONGER a client var. It lives as a Supabase secret
   behind the `groq-proxy` Edge Function (`supabase/functions/groq-proxy/index.ts`), which proxies both
-  Groq calls (`/transcriptions` whisper-large-v3 multipart, `/chat/completions` llama-3.3-70b JSON).
+  Groq calls (`/transcriptions` whisper-large-v3 multipart, `/chat/completions` openai/gpt-oss-120b JSON).
   The function verifies the caller's Supabase user JWT (anon key / anonymous → 401), reads
   `GROQ_API_KEY` from its own env, **pins the models server-side** (a caller-supplied `model` is
   overwritten, never honoured), rate-limits per user (best-effort in-memory, documented), rejects
@@ -100,8 +100,24 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   stand-in GoTrue/Groq servers (no Deno or Docker). Deploy + the honest residency note (Supabase
   global edge; project ap-south-1; Azure in-region for prod) are in `README.md` → "Groq proxy (Edge
   Function)". Never reintroduce `EXPO_PUBLIC_GROQ_API_KEY`.
+  **`CHAT_MODEL` has already gone stale once**: Groq retired `llama-3.3-70b-versatile` (404
+  `model_not_found`) with transcription unaffected, since `whisper-large-v3` is a separate pin — the
+  user-facing symptom was "drafting fails, transcription works". `GET
+  https://api.groq.com/openai/v1/models` (Bearer the Groq key) is the source of truth for what's
+  still live on the key; don't assume a model name from memory or docs is still valid. Before
+  re-pinning to any candidate, hit the real API directly with the app's EXACT request shape from
+  `summarization.ts` (`temperature: 0.2`, `response_format: {type: "json_object"}`, the real
+  `SYSTEM_PROMPT`) — a trivial "ping" test passing is not sufficient evidence. **Reasoning models are
+  a trap here**: some (e.g. `qwen/qwen3.6-27b`) emit their `<think>...</think>` trace inline in
+  `message.content` rather than a separate `reasoning` field, which makes `response_format:
+  json_object` 400 with `json_validate_failed` even combined with `reasoning_format: "hidden"`, and
+  without `response_format` the reasoning alone can exceed the default `max_tokens` (2048), truncating
+  before any real content — plus such models can carry a much lower per-model TPM cap on this key,
+  making them unsafe for a single-call, no-retry drafting path even when the shape is coaxed into
+  working. `openai/gpt-oss-120b` (current pin) puts its reasoning in a separate `message.reasoning`
+  field and returns clean JSON with the app's exact shape unmodified.
 - **Transcription — Groq whisper-large-v3** (`GroqTranscriptionService` in `transcription.ts`) and
-  **summarization — Groq llama-3.3-70b** (`src/services/summarization.ts` → a `DraftNote`), both via
+  **summarization — Groq gpt-oss-120b** (`src/services/summarization.ts` → a `DraftNote`), both via
   the proxy above with the session token. Web audio via `src/services/audioCapture.ts` (MediaRecorder
   + file-picker fallback; native falls back to the mock). The `mock://` sample-audio path always uses
   the mock transcriber. No proxy configured → the on-device mock for both.

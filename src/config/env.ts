@@ -3,7 +3,7 @@
  *
  * Aira's clinical data is device-local and always stays that way. The ONLY cloud surfaces are:
  *   • Accounts   — Supabase (create-account + login).
- *   • Transcription + summarization — Groq (whisper-large-v3 + llama-3.3-70b-versatile), used in
+ *   • Transcription + summarization — Groq (whisper-large-v3 + openai/gpt-oss-120b), used in
  *     demo mode to turn a session recording into a SOAP draft. See DemoBanner for the honest
  *     "this leaves the device" disclosure.
  *
@@ -50,7 +50,7 @@ export const env = {
     /** The Supabase Edge Function base URL that proxies Groq (server holds the key). */
     proxyUrl: raw.groqProxyUrl,
     transcriptionModel: 'whisper-large-v3',
-    summaryModel: 'llama-3.3-70b-versatile',
+    summaryModel: 'openai/gpt-oss-120b',
   },
 } as const;
 
@@ -106,6 +106,6 @@ export function configuredServices(): { label: string; on: boolean }[] {
   return [
     { label: 'Accounts (Supabase)', on: hasSupabase },
     { label: 'Transcription (Groq · whisper-large-v3)', on: hasGroq },
-    { label: 'Summarization (Groq · llama-3.3-70b)', on: hasGroq },
+    { label: 'Summarization (Groq · gpt-oss-120b)', on: hasGroq },
   ];
 }
