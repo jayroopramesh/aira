@@ -121,6 +121,17 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   the proxy above with the session token. Web audio via `src/services/audioCapture.ts` (MediaRecorder
   + file-picker fallback; native falls back to the mock). The `mock://` sample-audio path always uses
   the mock transcriber. No proxy configured → the on-device mock for both.
+- **Speaker separation** (`src/services/speakerSeparation.ts`, round 2 2026-08-17): Whisper does not
+  diarize, so this is a SEPARATE post-transcription pass over the SAME `/chat/completions` proxy route
+  (openai/gpt-oss-120b, same identifier guard) — never a Whisper feature. Only the capture screen's
+  "patient session" scribe mode runs it (`session/index.tsx`'s `Analysing`); "retrospective" assumes
+  a single therapist voice and skips it entirely. Labels turns Therapist/Client/Speaker 2 and is always
+  presented as machine-attributed, for review — never ground truth. No mock fallback on purpose: with
+  no live cloud session it degrades to "unavailable" (same honesty rule as `GroqTranscriptionService`
+  refusing rather than fabricating a transcript), it does not fake a local diarization. "Remove Speaker
+  2 + add as auxiliary notes" strips those turns from the transcript sent to the summarizer and stores
+  them as `DraftNote.auxiliaryNotes`, rendered as its own card on the review screen's Transcript tab —
+  never blended into the main transcript or sent to the summarizer.
 - **The fabrication line — canned content belongs to the `mock://` sample and to nothing else, on
   EVERY build.** Fabrication is the app INVENTING clinical text; drafting the clinician's own
   typed/pasted words on-device invents nothing. So the gate is *whose session it is*, never how the
@@ -208,6 +219,27 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   caseload row opens patterns, not the patient page), `ClientLink` sits as a SIBLING Pressable next to
   the row's own action, never nested inside it (nesting breaks web `<button>`-in-`<button>` semantics
   — see the `patterns/index.tsx` `ClientRowWide`/`ClientRowNarrow` split for the pattern).
+- **Note section order is S/O/A/P then Risk & Safety Check LAST** (round 2, 2026-08-17 — it used to sit
+  between Objective and Assessment). Both emitters order it this way — `buildDraft` in
+  `summarization.ts` and the `AMARA_DRAFT` sample in `fixtures.ts` — and every renderer (`NotePane`'s
+  SOAP array-map, its DAP layout, `noteToPlainText`'s copy-to-clipboard) reads `draft.sections` in
+  order or via `.find(s => s.isRisk)`, never a positional index, so reordering the two emitters is
+  sufficient; don't reintroduce an index-based read. A screened-and-not-present risk row reads **"Not
+  indicated"**, not "Denied" (fixtures, the mock scanner, and the live `SYSTEM_PROMPT`) — `deniesRisk`
+  in `sessionClient.ts` recognises "indicated" as a denial-equivalent alongside "present/reported/
+  endorsed/noted/raised/concerns" so the up-only risk floor treats the two wordings identically; old
+  notes and hand-typed "Denied" still parse correctly, this only added a second accepted spelling.
+- **"Generate from notes" (prescriptions rail) is once per note, not once per screen-mount**: the pull
+  is persisted onto the note itself (`DraftNote.prescriptionsGenerated` + the pulled items appended to
+  `prescriptions`) via `DataProvider.generatePrescriptions`, so the control stays disabled across a
+  reload instead of local `useState` resetting it. A fresh capture always mints a brand-new `DraftNote`
+  with the flag unset, which is what re-enables it on a re-record/new transcript — there is no separate
+  "did the transcript change" check to maintain.
+- **Re-record affordance** (`ReRecordAction` in `review.tsx`) returns to `/(app)/session?clientId=…`
+  (same route `today/ready.tsx` uses to begin a session) via `router.replace`. Two-step confirm only
+  when the current note is an unsigned draft — a fresh capture could rotate it out of the 3-notes-per-
+  client retention cap (C4) before it's signed; a signed note re-records with no confirm since nothing
+  there can be lost.
 - **Name vs. slug**: the user-visible product name is **Airava** (`app.json` `name`, the TopBar
   wordmark, onboarding/login lockups, the web `<title>`, and `public/manifest.json`). The shorthand
   **aira** stays for everything non-user-facing — repo, npm package, the `aira` `slug`/`scheme`, the
