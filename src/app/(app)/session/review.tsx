@@ -459,7 +459,7 @@ export default function ReviewNote() {
               rather than left as no-ops — the product's no-dead-promise rule. */}
           <Row style={{ justifyContent: 'space-between', maxWidth: 1320, width: '100%', alignSelf: 'center', flexWrap: 'wrap', gap: 10 }}>
             <CopyNoteButton draft={draft} />
-            <Button title="Sign off" variant="primary" onPress={sign} />
+            <SignOffButton onSign={sign} />
           </Row>
         </View>
       ) : (
@@ -1231,6 +1231,45 @@ function UnlockNoteButton({ onUnlock }: { onUnlock: () => void }) {
   );
 }
 
+/**
+ * Sign-off is a one-way door — the note becomes read-only the moment it is signed
+ * (`updateNoteSection` refuses a signed note), so a single stray tap must never be able to attest a
+ * note the clinician hasn't finished reviewing. First tap arms the control; the attestation only
+ * happens on an explicit "Confirm sign-off". The confirm is inline on the same control, not a
+ * modal — RN's Alert renders nothing on web — and Cancel is the only way back; the armed state
+ * never times out under the clinician's hands.
+ */
+function SignOffButton({ onSign }: { onSign: () => void }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const [confirming, setConfirming] = useState(false);
+  if (!confirming) {
+    return (
+      <Button
+        title="Sign off"
+        variant="primary"
+        leftIcon={<CheckIcon size={16} color={c.onBrand} />}
+        onPress={() => setConfirming(true)}
+      />
+    );
+  }
+  return (
+    <Row gap={10} style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+      <AppText variant="small" color="ink2">
+        Sign &amp; lock this note?
+      </AppText>
+      <Button title="Cancel" variant="secondary" onPress={() => setConfirming(false)} />
+      <Button
+        title="Confirm sign-off"
+        variant="primary"
+        leftIcon={<CheckIcon size={16} color={c.onBrand} />}
+        accessibilityLabel="Confirm sign-off — the note becomes read-only"
+        onPress={onSign}
+      />
+    </Row>
+  );
+}
+
 function SignOff({
   signed,
   onSign,
@@ -1271,7 +1310,7 @@ function SignOff({
       <Row gap={10}>
         {/* Editing happens inline per section — each section's Edit toggle persists on "Done" — so the
             former dead "Edit first" no-op was removed rather than left as a broken promise. */}
-        <Button title="Sign off" variant="primary" leftIcon={<CheckIcon size={16} color={c.onBrand} />} onPress={onSign} />
+        <SignOffButton onSign={onSign} />
       </Row>
     </Card>
   );

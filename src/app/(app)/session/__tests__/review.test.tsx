@@ -145,3 +145,21 @@ it('cancel disarms the unlock confirm without unlocking', () => {
   expect(mockUnlockNote).not.toHaveBeenCalled();
   expect(screen.queryByText('Confirm unlock')).toBeNull();
 });
+
+// Signing is a one-way door (the note becomes read-only), so a single tap must never attest the
+// note — the first press only arms the control, and only the explicit confirm calls signNote.
+it('requires an explicit confirm before signing', () => {
+  renderScreen();
+  fireEvent.press(screen.getAllByText('Sign off')[0]);
+  expect(mockSignNote).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByText('Confirm sign-off'));
+  expect(mockSignNote).toHaveBeenCalledTimes(1);
+});
+
+it('cancel disarms the sign-off confirm without signing', () => {
+  renderScreen();
+  fireEvent.press(screen.getAllByText('Sign off')[0]);
+  fireEvent.press(screen.getByText('Cancel'));
+  expect(mockSignNote).not.toHaveBeenCalled();
+  expect(screen.queryByText('Confirm sign-off')).toBeNull();
+});
