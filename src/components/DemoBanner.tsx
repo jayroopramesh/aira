@@ -29,10 +29,10 @@ export function DemoBanner() {
 
   const configured = demoServicesConfigured;
   const message = configured
-    ? `Demo mode · ${cloudBits.join(' and ')} use cloud services — ${
+    ? `Demo mode · ${cloudBits.join(' and ')} use cloud services. ${
         hasGroq
-          ? 'session audio text leaves this device for those steps.'
-          : 'transcription and summarization still run on-device.'
+          ? 'Session audio text leaves this device for those steps.'
+          : 'Transcription and summarization still run on-device.'
       } Your clinical notes stay on this device.`
     : 'Demo services not configured · running on-device mocks for accounts, transcription and summarization. Add keys in .env.local to use the cloud demo.';
 

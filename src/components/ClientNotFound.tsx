@@ -16,7 +16,7 @@ export function ClientNotFound() {
       <PageHeader
         eyebrow="Caseload"
         title="This client isn’t in your caseload"
-        subtitle="They may have been removed, or this link is stale. Nothing was lost — head back to your caseload to pick a client."
+        subtitle="They may have been removed, or this link is stale. Nothing was lost. Head back to your caseload to pick a client."
       />
       <Button title="Back to caseload" variant="primary" onPress={() => router.replace('/(app)/patterns')} />
     </Screen>

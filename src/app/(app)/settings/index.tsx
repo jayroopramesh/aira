@@ -88,7 +88,7 @@ export default function Settings() {
               Clear all data?
             </AppText>
             <AppText variant="small" color="ink2" style={{ marginTop: 4, lineHeight: 17 }}>
-              This deletes every note, transcript and prescription on this device — this cannot be undone.
+              This deletes every note, transcript and prescription on this device. This cannot be undone.
             </AppText>
             <View style={{ height: 12 }} />
             <Row gap={10} wrap>
@@ -102,7 +102,7 @@ export default function Settings() {
               Replace your data with the sample?
             </AppText>
             <AppText variant="small" color="ink2" style={{ marginTop: 4, lineHeight: 17 }}>
-              Loading sample data replaces every note, transcript and prescription on this device — this cannot be undone.
+              Loading sample data replaces every note, transcript and prescription on this device. This cannot be undone.
             </AppText>
             <View style={{ height: 12 }} />
             <Row gap={10} wrap>
@@ -117,7 +117,7 @@ export default function Settings() {
             </AppText>
             <AppText variant="small" color="ink2" style={{ marginTop: 4, lineHeight: 17 }}>
               This removes the sample clients and notes you haven’t touched. Any sample client you’ve captured a real
-              session for, or edited details for, is kept — only its sample-authored notes are removed.
+              session for, or edited details for, is kept. Only its sample-authored notes are removed.
             </AppText>
             <View style={{ height: 12 }} />
             <Row gap={10} wrap>
@@ -148,7 +148,7 @@ export default function Settings() {
                     ? `Removed ${undoResult.removedClients} sample client${undoResult.removedClients === 1 ? '' : 's'} you hadn’t touched.`
                     : 'No untouched sample clients to remove.'}
                   {undoResult.keptWithUserData
-                    ? ` Kept ${undoResult.keptWithUserData} sample client${undoResult.keptWithUserData === 1 ? '' : 's'} you added a session or edit to — only its sample-authored notes were removed.`
+                    ? ` Kept ${undoResult.keptWithUserData} sample client${undoResult.keptWithUserData === 1 ? '' : 's'} you added a session or edit to. Only its sample-authored notes were removed.`
                     : ''}
                 </AppText>
               </View>
@@ -173,7 +173,7 @@ export default function Settings() {
             <AppText variant="small" color="ink3" style={{ marginTop: 2, lineHeight: 17 }}>
               {demoServicesConfigured
                 ? 'Cloud services are configured for this build. Transcription and summarization send session text to the cloud; accounts run against Supabase.'
-                : 'No keys configured — accounts, transcription and summarization run on on-device mocks.'}
+                : 'No keys configured. Accounts, transcription and summarization run on on-device mocks.'}
             </AppText>
           </View>
         </Row>

@@ -156,7 +156,7 @@ export function ScaleChart({ scale, clientLabel = 'This client' }: { scale: Scal
       <View>
         <DotStrip readings={readings} unit={scale.unit} />
         <AppText variant="small" color="ink3" style={{ marginTop: 12 }}>
-          {scale.pts.length} readings — not enough for a trend yet.
+          {scale.pts.length} readings. Not enough for a trend yet.
         </AppText>
       </View>
     );

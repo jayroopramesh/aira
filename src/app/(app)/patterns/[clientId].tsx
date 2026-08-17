@@ -98,7 +98,7 @@ function NoReadingsYet({ client }: { client: Client }) {
         </AppText>
         <AppText variant="body" color="ink2" style={{ marginTop: 8, lineHeight: 22 }}>
           Trends appear once this client has a few scored sessions. A single visit is shown as a point, never a
-          trend line — the shape only means something with readings behind it.
+          trend line. The shape only means something with readings behind it.
         </AppText>
         {client.lastPlan.length ? (
           <>
@@ -140,7 +140,7 @@ function PatternsView({ clientId }: { clientId: string }) {
 
   const headline =
     clientId === 'amara'
-      ? 'Amara’s depression has halved since January — PHQ-9 fell from 18 to 9 across nine readings — with the steepest drop after sleep became the focus. Anxiety is following the same path.'
+      ? 'Amara’s depression has halved since January. PHQ-9 fell from 18 to 9 across nine readings, with the steepest drop after sleep became the focus. Anxiety is following the same path.'
       : `${client.name.split(' ')[0]}’s PHQ-9 latest reading is ${phq.latest}${phq.deltaSinceStart ? `, ${phq.deltaSinceStart < 0 ? 'down' : 'up'} ${Math.abs(phq.deltaSinceStart)} since intake` : ''}.`;
 
   return (
@@ -211,12 +211,12 @@ function PatternsView({ clientId }: { clientId: string }) {
             <Card>
               <AppText variant="h2">Sleep (self-report)</AppText>
               <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
-                Only <AppText variant="bodyStrong">{sleep.readings.length} readings</AppText> logged so far — shown as points, not a trend.
+                Only <AppText variant="bodyStrong">{sleep.readings.length} readings</AppText> logged so far. Shown as points, not a trend.
               </AppText>
               <View style={{ height: 14 }} />
               <DotStrip readings={sleep.readings} unit="h" />
               <AppText variant="small" color="ink3" style={{ marginTop: 12 }}>
-                {sleep.readings.length} readings — not enough for a trend yet.
+                {sleep.readings.length} readings. Not enough for a trend yet.
               </AppText>
             </Card>
           ) : null}
@@ -224,10 +224,10 @@ function PatternsView({ clientId }: { clientId: string }) {
           {client.naturalistic ? (
             <Card tone="sunken" elevation="none" style={{ backgroundColor: c.sand, borderColor: c.sandBd }}>
               <AppText variant="bodyStrong" tint={c.accent}>
-                On her mind — not on your report
+                On her mind, not on your report
               </AppText>
               <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
-                From {client.name.split(' ')[0]}’s <AppText variant="bodyStrong" color="ink2">companion app</AppText> — journal entries she chooses to share. Unsigned · self-reported · never blended with clinical scores.
+                From {client.name.split(' ')[0]}’s <AppText variant="bodyStrong" color="ink2">companion app</AppText>: journal entries she chooses to share. Unsigned · self-reported · never blended with clinical scores.
               </AppText>
               {client.naturalistic.map((n, i) => (
                 <View key={i} style={{ marginTop: 14 }}>
@@ -268,7 +268,7 @@ function TrajectoryCard({ clientId }: { clientId: string }) {
       </AppText>
       {!trajectory ? (
         <AppText variant="body" color="ink2" style={{ marginTop: 8, lineHeight: 22 }}>
-          At least {MIN_SESSIONS_FOR_TRAJECTORY} sessions needed to show a trajectory — recurring review codes,
+          At least {MIN_SESSIONS_FOR_TRAJECTORY} sessions needed to show a trajectory. Recurring review codes,
           repeated plan items, and the risk trend appear once there’s enough history.
         </AppText>
       ) : (
@@ -345,7 +345,7 @@ function TrajectoryCard({ clientId }: { clientId: string }) {
         </View>
       )}
       <AppText variant="small" color="ink3" style={{ marginTop: 14, fontSize: 11 }}>
-        Derived on this device from {notes.length} retained note{notes.length === 1 ? '' : 's'} — nothing here is inferred beyond what’s already in a signed note.
+        Derived on this device from {notes.length} retained note{notes.length === 1 ? '' : 's'}. Nothing here is inferred beyond what’s already in a signed note.
       </AppText>
     </Card>
   );
@@ -430,7 +430,7 @@ function RiskReview({ clientId }: { clientId: string }) {
           <Row gap={10} style={{ flex: 1, minWidth: 220, alignItems: 'flex-start' }}>
             <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: c.riskFill, marginTop: 7 }} />
             <AppText variant="h2" tint={c.risk} style={{ flex: 1 }}>
-              {safety ? safety.headline : 'Flagged acute — review this client’s session and safety plan'}
+              {safety ? safety.headline : 'Flagged acute. Review this client’s session and safety plan'}
             </AppText>
           </Row>
           {safety?.item9Positive ? (
@@ -482,7 +482,7 @@ function RiskReview({ clientId }: { clientId: string }) {
         <Card style={{ marginTop: theme.spacing.lg }}>
           <Eyebrow>Safety snapshot</Eyebrow>
           <AppText variant="body" color="ink2" style={{ marginTop: 10, lineHeight: 23 }}>
-            No structured risk snapshot is on file for this client yet — the risk lives in the session note
+            No structured risk snapshot is on file for this client yet. The risk lives in the session note
             Airava drafted. Open the note to review what was documented, then complete a safety plan to record
             coping steps and a trusted contact.
           </AppText>
@@ -499,7 +499,7 @@ function RiskReview({ clientId }: { clientId: string }) {
         <Button title="See history" variant="secondary" onPress={() => router.push(`/(app)/patterns/history?clientId=${client.id}`)} />
       </Row>
       <AppText variant="small" color="ink3" style={{ marginTop: 14 }}>
-        The same standing Escalate affordance sits top-right on every screen — this review state just brings the details forward.
+        The same standing Escalate affordance sits top-right on every screen. This review state just brings the details forward.
       </AppText>
     </Screen>
   );

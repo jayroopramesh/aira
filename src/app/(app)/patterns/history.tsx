@@ -27,7 +27,7 @@ export default function SessionHistory() {
       <PageHeader
         eyebrow={`${client.name} · chronological`}
         title="Session history"
-        subtitle="Signed clinical notes, screenings, and naturalistic entries — each labelled by type, never blurred."
+        subtitle="Signed clinical notes, screenings, and naturalistic entries, each labelled by type, never blurred."
       />
       <RetainedNotes clientId={client.id} />
       <HistoryTimeline entries={client.timeline} cards />

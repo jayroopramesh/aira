@@ -29,7 +29,7 @@ export default function PrepReminder() {
       <PageHeader
         eyebrow={`Prep · ${client.name} · 10:30`}
         title="Get ready for this session"
-        subtitle={`A gentle reminder drawn from the last signed plan (${lastDate}) — nothing to tick off, just what's worth carrying in.`}
+        subtitle={`A gentle reminder drawn from the last signed plan (${lastDate}). Nothing to tick off, just what's worth carrying in.`}
       />
 
       <Card>

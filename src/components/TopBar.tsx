@@ -62,7 +62,7 @@ export function TopBar({
         ) : (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Airava — go to your day board"
+            accessibilityLabel="Airava, go to your day board"
             onPress={() => router.navigate('/(app)/today')}
             style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
           >
@@ -74,7 +74,7 @@ export function TopBar({
           {/* Escalate — calm clay pill, standing on every screen. */}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Escalate — open calm options"
+            accessibilityLabel="Escalate, open calm options"
             onPress={() => escalate.open()}
             style={({ pressed }) => ({
               flexDirection: 'row',

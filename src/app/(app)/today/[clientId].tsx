@@ -331,7 +331,7 @@ function EhrCard() {
       ) : null}
 
       <AppText variant="small" color="ink3" style={{ marginTop: 12, lineHeight: 16, fontSize: 11 }}>
-        Mock connection for this prototype — no external system is contacted and nothing leaves this device.
+        Mock connection for this prototype. No external system is contacted and nothing leaves this device.
       </AppText>
     </Card>
   );

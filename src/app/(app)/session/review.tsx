@@ -32,7 +32,7 @@ function noteToPlainText(draft: DraftNote): string {
   const isSigned = draft.status === 'signed';
   const lines: string[] = isSigned
     ? [draft.sessionLabel, '']
-    : ['DRAFT — not signed; review before entering into the record.', '', draft.sessionLabel, ''];
+    : ['DRAFT: not signed; review before entering into the record.', '', draft.sessionLabel, ''];
   for (const s of draft.sections) {
     lines.push(s.isRisk ? s.title : `${s.marker} — ${s.title}`);
     for (const p of s.body) lines.push(p);
@@ -99,11 +99,11 @@ function CopyNoteButton({ draft }: { draft: DraftNote }) {
       />
       {!canCopy ? (
         <AppText variant="small" color="ink3" style={{ marginTop: 4, fontSize: 11, maxWidth: 260, lineHeight: 15 }}>
-          Copy isn’t available on this device — open the note on web to copy it into your record.
+          Copy isn’t available on this device. Open the note on web to copy it into your record.
         </AppText>
       ) : state === 'failed' ? (
         <AppText variant="small" tint={c.caution} style={{ marginTop: 4, fontSize: 11, maxWidth: 260, lineHeight: 15 }}>
-          Couldn’t copy — your browser blocked clipboard access. Select the note text and copy it manually.
+          Couldn’t copy. Your browser blocked clipboard access. Select the note text and copy it manually.
         </AppText>
       ) : null}
     </View>
@@ -356,14 +356,14 @@ export default function ReviewNote() {
             {foldedIntoExisting ? (
               <IdentityNotice tone="brand" heading="You already see this client.">
                 This Emirates ID is already on your caseload, so the session was added to their existing
-                record instead of creating a second — this is that record.
+                record instead of creating a second. This is that record.
               </IdentityNotice>
             ) : null}
 
             {foldedAndSavedTheId ? (
               <IdentityNotice tone="brand" heading="You already see this client.">
-                The session was added to {client?.name ? `${client.name}’s` : 'their'} existing record — matched
-                by name — and the Emirates ID you entered was saved onto it. If that isn’t who you saw, check
+                The session was added to {client?.name ? `${client.name}’s` : 'their'} existing record, matched
+                by name, and the Emirates ID you entered was saved onto it. If that isn’t who you saw, check
                 the name and the ID.
               </IdentityNotice>
             ) : null}
@@ -371,7 +371,7 @@ export default function ReviewNote() {
             {idOnFileUnderAnotherName ? (
               <IdentityNotice tone="caution" strong heading="Check the Emirates ID.">
                 That Emirates ID is already on your caseload under a different name, so this session was kept
-                as a separate record rather than added to theirs. Check the ID for a mistake — this note stays
+                as a separate record rather than added to theirs. Check the ID for a mistake. This note stays
                 on its own record either way.
               </IdentityNotice>
             ) : null}
@@ -379,7 +379,7 @@ export default function ReviewNote() {
             {mintedDespiteSameName ? (
               <IdentityNotice tone="caution" heading="Check whether this is the same client.">
                 {client?.name ? `A client named ${client.name}` : 'A client with this name'} is already on your
-                caseload — under a different Emirates ID, or more than one client shares this name — so this
+                caseload (under a different Emirates ID, or more than one client shares this name), so this
                 session was saved as a separate record rather than added to theirs.
               </IdentityNotice>
             ) : null}
@@ -538,7 +538,7 @@ function NotePane({
               </AppText>
             </View>
             <AppText variant="bodyStrong" tint={c.caution} style={{ flex: 1 }}>
-              Review your note before you sign — nothing is authoritative until you do.
+              Review your note before you sign. Nothing is authoritative until you do.
             </AppText>
           </Row>
         </Card>
@@ -913,7 +913,7 @@ function TranscriptPane({
       <Card tone="sunken" elevation="none" radius="md">
         <AppText variant="body" color="ink2">
           No transcript is stored for this note. Sample data and notes captured before transcripts were
-          saved don’t include the session text — nothing is shown here rather than standing in a placeholder
+          saved don’t include the session text. Nothing is shown here rather than standing in a placeholder
           for the real session.
         </AppText>
       </Card>
@@ -924,18 +924,18 @@ function TranscriptPane({
     <View>
       <AppText variant="small" color="ink3" style={{ marginBottom: 10 }}>
         {(transcriptMixedProvenance
-          ? 'This transcript combines more than one recording, added at different times, and they weren’t all produced the same way — each "Added recording" line below says whether that part was transcribed in the cloud or typed by hand.'
+          ? 'This transcript combines more than one recording, added at different times, and they weren’t all produced the same way. Each "Added recording" line below says whether that part was transcribed in the cloud or typed by hand.'
           : transcriptFromCloud === true
-          ? 'The transcript of this session, kept on this device. The audio was sent to the cloud (Groq) to transcribe, then deleted — only this text remains. There is no on-device de-identification hop in demo mode.'
+          ? 'The transcript of this session, kept on this device. The audio was sent to the cloud (Groq) to transcribe, then deleted. Only this text remains. There is no on-device de-identification hop in demo mode.'
           : transcriptFromCloud === false && audioLeftDevice === true
-            ? 'This text was entered by the clinician, not produced by transcription — the audio was sent to the cloud (Groq) to transcribe, but no transcript came back. The recording has since been deleted, so this typed text is the only record of the session.' +
+            ? 'This text was entered by the clinician, not produced by transcription. The audio was sent to the cloud (Groq) to transcribe, but no transcript came back. The recording has since been deleted, so this typed text is the only record of the session.' +
               (draftedInCloud === true
                 ? ' The note was drafted in the cloud, so this text was sent to Groq to draft from (see the demo banner).'
                 : '')
             : transcriptFromCloud === false && draftedInCloud === true
-              ? 'The transcript of this session, produced and kept on this device — the audio was never sent for transcription. The note was drafted in the cloud, so this text was sent to Groq to draft from (see the demo banner). There is no on-device de-identification hop in demo mode.'
+              ? 'The transcript of this session, produced and kept on this device. The audio was never sent for transcription. The note was drafted in the cloud, so this text was sent to Groq to draft from (see the demo banner). There is no on-device de-identification hop in demo mode.'
               : transcriptFromCloud === false && draftedInCloud === false
-                ? 'The transcript of this session, produced and kept on this device — nothing was sent anywhere, and no de-identification step runs.'
+                ? 'The transcript of this session, produced and kept on this device. Nothing was sent anywhere, and no de-identification step runs.'
                 : 'The transcript of this session, kept on this device. This note doesn’t record where it was transcribed or drafted, so nothing is claimed either way.') +
           (signed ? '' : ' Check the note against it before signing.')}
       </AppText>
@@ -948,7 +948,7 @@ function TranscriptPane({
       {aux ? (
         <View style={{ marginTop: theme.spacing.lg }}>
           <AppText variant="small" color="ink3" style={{ marginBottom: 10, lineHeight: 17 }}>
-            A second speaker was identified and removed from the transcript above (machine-attributed —
+            A second speaker was identified and removed from the transcript above (machine-attributed,
             for review). Their turns are kept here as auxiliary notes rather than folded into the session.
           </AppText>
           <Card tone="sunken" elevation="none" radius="md" style={{ backgroundColor: c.cautionBg, borderColor: c.cautionBg }}>
@@ -967,7 +967,7 @@ function OtherPane({ tab }: { tab: Tab }) {
     Context:
       'Prior-session context Airava grounded the draft against: last plan, latest measures, and standing safety items. Companion-app journal entries are shown separately and never blended with clinical scores.',
     '+ Screening tools':
-      'Generated outputs (e.g. a PHQ-9 / GAD-7 screening summary) appear here as sibling tabs on the same session — added on demand, never overwriting the note.',
+      'Generated outputs (e.g. a PHQ-9 / GAD-7 screening summary) appear here as sibling tabs on the same session. Added on demand, never overwriting the note.',
   };
   return (
     <Card tone="sunken" elevation="none" radius="md">
@@ -1145,7 +1145,7 @@ function PrescriptionsRail({ draft, clientId, noteIndex }: { draft: DraftNote; c
         </Row>
       ))}
       <AppText variant="small" color="ink3" style={{ marginTop: 2, lineHeight: 17 }}>
-        Your prescriptions — write them, or <AppText variant="bodyStrong" color="ink3">Generate from notes</AppText> to pull actions from the Plan section. Tick as you assign.
+        Your prescriptions: write them, or <AppText variant="bodyStrong" color="ink3">Generate from notes</AppText> to pull actions from the Plan section. Tick as you assign.
       </AppText>
     </View>
   );
@@ -1249,7 +1249,7 @@ function StitchedAudioPlayer({ segments, tint }: { segments: AudioSegment[]; tin
           playing
             ? 'Pause playback'
             : multi
-              ? `Play the stitched recording — ${segments.length} segments in order`
+              ? `Play the stitched recording: ${segments.length} segments in order`
               : 'Play the recording'
         }
         style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
@@ -1262,19 +1262,19 @@ function StitchedAudioPlayer({ segments, tint }: { segments: AudioSegment[]; tin
             {playing
               ? 'Pause'
               : multi
-                ? `Play the stitched recording — the original plus ${segments.length - 1} added segment${segments.length - 1 === 1 ? '' : 's'}, in order`
+                ? `Play the stitched recording: the original plus ${segments.length - 1} added segment${segments.length - 1 === 1 ? '' : 's'}, in order`
                 : 'Play the recording'}
           </AppText>
         </Row>
       </Pressable>
       {playing ? (
         <AppText variant="small" color="ink3" style={{ marginTop: 4, fontSize: 11, marginLeft: 20 }}>
-          Playing {index + 1} of {segments.length} — {segments[index].label}
+          Playing {index + 1} of {segments.length} · {segments[index].label}
         </AppText>
       ) : null}
       {state === 'blocked' ? (
         <AppText variant="small" tint={c.caution} style={{ marginTop: 4, fontSize: 11, marginLeft: 20, lineHeight: 15 }}>
-          Couldn’t play — your browser blocked it, or this audio was only kept for the tab that recorded it and
+          Couldn’t play. Your browser blocked it, or this audio was only kept for the tab that recorded it and
           this is a different one.
         </AppText>
       ) : null}
@@ -1325,8 +1325,8 @@ function AudioTrust({ audioLeftDevice, clientId, noteIndex }: { audioLeftDevice?
             ? 'You chose to keep this recording. A copy was sent to the cloud (Groq) to transcribe; the copy you kept stays on this device and makes replay-with-notes possible for this session.'
             : 'You chose to keep this recording. It stays on this device and never leaves it. Keeping the audio is what makes replay-with-notes possible for this session.'
           : audioWentToCloud
-            ? 'This recording was sent to the cloud (Groq) to transcribe, then deleted — deletion is the default after every session. Only the draft you reviewed remains.'
-            : 'The recording never left this device, and it’s now gone — deletion is the default after every session. Only the draft you reviewed remains.'}
+            ? 'This recording was sent to the cloud (Groq) to transcribe, then deleted. Deletion is the default after every session. Only the draft you reviewed remains.'
+            : 'The recording never left this device, and it’s now gone. Deletion is the default after every session. Only the draft you reviewed remains.'}
       </AppText>
 
       <Pressable
@@ -1366,7 +1366,7 @@ function AudioTrust({ audioLeftDevice, clientId, noteIndex }: { audioLeftDevice?
               <PlayIcon size={13} color={c.ink3} />
             </View>
             <AppText variant="small" color="ink3" style={{ flex: 1, fontSize: 11.5, lineHeight: 16 }}>
-              Nothing to play back — either this session used the demo sample, or this browser tab has
+              Nothing to play back. Either this session used the demo sample, or this browser tab has
               reloaded since it was recorded (kept audio only lasts the tab that captured it).
             </AppText>
           </Row>
@@ -1398,7 +1398,7 @@ function UnlockNoteButton({ onUnlock }: { onUnlock: () => void }) {
         <Button
           title="Confirm unlock"
           variant="secondary"
-          accessibilityLabel="Confirm unlock — the note returns to an unsigned draft"
+          accessibilityLabel="Confirm unlock. The note returns to an unsigned draft"
           onPress={onUnlock}
         />
       </Row>
@@ -1438,7 +1438,7 @@ function SignOffButton({ onSign }: { onSign: () => void }) {
         title="Confirm sign-off"
         variant="primary"
         leftIcon={<CheckIcon size={16} color={c.onBrand} />}
-        accessibilityLabel="Confirm sign-off — the note becomes read-only"
+        accessibilityLabel="Confirm sign-off. The note becomes read-only"
         onPress={onSign}
       />
     </Row>
@@ -1475,7 +1475,7 @@ function ReRecordAction({ clientId, signed }: { clientId: string; signed: boolea
   return (
     <View>
       <AppText variant="small" color="ink2">
-        Start a new recording for this client? This draft stays saved as one of your recent notes — but
+        Start a new recording for this client? This draft stays saved as one of your recent notes, but
         it hasn’t been signed yet, and only the {MAX_NOTES_PER_CLIENT} most recent notes are kept per
         client, so it can be rotated out later. Sign or note it down first if you need to keep it front
         and center.
@@ -1485,7 +1485,7 @@ function ReRecordAction({ clientId, signed }: { clientId: string; signed: boolea
         <Button
           title="Start new recording"
           variant="secondary"
-          accessibilityLabel="Confirm re-record — returns to capture for this client"
+          accessibilityLabel="Confirm re-record. Returns to capture for this client"
           onPress={goRecord}
         />
       </Row>
@@ -1516,7 +1516,7 @@ function ContinueRecordingAction({ clientId, noteIndex, signed }: { clientId: st
       title="Continue recording"
       variant="secondary"
       leftIcon={<PlusIcon size={15} color={c.ink} />}
-      accessibilityLabel="Continue recording — record more and append it to this note"
+      accessibilityLabel="Continue recording. Record more and append it to this note"
       onPress={() => router.replace(`/(app)/session?clientId=${encodeURIComponent(clientId)}&mode=append&note=${noteIndex}`)}
     />
   );
@@ -1556,7 +1556,7 @@ function SignOff({
     <Card tone="elevated" radius="md" elevation="sm">
       <AppText variant="bodyStrong">Sign-off</AppText>
       <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
-        You are the final authority. Signing marks this note authoritative and makes it read-only. You can Unlock it later to make it an editable draft again — a full reopen, not a lightweight addendum.
+        You are the final authority. Signing marks this note authoritative and makes it read-only. You can Unlock it later to make it an editable draft again: a full reopen, not a lightweight addendum.
       </AppText>
       <View style={{ height: 14 }} />
       <Row gap={10}>
