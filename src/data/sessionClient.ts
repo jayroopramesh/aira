@@ -436,7 +436,7 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
   // "Not raised / not addressed / deferred" are NEUTRAL: the topic simply didn't come up. They are
   // neither a disclosure nor a clinical denial, so they must land on "watch" — without them the
   // not-denied branch below would read a benign mock row ("Not raised this session", or the
-  // "Not explicitly addressed" the mock emits on its self-harm branch) as disclosed ideation.
+  // "Not explicitly addressed" that older mock drafts carried on the self-harm branch) as disclosed ideation.
   // These describe the STATUS OF THE SCREENING, not what a client did: 'not disclosed'/'not reported'
   // were dropped because they equally describe ordinary content ("not disclosed to family").
   // 'Not applicable' / 'N/A' are the same non-answer written two ways; both must land on the same

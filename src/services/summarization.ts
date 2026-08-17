@@ -247,7 +247,10 @@ function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafet
   // often as the bare "kill myself" / "hurt myself". An exact-substring list silently missed every
   // one of those — and a miss here doesn't degrade gracefully, it makes the row ASSERT "Not raised
   // this session" against a transcript that raised it. Pronouns mirror the denial regexes below.
-  const REFLEXIVE = `(?:her|him|my|them)sel(?:f|ves)`;
+  // Second person is in the set because a session transcript is DIALOGUE: the screening question
+  // itself ("any thoughts of harming yourself?") and a therapist reflecting a disclosure back
+  // ("you said you had been cutting yourself") are how these topics most often appear on the page.
+  const REFLEXIVE = `(?:her|him|my|them|your)sel(?:f|ves)`;
   const ideation =
     has(
       'suicid',
@@ -263,7 +266,7 @@ function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafet
       'wasnt here anymore',
     ) ||
     new RegExp(`\\bkill(?:ing|ed|s)?\\s+${REFLEXIVE}`).test(s) ||
-    /\bend(?:ing|ed|s)?\s+(?:my|her|his|their)\s+(?:own\s+)?li(?:fe|ves)\b/.test(s) ||
+    /\bend(?:ing|ed|s)?\s+(?:my|her|his|their|your)\s+(?:own\s+)?li(?:fe|ves)\b/.test(s) ||
     /\bend(?:ing|ed|s)?\s+it\s+all\b/.test(s);
   const selfHarm =
     has('self-harm', 'self harm') || new RegExp(`\\b(?:cut|harm|hurt)(?:ting|ing|ed|s)?\\s+${REFLEXIVE}`).test(s);
@@ -272,7 +275,14 @@ function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafet
   // thought about hurting myself") — "never" is a denial word here for the same reason "no"/"not"
   // are: without it, an explicit lifetime denial read as an ordinary mention and flagged.
   const deniedNear = (cues: string) =>
-    new RegExp(`\\b(?:denied|denies)\\b[^.?!]{0,40}?(?:${cues})|\\b(?:no|not|never|without(?: any)?)\\s+(?:[\\w'-]+\\s+){0,2}(?:${cues})`).test(s);
+    new RegExp(`\\b(?:denied|denies)\\b[^.?!]{0,40}?(?:${cues})|\\b(?:no|not|never|without(?: any)?)\\s+(?:[\\w'-]+\\s+){0,2}(?:${cues})`).test(s) ||
+    // A screening QUESTION answered with a denial: "…any thoughts of harming yourself?" "No, nothing
+    // like that." The cue sits in the therapist's question, so no denial word precedes it — the denial
+    // is the answer that follows. The window cannot cross the question mark ([^.?!] excludes it), so
+    // only the reply to the cue's own question counts, optionally past a speaker label ("client:").
+    // Only unambiguous denial openers clear ("no" / "nope" / "never" / "nothing" / "not at all" /
+    // "not really"); a hedge like "not sure" keeps the flag, which is the safe direction.
+    new RegExp(`(?:${cues})[^.?!]{0,80}\\?\\s*(?:[a-z][a-z0-9 .'-]{0,24}:\\s*)?(?:no|nope|never|nothing|not at all|not really)\\b`).test(s);
   // A denial phrase is not enough to clear a cue: clinicians routinely deny the PLAN while recording
   // the ideation ("denies plan or intent; reports fleeting suicidal thoughts"), and a denial of
   // plan/intent/means must NEVER downgrade disclosed ideation. So a denial only clears a cue when
@@ -305,23 +315,33 @@ function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafet
     !disclosed && deniedNear(`self[- ]?harm|(?:cut|harm|hurt)(?:ting|ing|ed|s)? ${REFLEXIVE}`);
   const REVIEW = 'Possible reference in transcript — clinician to review and confirm';
   const NOT_INDICATED = 'Not indicated on an automated read of the transcript — clinician to confirm';
+  const NOT_RAISED = 'Not raised this session';
 
-  if (ideation && !ideationDenied) {
+  // Each row derives from ITS OWN cue's (raised, denied) state, and the summary names only what
+  // actually fired. Hardcoding rows per branch is how the card contradicted itself: the joint
+  // "Ideation / self-harm appear to have been raised and denied" summary sat directly above a
+  // "Self-harm: Not raised this session" row whenever only one topic was raised, and the acute
+  // branch asserted the other topic was "Not explicitly addressed" even when it had been raised
+  // and denied in the same transcript.
+  const siRow = ideation ? (ideationDenied ? NOT_INDICATED : REVIEW) : NOT_RAISED;
+  const shRow = selfHarm ? (selfHarmDenied ? NOT_INDICATED : REVIEW) : NOT_RAISED;
+
+  if (siRow === REVIEW) {
     return {
       summary: 'A possible reference to suicidal ideation was picked up in the transcript — review and confirm with the client.',
       rows: [
         { label: 'Suicidal ideation', value: REVIEW },
-        { label: 'Self-harm', value: selfHarm && !selfHarmDenied ? REVIEW : 'Not explicitly addressed' },
+        { label: 'Self-harm', value: shRow },
         { label: 'Safety plan', value: 'Review or establish a safety plan this session' },
       ],
       level: 'acute',
     };
   }
-  if (selfHarm && !selfHarmDenied) {
+  if (shRow === REVIEW) {
     return {
       summary: 'A possible reference to self-harm was picked up in the transcript — review and confirm with the client.',
       rows: [
-        { label: 'Suicidal ideation', value: 'Not explicitly addressed' },
+        { label: 'Suicidal ideation', value: siRow },
         { label: 'Self-harm', value: REVIEW },
         { label: 'Safety plan', value: 'Review coping steps this session' },
       ],
@@ -329,11 +349,17 @@ function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafet
     };
   }
   if (ideation || selfHarm) {
+    const denied =
+      ideation && selfHarm
+        ? 'Ideation and self-harm appear'
+        : ideation
+          ? 'Suicidal ideation appears'
+          : 'Self-harm appears';
     return {
-      summary: 'Ideation / self-harm appear to have been raised and denied in this session — confirm with the client.',
+      summary: `${denied} to have been raised and denied in this session — confirm with the client.`,
       rows: [
-        { label: 'Suicidal ideation', value: ideationDenied ? NOT_INDICATED : 'Not raised this session' },
-        { label: 'Self-harm', value: selfHarmDenied ? NOT_INDICATED : 'Not raised this session' },
+        { label: 'Suicidal ideation', value: siRow },
+        { label: 'Self-harm', value: shRow },
         { label: 'Safety plan', value: 'Not discussed this session' },
       ],
       level: 'clear',
@@ -342,8 +368,8 @@ function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafet
   return {
     summary: 'No suicidal ideation or self-harm was raised in this session on an automated review.',
     rows: [
-      { label: 'Suicidal ideation', value: 'Not raised this session' },
-      { label: 'Self-harm', value: 'Not raised this session' },
+      { label: 'Suicidal ideation', value: NOT_RAISED },
+      { label: 'Self-harm', value: NOT_RAISED },
       { label: 'Safety plan', value: 'Not discussed this session' },
     ],
     level: 'watch',

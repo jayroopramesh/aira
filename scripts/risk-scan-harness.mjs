@@ -17,6 +17,13 @@
  * a pure denial is never flagged, a denial-of-plan alongside a disclosure still flags, and a benign
  * transcript still reads "Not raised this session" (never a fabricated denial).
  *
+ * Round 4b (2026-08-18) pins the dialogue-shaped misses: second-person reflexives ("harming
+ * yourself" — the standard screening question and a therapist reflecting a disclosure back) are
+ * visible to the scanner; a screening question answered with a plain denial ("No, nothing like
+ * that") reads as raised-and-denied, not as a disclosure and not as "Not raised"; and every row +
+ * the summary derive from each cue's own state, so the card can never claim a topic was raised and
+ * denied while its row says "Not raised this session".
+ *
  * Run (Node ≥ 22.13, e.g. ~/.cache/fm-node/node-v22.23.2-darwin-arm64/bin/node):
  *   node --experimental-strip-types scripts/risk-scan-harness.mjs
  * Exits non-zero on the first failed assertion.
@@ -111,6 +118,46 @@ console.log('— the disclosed-guard still wins over a partial denial —');
 {
   const r = await scan('She described hurting herself last week but denies any thoughts of suicide.');
   check('disclosed self-harm alongside an SI denial still flags', r.level === 'acute' || r.level === 'elevated', `got ${r.level}`);
+}
+
+console.log('— dialogue: second-person phrasing is visible (round 4b) —');
+{
+  const r = await scan('Therapist: You said last week you had been cutting yourself again. Client: Yes, twice, after the exams.');
+  check('"cutting yourself" reflected by the therapist → elevated', r.level === 'elevated', `got ${r.level}`);
+  check('  …self-harm row asks for review, not "Not raised"', r.sh === REVIEW, `got "${r.sh}"`);
+}
+{
+  const r = await scan(
+    'Therapist: Have you had any thoughts of harming yourself, or that life is not worth living?\nClient: No, nothing like that. It is loneliness, not wanting to die.'
+  );
+  check('screening question answered "No, nothing like that" → clear', r.level === 'clear', `got ${r.level}`);
+  check('  …SI row says Not indicated', r.si === NOT_INDICATED, `got "${r.si}"`);
+  check('  …self-harm row says Not indicated, never "Not raised" for a raised topic', r.sh === NOT_INDICATED, `got "${r.sh}"`);
+  check(
+    '  …summary names both topics as raised and denied',
+    r.summary === 'Ideation and self-harm appear to have been raised and denied in this session — confirm with the client.',
+    `got "${r.summary}"`
+  );
+}
+{
+  const r = await scan('Therapist: Have you thought about killing yourself?\nClient: Yes. Sometimes at night.');
+  check('screening question answered "Yes" still flags → acute', r.level === 'acute', `got ${r.level}`);
+}
+
+console.log('— the card never contradicts itself (round 4b) —');
+{
+  const r = await scan('She has never had thoughts of suicide, and we did not dwell there.');
+  check(
+    'single-topic denial: summary names only ideation',
+    r.summary === 'Suicidal ideation appears to have been raised and denied in this session — confirm with the client.',
+    `got "${r.summary}"`
+  );
+  check('  …and the self-harm row honestly says Not raised', r.sh === NOT_RAISED, `got "${r.sh}"`);
+}
+{
+  const r = await scan('I keep thinking about killing myself when the panic gets bad. Have I ever cut myself? No, never that.');
+  check('acute branch: raised-and-denied self-harm reads Not indicated, not "Not explicitly addressed"', r.sh === NOT_INDICATED, `got "${r.sh}"`);
+  check('  …while ideation stays under review at acute', r.level === 'acute' && r.si === REVIEW, `level ${r.level}, si "${r.si}"`);
 }
 
 console.log('— benign transcripts stay honestly neutral —');
