@@ -1,4 +1,4 @@
-import { Client, DayDashboard, DraftNote, Reading } from './types';
+import { Client, DayDashboard, DraftNote, Reading, ReviewCode, RiskLevel } from './types';
 
 /* =========================================================================
  * Amara K. — the primary longitudinal dataset (design-direction cohort).
@@ -471,6 +471,7 @@ export const AMARA_DRAFT: DraftNote = {
   sessionLabel: 'Session 5 — 12 Aug',
   sourceLine: 'Sample note · fictional session, no real PHI — nothing was transcribed',
   status: 'draft',
+  riskLevel: 'watch',
   // SOAP order (round-2 change #9, revised captain round 2 2026-08-17): Subjective · Objective ·
   // Assessment · Plan · Risk & Safety Check. Risk is its own always-present section, now LAST so the
   // clinical narrative (S/O/A/P) reads before the routine safety check.
@@ -544,4 +545,626 @@ export const AMARA_DRAFT: DraftNote = {
     { id: 'rx1', text: 'Sleep-hygiene handout + consistent wake time', source: 'added by you', done: false },
     { id: 'rx2', text: 'Daily worry-window (10 min, same time)', source: 'added by you', done: false },
   ],
+};
+
+/* =========================================================================
+ * Round-2 item 2/3: longitudinal history. Every client below gets up to
+ * MAX_NOTES_PER_CLIENT (5) real DraftNote sessions — not just Amara — so the patterns/[clientId]
+ * trajectory view (recurring review codes, repeated plan items, risk tier over time) has real
+ * per-client history to derive from, rather than one client's data standing in for everyone's.
+ * A client is never given more notes than their `sessionNumber` — Daniel (2 real sessions) is left at
+ * 2 on purpose: it's the fixture's own demonstration of the "at least 3 sessions" trajectory
+ * empty-state, not an oversight. `sampleOrigin` is stamped uniformly by `buildSampleSnapshot`, not here.
+ * ========================================================================= */
+
+/**
+ * One lighter-weight historical session note for the supporting caseload — enough real structure
+ * (risk rows, reviewCodes, prescriptions, riskLevel) for trajectory derivation, without Amara/Leah's
+ * full bespoke prose. `status: 'signed'` with no `signedBy` (a past session) — the review screen
+ * already falls back to the signed-in clinician's name when that's absent. Section order is
+ * S/O/A/P/Risk (captain round 2, 2026-08-17 — Risk & Safety Check renders LAST), matching AMARA_DRAFT.
+ */
+function note(opts: {
+  clientId: string;
+  sessionNumber: number;
+  dateLabel: string;
+  subjective: string;
+  riskRows: { label: string; value: string }[];
+  riskBody: string;
+  assessment: string;
+  planBullets: string[];
+  reviewCodes: ReviewCode[];
+  prescriptions: { text: string }[];
+  riskLevel: RiskLevel;
+  phq9: number;
+}): DraftNote {
+  const idBase = `${opts.clientId}-s${opts.sessionNumber}`;
+  return {
+    sessionLabel: `Session ${opts.sessionNumber} — ${opts.dateLabel}`,
+    sourceLine: 'Sample note · fictional session, no real PHI — nothing was transcribed',
+    status: 'signed',
+    signedAt: opts.dateLabel,
+    riskLevel: opts.riskLevel,
+    sections: [
+      { id: `${idBase}-s`, marker: 'S', title: 'Subjective', body: [opts.subjective] },
+      { id: `${idBase}-o`, marker: 'O', title: 'Objective', hasMeasures: true, body: [`PHQ-9 re-administered this session: ${opts.phq9}.`] },
+      { id: `${idBase}-a`, marker: 'A', title: 'Assessment', body: [opts.assessment] },
+      { id: `${idBase}-p`, marker: 'P', title: 'Plan', body: [], bullets: opts.planBullets },
+      { id: `${idBase}-risk`, marker: 'risk', title: 'Risk & Safety Check', isRisk: true, rows: opts.riskRows, body: [opts.riskBody] },
+    ],
+    measures: [{ measure: 'PHQ-9', today: String(opts.phq9), prev: '—', band: '—' }],
+    reviewCodes: opts.reviewCodes,
+    prescriptions: opts.prescriptions.map((p, i) => ({ id: `${idBase}-rx${i + 1}`, text: p.text, source: 'from Plan & Next Steps', done: false })),
+  };
+}
+
+const NOT_INDICATED_ROWS = [
+  { label: 'Passive ideation (PHQ-9 item 9)', value: 'Not indicated' },
+  { label: 'Plan / intent / means', value: 'Not indicated' },
+];
+
+/* ---- Amara: sessions 1-4 (session 5 is the existing AMARA_DRAFT, above). ---- */
+
+const AMARA_S1 = note({
+  clientId: 'amara',
+  sessionNumber: 1,
+  dateLabel: '12 Jan',
+  subjective:
+    'Amara presented for an initial intake session, describing worsening low mood, disrupted sleep, and a persistent sense of falling behind her peers as a first-generation student since the start of term. Low motivation for coursework and early-morning waking most nights.',
+  riskRows: [{ label: 'Passive ideation (PHQ-9 item 9)', value: 'Not present' }, { label: 'Plan / intent / means', value: 'Not indicated' }, { label: 'Protective factors', value: 'Friends, faith, academic goals' }],
+  riskBody: 'No risk indicators identified at intake.',
+  assessment:
+    'Presentation consistent with an adjustment response with mixed anxious and depressive features, precipitated by academic pressure and the transition to university life. Disrupted sleep is a secondary maintaining factor.',
+  planBullets: ['Start a nightly sleep log', 'Psychoeducation on adjustment stress and sleep hygiene', 'Book Session 2 in two weeks'],
+  reviewCodes: [
+    { code: 'F43.22', label: 'Adjustment disorder, mixed anxiety & depressed mood', relevance: 'high' },
+    { code: 'G47.00', label: 'Insomnia, unspecified', relevance: 'med' },
+  ],
+  prescriptions: [{ text: 'Start a nightly sleep log' }],
+  riskLevel: 'elevated',
+  phq9: 18,
+});
+
+const AMARA_S2 = note({
+  clientId: 'amara',
+  sessionNumber: 2,
+  dateLabel: '23 Feb',
+  subjective:
+    'Amara reported a difficult few weeks, with passing thoughts of not wanting to wake up on her worst nights, alongside ongoing academic pressure and disrupted sleep. Denied any plan, intent, or means, and identified friends and faith as active protective factors.',
+  riskRows: [
+    { label: 'Passive ideation (PHQ-9 item 9)', value: 'Endorsed — no plan/intent/means' },
+    { label: 'Plan / intent / means', value: 'Not indicated' },
+    { label: 'Protective factors', value: 'Strong — friends, faith, goals' },
+  ],
+  riskBody:
+    'Safety check completed this session; passive ideation endorsed with no plan, intent, or means. Supports reviewed and confirmed in place; safety plan drafted collaboratively. Standing item to re-screen every session going forward.',
+  assessment:
+    'Adjustment disorder, mixed anxiety & depressed mood, with newly disclosed passive ideation — a standing review item. Sleep disruption and academic stress remain the primary drivers.',
+  planBullets: ['Continue sleep log', 'Draft and review a brief safety plan', 'Re-screen passive ideation next session (now routine)'],
+  reviewCodes: [
+    { code: 'F43.22', label: 'Adjustment disorder, mixed anxiety & depressed mood', relevance: 'high' },
+    { code: 'Z63.8', label: 'Other specified problems related to primary support group', relevance: 'med' },
+    { code: 'G47.00', label: 'Insomnia, unspecified', relevance: 'med' },
+  ],
+  prescriptions: [{ text: 'Continue nightly sleep log' }, { text: 'Safety plan drafted this session' }],
+  riskLevel: 'elevated',
+  phq9: 15,
+});
+
+const AMARA_S3 = note({
+  clientId: 'amara',
+  sessionNumber: 3,
+  dateLabel: '8 Mar',
+  subjective:
+    'Amara described feeling somewhat steadier this fortnight, with passive ideation not present since the last session. First-generation pressure and a sense of falling behind remain prominent themes.',
+  riskRows: [
+    { label: 'Passive ideation (PHQ-9 item 9)', value: 'Not present today' },
+    { label: 'Plan / intent / means', value: 'Not indicated' },
+    { label: 'Protective factors', value: 'Strong — friends, faith, goals' },
+  ],
+  riskBody: 'No risk indicators today; safety plan from Session 2 reviewed and remains current. Continue routine re-screening.',
+  assessment:
+    'Adjustment disorder, mixed anxiety & depressed mood; passive ideation has not recurred since disclosure, though the underlying stressors persist.',
+  planBullets: ['Continue sleep log', 'Agree one values-based action to log daily', 'Re-screen passive ideation (routine)'],
+  reviewCodes: [
+    { code: 'F43.22', label: 'Adjustment disorder, mixed anxiety & depressed mood', relevance: 'high' },
+    { code: 'Z63.8', label: 'Other specified problems related to primary support group', relevance: 'med' },
+  ],
+  prescriptions: [{ text: 'Continue nightly sleep log' }, { text: 'One values-based action, logged daily' }],
+  riskLevel: 'watch',
+  phq9: 14,
+});
+
+const AMARA_S4 = note({
+  clientId: 'amara',
+  sessionNumber: 4,
+  dateLabel: '5 Apr',
+  subjective:
+    'Amara reported better mornings and fewer early wakes since consistent bedtime tracking, though pre-exam rumination continues in the evenings. Trialled a worry-window technique this fortnight with some success.',
+  riskRows: [
+    { label: 'Passive ideation (PHQ-9 item 9)', value: 'Not present today' },
+    { label: 'Plan / intent / means', value: 'Not indicated' },
+    { label: 'Protective factors', value: 'Strong — friends, faith, goals' },
+  ],
+  riskBody: 'No risk indicators. Safety plan reviewed and remains current.',
+  assessment: 'Continued steady improvement; sleep intervention showing effect, exam-related rumination now the primary residual target.',
+  planBullets: ['Continue sleep log; consistent wake time across weekends', 'Continue daily worry-window (10 min)', 'Re-administer PHQ-9 & GAD-7 next session'],
+  reviewCodes: [
+    { code: 'F43.22', label: 'Adjustment disorder, mixed anxiety & depressed mood', relevance: 'high' },
+    { code: 'G47.00', label: 'Insomnia, unspecified', relevance: 'med' },
+    { code: 'Z63.8', label: 'Other specified problems related to primary support group', relevance: 'low' },
+  ],
+  prescriptions: [{ text: 'Sleep-hygiene handout + consistent wake time' }, { text: 'Daily worry-window (10 min, same time)' }],
+  riskLevel: 'watch',
+  phq9: 11,
+});
+
+/* ---- Leah: sessions 4-8 (5 of her 8 real sessions — oldest 3 roll off, per MAX_NOTES_PER_CLIENT). ---- */
+
+const LEAH_S4 = note({
+  clientId: 'leah',
+  sessionNumber: 4,
+  dateLabel: '24 Jun',
+  subjective: 'Leah described low mood and increasing social withdrawal over the past few weeks, citing low energy and difficulty motivating herself to see friends.',
+  riskRows: [{ label: 'Passive ideation (PHQ-9 item 9)', value: 'Not present today' }, { label: 'Plan / intent / means', value: 'Not indicated' }],
+  riskBody: 'No risk indicators today; safety plan from prior session remains current.',
+  assessment: 'Recurrent depressive disorder, moderate episode; low mood and isolation are the primary targets.',
+  planBullets: ['Weekly check-in call between sessions', 'Begin behavioural activation homework'],
+  reviewCodes: [{ code: 'F33.1', label: 'Recurrent depressive disorder, moderate', relevance: 'high' }],
+  prescriptions: [{ text: 'Weekly check-in call' }, { text: 'Behavioural activation homework' }],
+  riskLevel: 'watch',
+  phq9: 18,
+});
+
+const LEAH_S5 = note({
+  clientId: 'leah',
+  sessionNumber: 5,
+  dateLabel: '1 Jul',
+  subjective: 'Leah reports the check-in calls have helped with accountability; mood remains low but slightly more stable.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators.',
+  assessment: 'Continued moderate depressive episode; some early response to behavioural activation.',
+  planBullets: ['Continue weekly check-in call', 'Review behavioural activation homework'],
+  reviewCodes: [{ code: 'F33.1', label: 'Recurrent depressive disorder, moderate', relevance: 'high' }],
+  prescriptions: [{ text: 'Weekly check-in call' }, { text: 'Behavioural activation homework' }],
+  riskLevel: 'watch',
+  phq9: 17,
+});
+
+const LEAH_S6 = note({
+  clientId: 'leah',
+  sessionNumber: 6,
+  dateLabel: '8 Jul',
+  subjective: 'Leah describes a difficult week with a setback in mood following a disagreement with a close friend; withdrawal has increased again.',
+  riskRows: [
+    { label: 'Passive ideation (PHQ-9 item 9)', value: 'Not present today' },
+    { label: 'Plan / intent / means', value: 'Not indicated' },
+  ],
+  riskBody: 'No risk indicators today; monitoring closely given the setback.',
+  assessment: 'Depressive episode remains moderate; recent interpersonal stressor a likely precipitant for the setback.',
+  planBullets: ['Increase check-in call frequency this week', 'Review supports and social contact plan'],
+  reviewCodes: [{ code: 'F33.1', label: 'Recurrent depressive disorder, moderate', relevance: 'high' }],
+  prescriptions: [{ text: 'Weekly check-in call' }, { text: 'Behavioural activation homework' }],
+  riskLevel: 'watch',
+  phq9: 17,
+});
+
+const LEAH_S7 = note({
+  clientId: 'leah',
+  sessionNumber: 7,
+  dateLabel: '22 Jul',
+  subjective: 'Leah attended describing ongoing low mood and isolation; behavioural activation homework has been inconsistent this fortnight.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators today.',
+  assessment: 'Recurrent depressive disorder, moderate; isolation remains the primary maintaining factor.',
+  planBullets: ['Reviewed supports', 'Behavioural activation homework re-set for the coming week'],
+  reviewCodes: [{ code: 'F33.1', label: 'Recurrent depressive disorder, moderate', relevance: 'high' }],
+  prescriptions: [{ text: 'Behavioural activation homework' }],
+  riskLevel: 'watch',
+  phq9: 17,
+});
+
+const LEAH_S8 = note({
+  clientId: 'leah',
+  sessionNumber: 8,
+  dateLabel: '5 Aug',
+  subjective:
+    'Leah presented today and, on routine screening, endorsed passive thoughts of being better off asleep over the past week, with no plan, intent, or means identified.',
+  riskRows: [
+    { label: 'Passive ideation (PHQ-9 item 9)', value: 'Endorsed — no plan/intent/means' },
+    { label: 'Plan / intent / means', value: 'Not indicated' },
+    { label: 'Protective factors', value: 'Present — supports, safety plan updated today' },
+  ],
+  riskBody:
+    'C-SSRS completed; passive ideation endorsed with no plan, intent, or means. Safety plan updated collaboratively with two new coping steps and a trusted contact; weekly cadence agreed with a mid-week check-in.',
+  assessment:
+    'Recurrent depressive disorder, moderate, with newly endorsed passive suicidal ideation — a standing review flag, not an alarm. Continue routine re-screening every session.',
+  planBullets: ['Weekly cadence with mid-week check-in', 'Re-administer C-SSRS next session (standing safety item)', 'Review safety plan and trusted-contact status'],
+  reviewCodes: [
+    { code: 'F33.1', label: 'Recurrent depressive disorder, moderate', relevance: 'high' },
+    { code: 'R45.851', label: 'Suicidal ideation', relevance: 'high' },
+  ],
+  prescriptions: [{ text: 'Safety plan — two coping steps + trusted contact' }, { text: 'C-SSRS re-administration (standing)' }],
+  riskLevel: 'acute',
+  phq9: 16,
+});
+
+/* ---- Daniel: only 2 real sessions — deliberately left under 3 (the trajectory empty-state case). ---- */
+
+const DANIEL_S1 = note({
+  clientId: 'daniel',
+  sessionNumber: 1,
+  dateLabel: '29 Jul',
+  subjective:
+    'Daniel presented for an initial intake session following a recent relocation for work. He described ongoing stress adjusting to a new city and role, with some difficulty sleeping and low motivation in the evenings.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators identified at intake.',
+  assessment: 'Presentation consistent with an adjustment reaction to relocation and role change. No prior mental health history reported.',
+  planBullets: ['Complete formal assessment next session', 'Begin a brief sleep log'],
+  reviewCodes: [
+    { code: 'Z60.0', label: 'Phase of life problem (relocation / role change)', relevance: 'high' },
+    { code: 'F43.20', label: 'Adjustment disorder, unspecified', relevance: 'med' },
+  ],
+  prescriptions: [{ text: 'Sleep log — evenings and wake time' }],
+  riskLevel: 'clear',
+  phq9: 11,
+});
+
+const DANIEL_S2 = note({
+  clientId: 'daniel',
+  sessionNumber: 2,
+  dateLabel: '12 Aug',
+  subjective:
+    'Daniel returned for his first follow-up. He has settled into a routine at work and reports slightly improved sleep, though still misses his previous social network.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators; protective factors include a supportive sibling nearby.',
+  assessment: 'Continued adjustment presentation; mood and sleep both trending in the right direction.',
+  planBullets: ['Continue sleep log', 'Identify one local social activity to try', 'Formal PHQ-9/GAD-7 re-screen next visit'],
+  reviewCodes: [
+    { code: 'Z60.0', label: 'Phase of life problem (relocation / role change)', relevance: 'high' },
+    { code: 'F43.20', label: 'Adjustment disorder, unspecified', relevance: 'med' },
+  ],
+  prescriptions: [{ text: 'Sleep log — evenings and wake time' }, { text: 'One local social activity this week' }],
+  riskLevel: 'clear',
+  phq9: 10,
+});
+
+/* ---- Priya: sessions 2-6 (the F41.1 example from the captain's own feedback). ---- */
+
+const PRIYA_S2 = note({
+  clientId: 'priya',
+  sessionNumber: 2,
+  dateLabel: '2 Mar',
+  subjective: 'Priya described persistent worry about coursework and upcoming exams, with muscle tension and difficulty switching off in the evenings.',
+  riskRows: [{ label: 'Passive ideation', value: 'Not indicated' }],
+  riskBody: 'No risk indicators; worry is exam/coursework focused.',
+  assessment: 'Presentation consistent with generalised anxiety, exam-season exacerbation.',
+  planBullets: ['Start a daily worry log', 'Practice diaphragmatic breathing before bed'],
+  reviewCodes: [
+    { code: 'F41.1', label: 'Generalised anxiety disorder', relevance: 'high' },
+    { code: 'Z55.9', label: 'Problems related to education, unspecified', relevance: 'med' },
+  ],
+  prescriptions: [{ text: 'Daily worry log' }],
+  riskLevel: 'watch',
+  phq9: 15,
+});
+
+const PRIYA_S3 = note({
+  clientId: 'priya',
+  sessionNumber: 3,
+  dateLabel: '15 Apr',
+  subjective: 'Priya reports the worry log is helping her notice patterns; still anxious ahead of assignment deadlines.',
+  riskRows: [{ label: 'Passive ideation', value: 'Not indicated' }],
+  riskBody: 'No risk indicators.',
+  assessment: 'Gradual improvement; anxious cognitions remain assignment-focused.',
+  planBullets: ['Continue worry log', 'Introduce a 10-minute grounding practice'],
+  reviewCodes: [
+    { code: 'F41.1', label: 'Generalised anxiety disorder', relevance: 'high' },
+    { code: 'Z55.9', label: 'Problems related to education, unspecified', relevance: 'med' },
+  ],
+  prescriptions: [{ text: 'Daily worry log' }, { text: 'Grounding practice, 10 min daily' }],
+  riskLevel: 'watch',
+  phq9: 14,
+});
+
+const PRIYA_S4 = note({
+  clientId: 'priya',
+  sessionNumber: 4,
+  dateLabel: '10 May',
+  subjective: 'Exam season underway; Priya reports the grounding practice has become part of her routine and worry episodes are shorter.',
+  riskRows: [{ label: 'Passive ideation', value: 'Not indicated' }],
+  riskBody: 'No risk indicators.',
+  assessment: 'Continued improvement; generalised anxiety trending down with skills practice.',
+  planBullets: ['Continue worry log and grounding practice', 'Review sleep routine during exam weeks'],
+  reviewCodes: [{ code: 'F41.1', label: 'Generalised anxiety disorder', relevance: 'high' }],
+  prescriptions: [{ text: 'Daily worry log' }, { text: 'Grounding practice, 10 min daily' }],
+  riskLevel: 'watch',
+  phq9: 14,
+});
+
+const PRIYA_S5 = note({
+  clientId: 'priya',
+  sessionNumber: 5,
+  dateLabel: '28 Jun',
+  subjective: 'Between exam sittings; Priya reports steady mood with occasional worry spikes before results.',
+  riskRows: [{ label: 'Passive ideation', value: 'Not indicated' }],
+  riskBody: 'No risk indicators.',
+  assessment: 'Stable presentation; anxiety well-managed with current strategies.',
+  planBullets: ['Maintain worry log through results week', 'Plan a summer routine to reduce unstructured-time worry'],
+  reviewCodes: [
+    { code: 'F41.1', label: 'Generalised anxiety disorder', relevance: 'high' },
+    { code: 'Z55.9', label: 'Problems related to education, unspecified', relevance: 'med' },
+  ],
+  prescriptions: [{ text: 'Daily worry log' }, { text: 'Grounding practice, 10 min daily' }],
+  riskLevel: 'watch',
+  phq9: 14,
+});
+
+const PRIYA_S6 = note({
+  clientId: 'priya',
+  sessionNumber: 6,
+  dateLabel: '12 Aug',
+  subjective: 'Priya attended for exam-season check-in; results are in and anxiety has eased somewhat, though a new term is approaching.',
+  riskRows: [{ label: 'Passive ideation', value: 'Not indicated' }],
+  riskBody: 'No risk indicators.',
+  assessment: 'Generalised anxiety disorder, exam-season exacerbation now easing; core worry pattern remains the focus for ongoing work.',
+  planBullets: ['Review worry log', "Plan ahead for next exam cycle's early warning signs"],
+  reviewCodes: [{ code: 'F41.1', label: 'Generalised anxiety disorder', relevance: 'high' }],
+  prescriptions: [{ text: 'Daily worry log' }],
+  riskLevel: 'watch',
+  phq9: 13,
+});
+
+/* ---- Marcus: sessions 1-5 (steady improvement — watch → clear). ---- */
+
+const MARCUS_S1 = note({
+  clientId: 'marcus',
+  sessionNumber: 1,
+  dateLabel: '1 Apr',
+  subjective:
+    "Marcus presented with low mood, reduced motivation and withdrawal from usual activities over the past two months, describing himself as 'just going through the motions'.",
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators; strong prior functioning and social supports intact.',
+  assessment: 'Presentation consistent with a moderate depressive episode; good prognostic indicators given prior functioning.',
+  planBullets: ['Introduce activity scheduling — 1-2 valued activities daily', 'Psychoeducation on behavioural activation'],
+  reviewCodes: [{ code: 'F32.1', label: 'Moderate depressive episode', relevance: 'high' }],
+  prescriptions: [{ text: 'Activity scheduling — 1-2 valued activities daily' }],
+  riskLevel: 'watch',
+  phq9: 14,
+});
+
+const MARCUS_S2 = note({
+  clientId: 'marcus',
+  sessionNumber: 2,
+  dateLabel: '14 Apr',
+  subjective: 'Marcus reports completing the activity schedule most days; noticed a slight lift in mood after re-engaging with a hobby.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators.',
+  assessment: 'Early response to behavioural activation; mood beginning to trend upward.',
+  planBullets: ['Continue activity scheduling', 'Add a brief mood rating alongside the log'],
+  reviewCodes: [{ code: 'F32.1', label: 'Moderate depressive episode', relevance: 'high' }],
+  prescriptions: [{ text: 'Activity scheduling — 1-2 valued activities daily' }],
+  riskLevel: 'watch',
+  phq9: 12,
+});
+
+const MARCUS_S3 = note({
+  clientId: 'marcus',
+  sessionNumber: 3,
+  dateLabel: '30 May',
+  subjective: 'Marcus describes more consistent energy and has resumed a regular exercise routine; still some low mood on weekends.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators.',
+  assessment: 'Continued improvement; depressive episode trending toward mild severity.',
+  planBullets: ['Continue activity scheduling, extend to weekends', 'Review sleep consistency'],
+  reviewCodes: [
+    { code: 'F32.1', label: 'Moderate depressive episode', relevance: 'high' },
+    { code: 'Z73.0', label: 'Burn-out / life-management difficulty', relevance: 'med' },
+  ],
+  prescriptions: [{ text: 'Activity scheduling — 1-2 valued activities daily' }, { text: 'Weekend activity planning' }],
+  riskLevel: 'clear',
+  phq9: 9,
+});
+
+const MARCUS_S4 = note({
+  clientId: 'marcus',
+  sessionNumber: 4,
+  dateLabel: '11 Jul',
+  subjective: "Marcus reports feeling 'mostly like himself again,' maintaining the activity schedule with minimal effort now.",
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators.',
+  assessment: 'Depressive symptoms now in the mild range; sustained response to behavioural activation.',
+  planBullets: ['Maintain activity schedule as a standing routine', 'Begin tapering session-frequency discussion'],
+  reviewCodes: [{ code: 'F32.1', label: 'Moderate depressive episode', relevance: 'high' }],
+  prescriptions: [{ text: 'Activity scheduling — 1-2 valued activities daily' }],
+  riskLevel: 'clear',
+  phq9: 7,
+});
+
+const MARCUS_S5 = note({
+  clientId: 'marcus',
+  sessionNumber: 5,
+  dateLabel: '8 Aug',
+  subjective: 'Marcus attended reporting steady mood and consistent activity levels; motivated and engaged.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators.',
+  assessment: 'Sustained improvement; depressive episode now minimal, consistent with the activity-scheduling response documented across sessions.',
+  planBullets: ['Continue activity schedule', 'Discuss session-frequency taper at next visit'],
+  reviewCodes: [{ code: 'F32.1', label: 'Moderate depressive episode', relevance: 'high' }],
+  prescriptions: [{ text: 'Activity scheduling — 1-2 valued activities daily' }],
+  riskLevel: 'clear',
+  phq9: 6,
+});
+
+/* ---- Sofia: sessions 5-9 (worsening — watch → elevated, follow-up now overdue). ---- */
+
+const SOFIA_S5 = note({
+  clientId: 'sofia',
+  sessionNumber: 5,
+  dateLabel: '15 Apr',
+  subjective: 'Sofia described occasional panic episodes, typically triggered by crowded spaces, with racing heart and shortness of breath lasting several minutes.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators.',
+  assessment: 'Presentation consistent with panic disorder; episodes currently manageable with avoidance.',
+  planBullets: ['Start a panic-symptom log (trigger, duration, intensity)', 'Introduce 5-4-3-2-1 grounding technique'],
+  reviewCodes: [{ code: 'F41.0', label: 'Panic disorder', relevance: 'high' }],
+  prescriptions: [{ text: 'Panic-symptom log' }],
+  riskLevel: 'watch',
+  phq9: 9,
+});
+
+const SOFIA_S6 = note({
+  clientId: 'sofia',
+  sessionNumber: 6,
+  dateLabel: '15 May',
+  subjective: 'Sofia reports the symptom log has helped identify crowding and time pressure as common triggers; grounding technique used with mixed success.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators.',
+  assessment: 'Panic disorder, frequency stable; avoidance pattern is the current focus.',
+  planBullets: ['Continue symptom log', 'Practice grounding technique daily, not just during episodes'],
+  reviewCodes: [{ code: 'F41.0', label: 'Panic disorder', relevance: 'high' }],
+  prescriptions: [{ text: 'Panic-symptom log' }, { text: 'Grounding technique, daily practice' }],
+  riskLevel: 'watch',
+  phq9: 10,
+});
+
+const SOFIA_S7 = note({
+  clientId: 'sofia',
+  sessionNumber: 7,
+  dateLabel: '1 Jun',
+  subjective: 'Sofia describes a steady period with fewer panic episodes, though avoidance of crowded transport continues.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators.',
+  assessment: 'Panic disorder; symptom frequency stable, avoidance pattern persists as maintaining factor.',
+  planBullets: ['Begin gentle exposure planning for avoided situations', 'Continue grounding practice'],
+  reviewCodes: [{ code: 'F41.0', label: 'Panic disorder', relevance: 'high' }],
+  prescriptions: [{ text: 'Grounding technique, daily practice' }],
+  riskLevel: 'watch',
+  phq9: 10,
+});
+
+const SOFIA_S8 = note({
+  clientId: 'sofia',
+  sessionNumber: 8,
+  dateLabel: '1 Jul',
+  subjective: 'Sofia reports an uptick in panic frequency this month, coinciding with a stressful period at work; avoidance has increased.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators; distress is situational, not safety-related.',
+  assessment: 'Panic disorder symptoms have increased in frequency; work stress appears to be a precipitant.',
+  planBullets: ['Review exposure plan given increased avoidance', 'Discuss work-stress coping strategies'],
+  reviewCodes: [
+    { code: 'F41.0', label: 'Panic disorder', relevance: 'high' },
+    { code: 'Z56.6', label: 'Other physical/mental strain related to work', relevance: 'med' },
+  ],
+  prescriptions: [{ text: 'Panic-symptom log' }, { text: 'Grounding technique, daily practice' }],
+  riskLevel: 'elevated',
+  phq9: 11,
+});
+
+const SOFIA_S9 = note({
+  clientId: 'sofia',
+  sessionNumber: 9,
+  dateLabel: '22 Jul',
+  subjective: "Sofia's panic episodes have continued at an elevated frequency; today's follow-up was overdue by over a week.",
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators; distress remains situational.',
+  assessment: 'Panic disorder, increased frequency sustained over two sessions — follow-up cadence needs to tighten.',
+  planBullets: ['Reschedule overdue follow-up promptly', 'Continue grounding technique and exposure planning'],
+  reviewCodes: [{ code: 'F41.0', label: 'Panic disorder', relevance: 'high' }],
+  prescriptions: [{ text: 'Grounding technique, daily practice' }],
+  riskLevel: 'elevated',
+  phq9: 12,
+});
+
+/* ---- Jordan: sessions 8-12 (wind-down — steady clear, discharge planning). ---- */
+
+const JORDAN_S8 = note({
+  clientId: 'jordan',
+  sessionNumber: 8,
+  dateLabel: '10 Apr',
+  subjective:
+    'Jordan reports continued stability; the adjustment difficulties that brought him to therapy have largely resolved, though he wants to consolidate gains before ending.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators.',
+  assessment: 'Adjustment disorder with prolonged depressed mood, in substantial remission.',
+  planBullets: ['Begin relapse-prevention planning', 'Identify early-warning signs to watch for'],
+  reviewCodes: [{ code: 'F43.21', label: 'Adjustment disorder with prolonged depressed mood', relevance: 'high' }],
+  prescriptions: [{ text: 'Draft relapse-prevention plan' }],
+  riskLevel: 'clear',
+  phq9: 11,
+});
+
+const JORDAN_S9 = note({
+  clientId: 'jordan',
+  sessionNumber: 9,
+  dateLabel: '1 May',
+  subjective: "Jordan continues to maintain his routine and reports good mood stability; relapse-prevention plan drafted last session feels solid.",
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators.',
+  assessment: 'Sustained remission; relapse-prevention planning underway.',
+  planBullets: ['Finalise relapse-prevention plan', 'Maintain current activity routine'],
+  reviewCodes: [{ code: 'F43.21', label: 'Adjustment disorder with prolonged depressed mood', relevance: 'high' }],
+  prescriptions: [{ text: 'Maintain activity/routine' }],
+  riskLevel: 'clear',
+  phq9: 9,
+});
+
+const JORDAN_S10 = note({
+  clientId: 'jordan',
+  sessionNumber: 10,
+  dateLabel: '15 Jun',
+  subjective: 'Jordan reports mood remains stable; beginning to discuss what ending therapy might look like.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators.',
+  assessment: 'Continued remission; wind-down phase appropriate to begin discussing.',
+  planBullets: ['Discuss discharge timeline', 'Continue relapse-prevention plan'],
+  reviewCodes: [{ code: 'F43.21', label: 'Adjustment disorder with prolonged depressed mood', relevance: 'high' }],
+  prescriptions: [{ text: 'Maintain activity/routine' }],
+  riskLevel: 'clear',
+  phq9: 7,
+});
+
+const JORDAN_S11 = note({
+  clientId: 'jordan',
+  sessionNumber: 11,
+  dateLabel: '10 Jul',
+  subjective: 'Jordan reports feeling ready to reduce session frequency; routine and mood both stable.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators.',
+  assessment: 'Sustained remission; appropriate candidate for discharge planning.',
+  planBullets: ['Space next session by three weeks', 'Begin drafting discharge summary'],
+  reviewCodes: [{ code: 'F43.21', label: 'Adjustment disorder with prolonged depressed mood', relevance: 'high' }],
+  prescriptions: [{ text: 'Maintain activity/routine' }, { text: 'Draft discharge summary' }],
+  riskLevel: 'clear',
+  phq9: 5,
+});
+
+const JORDAN_S12 = note({
+  clientId: 'jordan',
+  sessionNumber: 12,
+  dateLabel: '1 Aug',
+  subjective: 'Jordan attended for a wind-down session; gains have been maintained over the extended interval and he feels ready for discharge.',
+  riskRows: NOT_INDICATED_ROWS,
+  riskBody: 'No risk indicators.',
+  assessment: 'Adjustment disorder, in full remission; discharge appropriate.',
+  planBullets: ['Finalise discharge summary', 'Provide relapse-prevention plan and re-referral pathway'],
+  reviewCodes: [{ code: 'F43.21', label: 'Adjustment disorder with prolonged depressed mood', relevance: 'high' }],
+  prescriptions: [{ text: 'Draft discharge summary' }],
+  riskLevel: 'clear',
+  phq9: 4,
+});
+
+/**
+ * Session-generated (or sample) draft notes, keyed by clientId, NEWEST FIRST — the same order
+ * `withNote`/`useClientNotes` expect. `buildSampleSnapshot` stamps `sampleOrigin: true` onto every
+ * note here at load time.
+ */
+export const SAMPLE_NOTES: Record<string, DraftNote[]> = {
+  amara: [AMARA_DRAFT, AMARA_S4, AMARA_S3, AMARA_S2, AMARA_S1],
+  leah: [LEAH_S8, LEAH_S7, LEAH_S6, LEAH_S5, LEAH_S4],
+  daniel: [DANIEL_S2, DANIEL_S1],
+  priya: [PRIYA_S6, PRIYA_S5, PRIYA_S4, PRIYA_S3, PRIYA_S2],
+  marcus: [MARCUS_S5, MARCUS_S4, MARCUS_S3, MARCUS_S2, MARCUS_S1],
+  sofia: [SOFIA_S9, SOFIA_S8, SOFIA_S7, SOFIA_S6, SOFIA_S5],
+  jordan: [JORDAN_S12, JORDAN_S11, JORDAN_S10, JORDAN_S9, JORDAN_S8],
 };

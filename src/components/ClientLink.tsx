@@ -18,6 +18,7 @@ export function ClientLink({
   gap = 14,
   style,
   children,
+  showAvatar = true,
 }: {
   client: Pick<Client, 'id' | 'name' | 'initials' | 'risk'>;
   avatarSize?: number;
@@ -26,6 +27,13 @@ export function ClientLink({
   gap?: number;
   style?: StyleProp<ViewStyle>;
   children: React.ReactNode;
+  /**
+   * False on the patterns caseload rows (round-2 item 1): the row's own primary tap opens patterns,
+   * so ONLY the name text is this link's hit area — the avatar renders separately, outside this
+   * Pressable, as part of that row action instead. Defaults true everywhere else (the avatar+name
+   * chip stays one link, per the locked identity-chip rule).
+   */
+  showAvatar?: boolean;
 }) {
   const router = useRouter();
   return (
@@ -36,7 +44,7 @@ export function ClientLink({
       style={({ pressed }) => [{ opacity: pressed ? 0.75 : 1 }, style]}
     >
       <Row gap={gap}>
-        <Avatar initials={client.initials} size={avatarSize} tone={avatarTone ?? (client.risk === 'acute' ? 'risk' : 'brand')} />
+        {showAvatar ? <Avatar initials={client.initials} size={avatarSize} tone={avatarTone ?? (client.risk === 'acute' ? 'risk' : 'brand')} /> : null}
         {children}
       </Row>
     </Pressable>

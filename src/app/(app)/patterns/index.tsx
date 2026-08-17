@@ -5,7 +5,7 @@ import { PageHeader, Screen } from '../../../components/Screen';
 import { Sparkline } from '../../../components/charts';
 import { HeartIcon, MailIcon, SearchIcon, SendIcon } from '../../../components/icons';
 import { ClientLink } from '../../../components/ClientLink';
-import { AppText, Badge, Card, Chip, Eyebrow, Row, RiskDot } from '../../../components/ui';
+import { AppText, Avatar, Badge, Card, Chip, Eyebrow, Row, RiskDot } from '../../../components/ui';
 import { ZeroState } from '../../../components/ZeroState';
 import { useCaseloadKpis, useClients, useData } from '../../../data/DataProvider';
 import { Client } from '../../../data/types';
@@ -162,24 +162,39 @@ const STATUS_TONE = { active: 'brand', intake: 'draft', 'wind-down': 'neutral' }
 function ClientRowWide({ client, first, onPress }: { client: Client; first: boolean; onPress: () => void }) {
   const theme = useTheme();
   const c = theme.colors;
-  // The row's primary tap already opens patterns — it must not also swallow the name/avatar's own
-  // link to the patient page, and Outreach's icons are their own buttons — so all three are SIBLING
-  // pressables (never nested), or the DOM nests <button> in <button> (N3). Same flex proportions as
-  // the single pressable this replaced (name 2.4 / rest 6.7 / outreach 1.2, summing to 10.3).
+  const patternsLabel = `Open ${client.name}’s patterns`;
+  // Captain round-2 item 1: the row's primary tap (anywhere on it) opens patterns — ONLY the client's
+  // name is a link to the patient page, underlined so it reads as one. The avatar/tokenId therefore
+  // join the "open patterns" pressable instead of ClientLink; the name's own Pressable (inside
+  // ClientLink) stays a SIBLING to it, never nested, so the DOM never nests <button> in <button> (N3).
   return (
     <Row style={{ paddingHorizontal: theme.spacing.lg, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.lineSoft, alignItems: 'center' }}>
-      <ClientLink client={client} avatarSize={38} gap={12} style={{ flex: 2.4 }}>
+      <View style={{ flex: 2.4, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <Pressable
+          onPress={onPress}
+          accessibilityRole="button"
+          accessibilityLabel={patternsLabel}
+          style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
+        >
+          <Avatar initials={client.initials} size={38} tone={client.risk === 'acute' ? 'risk' : 'brand'} />
+        </Pressable>
         <View>
-          <AppText variant="bodyStrong">{client.name}</AppText>
-          <AppText variant="small" color="ink3" style={{ fontFamily: theme.type.numeric.fontFamily, fontSize: 11.5 }}>
-            {client.tokenId}
-          </AppText>
+          <ClientLink client={client} showAvatar={false} gap={0}>
+            <AppText variant="bodyStrong" style={{ textDecorationLine: 'underline' }}>
+              {client.name}
+            </AppText>
+          </ClientLink>
+          <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={patternsLabel}>
+            <AppText variant="small" color="ink3" style={{ fontFamily: theme.type.numeric.fontFamily, fontSize: 11.5 }}>
+              {client.tokenId}
+            </AppText>
+          </Pressable>
         </View>
-      </ClientLink>
+      </View>
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel={`Open ${client.name}’s patterns`}
+        accessibilityLabel={patternsLabel}
         style={({ pressed }) => ({ flex: 6.7, flexDirection: 'row', alignItems: 'center', backgroundColor: pressed ? c.sunken : 'transparent' })}
       >
         <View style={{ flex: 1.1 }}>
@@ -291,21 +306,36 @@ function Outreach({ client }: { client: Client }) {
 function ClientRowNarrow({ client, first, onPress }: { client: Client; first: boolean; onPress: () => void }) {
   const theme = useTheme();
   const c = theme.colors;
-  // Same sibling-pressables split as ClientRowWide (N3): the name/avatar's own link to the patient
-  // page, the row's open-patterns action, and Outreach's buttons never nest inside one another.
+  const patternsLabel = `Open ${client.name}’s patterns`;
+  // Same split as ClientRowWide (round-2 item 1): the row's primary tap opens patterns; only the
+  // underlined name is a sibling link to the patient page (N3 — never nested).
   return (
     <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: theme.spacing.lg, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.lineSoft }}>
       <View style={{ flex: 1 }}>
-        <ClientLink client={client} avatarSize={40} gap={12}>
-          <Row gap={8} style={{ flex: 1, flexWrap: 'wrap' }}>
-            <AppText variant="bodyStrong">{client.name}</AppText>
-            <Badge label={cap(client.status)} tone={STATUS_TONE[client.status]} />
+        <Row gap={12} style={{ alignItems: 'center' }}>
+          <Pressable
+            onPress={onPress}
+            accessibilityRole="button"
+            accessibilityLabel={patternsLabel}
+            style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
+          >
+            <Avatar initials={client.initials} size={40} tone={client.risk === 'acute' ? 'risk' : 'brand'} />
+          </Pressable>
+          <Row gap={8} style={{ flex: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+            <ClientLink client={client} showAvatar={false} gap={0}>
+              <AppText variant="bodyStrong" style={{ textDecorationLine: 'underline' }}>
+                {client.name}
+              </AppText>
+            </ClientLink>
+            <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={patternsLabel}>
+              <Badge label={cap(client.status)} tone={STATUS_TONE[client.status]} />
+            </Pressable>
           </Row>
-        </ClientLink>
+        </Row>
         <Pressable
           onPress={onPress}
           accessibilityRole="button"
-          accessibilityLabel={`Open ${client.name}’s patterns`}
+          accessibilityLabel={patternsLabel}
           style={({ pressed }) => ({ marginLeft: 52, marginTop: 2, backgroundColor: pressed ? c.sunken : 'transparent' })}
         >
           <AppText variant="small" color="ink3">

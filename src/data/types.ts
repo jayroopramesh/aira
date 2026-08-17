@@ -140,6 +140,13 @@ export type DraftNote = {
    * never ran or nothing was removed.
    */
   auxiliaryNotes?: string;
+  /**
+   * True only for a note authored by the sample cohort (`buildSampleSnapshot`), stamped at load time —
+   * never guessed later by name/content sniffing. This is what "Undo sample data" (Settings) uses to
+   * remove exactly the sample-authored notes while leaving every note the counselor captured afterwards
+   * (which carries no such flag) untouched. Absent/false for every real capture.
+   */
+  sampleOrigin?: boolean;
 };
 
 export type Client = {
@@ -174,6 +181,14 @@ export type Client = {
   timeline: TimelineEntry[];
   lastPlan: PrepItem[]; // the last signed plan → shown as read-only prep reminders
   naturalistic?: { date: string; body: string }[];
+  /**
+   * True only for a client minted by the sample cohort (`buildSampleSnapshot`), stamped at load time —
+   * never guessed later by name. "Undo sample data" (Settings) removes exactly these records, UNLESS
+   * the counselor captured a real session or edited patient details for one after loading, in which
+   * case that record is kept (see `computeSampleUndo` in `undoSample.ts`) rather than silently
+   * destroying what they added. Absent/false for every client the counselor creates themselves.
+   */
+  sampleOrigin?: boolean;
   // Risk-review specifics (only for acute clients):
   safety?: {
     headline: string;

@@ -218,7 +218,30 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   the affordance can't drift. When a row's own primary tap already does something else (e.g. the
   caseload row opens patterns, not the patient page), `ClientLink` sits as a SIBLING Pressable next to
   the row's own action, never nested inside it (nesting breaks web `<button>`-in-`<button>` semantics
-  — see the `patterns/index.tsx` `ClientRowWide`/`ClientRowNarrow` split for the pattern).
+  — see the `patterns/index.tsx` `ClientRowWide`/`ClientRowNarrow` split for the pattern). On the
+  **patterns caseload rows specifically** (round 2, 2026-08-17), this footprint is narrowed further:
+  the row's own primary tap (avatar, status, session, sparkline, risk — everywhere except the name)
+  opens that client's patterns view, and ONLY the underlined client name is the `ClientLink` to the
+  patient page. `ClientLink` gained `showAvatar` (default `true`) for this — the patterns rows pass
+  `showAvatar={false}` and render the avatar as its own sibling Pressable inside the "open patterns"
+  region instead. Every other screen keeps the full avatar+name chip as the single patient-page link.
+- **Longitudinal trajectory** (`src/data/trajectory.ts`, `deriveTrajectory`, round 2, 2026-08-17):
+  recurring review codes, repeated plan/prescription items, and the risk-tier trend, derived purely
+  on-device from a client's retained `DraftNote[]` (`reviewCodes`, `prescriptions`, `riskLevel` —
+  never re-scored from prose, same trust rule as `riskFromNote`). Rendered as a `TrajectoryCard` on
+  `patterns/[clientId].tsx`. Returns `null` below `MIN_SESSIONS_FOR_TRAJECTORY` (3) so the screen shows
+  the honest "At least 3 sessions needed" empty state instead of a thin chart — the sample fixtures
+  keep Daniel at exactly 2 real sessions on purpose as that demo case. Proved by
+  `scripts/trajectory-harness.mjs`.
+- **Sample-origin flagging + "Undo sample data"** (Settings, round 2, 2026-08-17): `Client.sampleOrigin`
+  / `DraftNote.sampleOrigin` are stamped `true` ONLY by `buildSampleSnapshot` at load time — never
+  guessed later by name/content. `computeSampleUndo` (`src/data/undoSample.ts`) removes a sample client
+  and its notes only if untouched since loading; a sample client the counselor captured a real session
+  against, or edited patient details for, is KEPT (its sample-authored notes stripped, any real note
+  kept) rather than silently destroyed — the exact policy is documented at the top of that file. Wired
+  as `DataProvider.undoSample` / `hasSampleData`, two-step confirm in Settings next to Load/Clear (not
+  a global header affordance — this is a data-management action, not a safety one; Escalate owns the
+  header). Proved by `scripts/sample-undo-harness.mjs` plus a Settings jest wiring test.
 - **Note section order is S/O/A/P then Risk & Safety Check LAST** (round 2, 2026-08-17 — it used to sit
   between Objective and Assessment). Both emitters order it this way — `buildDraft` in
   `summarization.ts` and the `AMARA_DRAFT` sample in `fixtures.ts` — and every renderer (`NotePane`'s
@@ -237,9 +260,9 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   "did the transcript change" check to maintain.
 - **Re-record affordance** (`ReRecordAction` in `review.tsx`) returns to `/(app)/session?clientId=…`
   (same route `today/ready.tsx` uses to begin a session) via `router.replace`. Two-step confirm only
-  when the current note is an unsigned draft — a fresh capture could rotate it out of the 3-notes-per-
-  client retention cap (C4) before it's signed; a signed note re-records with no confirm since nothing
-  there can be lost.
+  when the current note is an unsigned draft — a fresh capture could rotate it out of the notes-per-
+  client retention cap (`MAX_NOTES_PER_CLIENT`, `repository.ts`, C4 — 3→5 in round 2, 2026-08-17) before
+  it's signed; a signed note re-records with no confirm since nothing there can be lost.
 - **Name vs. slug**: the user-visible product name is **Airava** (`app.json` `name`, the TopBar
   wordmark, onboarding/login lockups, the web `<title>`, and `public/manifest.json`). The shorthand
   **aira** stays for everything non-user-facing — repo, npm package, the `aira` `slug`/`scheme`, the

@@ -18,10 +18,12 @@ export default function Settings() {
   const theme = useTheme();
   const c = theme.colors;
   const router = useRouter();
-  const { clients, sampleLoaded, loadSample, clearAll } = useData();
+  const { clients, sampleLoaded, hasSampleData, loadSample, clearAll, undoSample } = useData();
   const [busy, setBusy] = useState(false);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [confirmingLoad, setConfirmingLoad] = useState(false);
+  const [confirmingUndo, setConfirmingUndo] = useState(false);
+  const [undoResult, setUndoResult] = useState<{ removedClients: number; keptWithUserData: number } | null>(null);
 
   const hasData = clients.length > 0 || sampleLoaded;
 
@@ -30,6 +32,7 @@ export default function Settings() {
     await loadSample();
     setBusy(false);
     setConfirmingLoad(false);
+    setUndoResult(null);
     router.push('/(app)/patterns');
   };
   const requestLoad = () => {
@@ -41,6 +44,14 @@ export default function Settings() {
     await clearAll();
     setBusy(false);
     setConfirmingClear(false);
+    setUndoResult(null);
+  };
+  const doUndo = async () => {
+    setBusy(true);
+    const result = await undoSample();
+    setBusy(false);
+    setConfirmingUndo(false);
+    setUndoResult(result);
   };
   const signOut = async () => {
     await authService.signOut();
@@ -95,18 +106,50 @@ export default function Settings() {
               <Button title="Cancel" variant="secondary" disabled={busy} onPress={() => setConfirmingLoad(false)} />
             </Row>
           </View>
+        ) : confirmingUndo ? (
+          <View style={{ backgroundColor: c.riskBg, borderRadius: 10, padding: 14 }}>
+            <AppText variant="bodyStrong" style={{ fontSize: 14 }}>
+              Undo sample data?
+            </AppText>
+            <AppText variant="small" color="ink2" style={{ marginTop: 4, lineHeight: 17 }}>
+              This removes the sample clients and notes you haven’t touched. Any sample client you’ve captured a real
+              session for, or edited details for, is kept — only its sample-authored notes are removed.
+            </AppText>
+            <View style={{ height: 12 }} />
+            <Row gap={10} wrap>
+              <Button title="Yes, undo sample data" variant="danger" loading={busy} onPress={doUndo} />
+              <Button title="Cancel" variant="secondary" disabled={busy} onPress={() => setConfirmingUndo(false)} />
+            </Row>
+          </View>
         ) : (
-          <Row gap={10} wrap>
-            <Button
-              title={sampleLoaded ? 'Reload sample data' : 'Load sample data'}
-              variant="primary"
-              loading={busy}
-              onPress={requestLoad}
-            />
-            {hasData ? (
-              <Button title="Clear all data" variant="secondary" disabled={busy} onPress={() => setConfirmingClear(true)} />
+          <>
+            <Row gap={10} wrap>
+              <Button
+                title={sampleLoaded ? 'Reload sample data' : 'Load sample data'}
+                variant="primary"
+                loading={busy}
+                onPress={requestLoad}
+              />
+              {hasSampleData ? (
+                <Button title="Undo sample data" variant="secondary" disabled={busy} onPress={() => setConfirmingUndo(true)} />
+              ) : null}
+              {hasData ? (
+                <Button title="Clear all data" variant="secondary" disabled={busy} onPress={() => setConfirmingClear(true)} />
+              ) : null}
+            </Row>
+            {undoResult ? (
+              <View style={{ backgroundColor: c.positiveBg, borderRadius: 10, padding: 12, marginTop: 12 }}>
+                <AppText variant="small" color="ink2" style={{ lineHeight: 17 }}>
+                  {undoResult.removedClients
+                    ? `Removed ${undoResult.removedClients} sample client${undoResult.removedClients === 1 ? '' : 's'} you hadn’t touched.`
+                    : 'No untouched sample clients to remove.'}
+                  {undoResult.keptWithUserData
+                    ? ` Kept ${undoResult.keptWithUserData} sample client${undoResult.keptWithUserData === 1 ? '' : 's'} you added a session or edit to — only its sample-authored notes were removed.`
+                    : ''}
+                </AppText>
+              </View>
             ) : null}
-          </Row>
+          </>
         )}
         <AppText variant="small" color="ink3" style={{ marginTop: 12, fontSize: 11.5 }}>
           {hasData ? `${clients.length} client${clients.length === 1 ? '' : 's'} on this device.` : 'No clients on this device yet.'}
