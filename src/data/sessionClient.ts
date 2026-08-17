@@ -489,6 +489,33 @@ function planFromNote(note: DraftNote, dateLabel: string): PrepItem[] {
   }));
 }
 
+/**
+ * Whether the note behind `client.lastPlan` was actually signed — an OBSERVED fact, never asserted.
+ * `lastPlan` is refreshed at CAPTURE time (`clientFromSession` / `appendSessionToClient`), which is
+ * always before sign-off, so any surface that captions it "signed" unconditionally is claiming an
+ * attestation that may never have happened. This resolves the claim from the note itself: the plan's
+ * source line carries the capture-day date label, and every retained note's `sessionLabel` ends with
+ * the same label (`Session N — <date>`), so the backing note is findable and its real `status` read.
+ *
+ * Returns `status: null` when the backing note can't be identified (no dated plan source, or the note
+ * has rotated out of the per-client retention cap) — the caller then makes NO claim either way,
+ * which is the honest fallback. Notes are newest-first; the first label match is the note whose
+ * capture most recently refreshed the plan.
+ */
+export function lastPlanProvenance(
+  client: Pick<Client, 'lastPlan'>,
+  notes: DraftNote[],
+): { dateLabel: string | null; status: 'signed' | 'draft' | null } {
+  const source = client.lastPlan[0]?.source ?? '';
+  const segment = source.split('·').pop()?.trim() ?? '';
+  // A date label always carries a digit ("5 Apr" / "Aug 18"); a prose tail ("re-screen every
+  // session") never keys a note and must not render as a date.
+  const dateLabel = segment && /\d/.test(segment) ? segment : null;
+  if (!dateLabel) return { dateLabel: null, status: null };
+  const backing = notes.find((n) => n.sessionLabel.endsWith(`— ${dateLabel}`));
+  return { dateLabel, status: backing ? (backing.status === 'signed' ? 'signed' : 'draft') : null };
+}
+
 export function clientFromSession(
   id: string,
   note: DraftNote,

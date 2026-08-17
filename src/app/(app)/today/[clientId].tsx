@@ -8,12 +8,14 @@ import { Highlights } from '../../../components/Highlights';
 import { ArrowRight, CheckIcon, CloseIcon, FileUpIcon } from '../../../components/icons';
 import { AppText, Avatar, Button, Card, Eyebrow, Row, TrustPill } from '../../../components/ui';
 import { Client } from '../../../data/types';
-import { useClient, useData, usePatientDetails } from '../../../data/DataProvider';
+import { lastPlanProvenance } from '../../../data/sessionClient';
+import { useClient, useClientNotes, useData, usePatientDetails } from '../../../data/DataProvider';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 /**
  * In-place client drawer (Heidi/Time2book pattern): latest scores, history timeline, and
- * the last signed plan — surfaced as read-only prep reminders (Highlights).
+ * the last captured plan (its signed/draft status read off the backing note) — surfaced as
+ * read-only prep reminders (Highlights).
  * Presented as a bottom sheet on phone / modal on web.
  */
 export default function ClientDrawer() {
@@ -23,8 +25,20 @@ export default function ClientDrawer() {
   const insets = useSafeAreaInsets();
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
   const client = useClient(clientId);
+  const notes = useClientNotes(clientId);
 
   if (!client) return <ClientNotFound />;
+
+  // "Signed" is an attestation, so it is READ off the note behind the plan, never asserted: lastPlan
+  // is refreshed at capture time — before any sign-off — so a hardcoded ", signed" here claimed a
+  // sign-off that hadn't happened for every freshly captured session. Unknown backing note → no claim.
+  const plan = lastPlanProvenance(client, notes);
+  const planCaption = [
+    `from ${plan.dateLabel ?? 'the last session'}`,
+    plan.status === 'signed' ? 'signed' : plan.status === 'draft' ? 'unsigned draft' : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   const phq = client.measures.find((m) => m.key === 'phq9');
   const gad = client.measures.find((m) => m.key === 'gad7');
@@ -75,7 +89,7 @@ export default function ClientDrawer() {
 
           {/* Last plan → read-only reminders (no checkboxes; prep is a reminder, not a task). */}
           <View style={{ height: theme.spacing.sm }} />
-          <Eyebrow>Last plan &amp; next steps · from {client.lastPlan[0]?.source.replace('from Plan & Next Steps · ', '') ?? 'last session'}, signed</Eyebrow>
+          <Eyebrow>Last plan &amp; next steps · {planCaption}</Eyebrow>
           <Card tone="sunken" elevation="none" radius="md" style={{ marginTop: 10, borderColor: c.brandBd, backgroundColor: c.brandBg }}>
             <AppText variant="bodyStrong" tint={c.brand} style={{ marginBottom: 12 }}>
               Highlights to keep in mind today

@@ -207,7 +207,7 @@ export type Client = {
   // Detail:
   measures: MeasureSeries[];
   timeline: TimelineEntry[];
-  lastPlan: PrepItem[]; // the last signed plan → shown as read-only prep reminders
+  lastPlan: PrepItem[]; // the latest captured plan (signed or not — see lastPlanProvenance) → read-only prep reminders
   naturalistic?: { date: string; body: string }[];
   /**
    * True only for a client minted by the sample cohort (`buildSampleSnapshot`), stamped at load time —
