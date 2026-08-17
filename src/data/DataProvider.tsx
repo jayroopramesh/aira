@@ -12,6 +12,7 @@ import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT
 import { CaseloadKpi, Client, DayDashboard, DraftNote, NoteSection, PrepItem } from './types';
 import { applySessionNote } from './saveSession';
 import { computeSampleUndo, SampleUndoResult } from './undoSample';
+import { applyRecordingAppend, RecordingAddition } from './appendRecording';
 
 /**
  * Caseload KPI tiles computed from the ACTUAL caseload (F10). The tiles used to be static fixtures
@@ -124,6 +125,16 @@ type DataContextValue = {
    * the guard can never append the pulled items twice.
    */
   generatePrescriptions: (clientId: string, noteIndex: number, items: PrepItem[]) => Promise<void>;
+  /**
+   * "Add recording" (as distinct from "Re-record", which starts a brand-new note): append a second
+   * capture's transcript onto the SAME note rather than minting a new one. The merge itself — the
+   * separator, the up-only `audioLeftDevice` disclosure, the mixed-provenance flag when the two
+   * segments' `transcriptFromCloud` disagree, and resetting `prescriptionsGenerated` because the
+   * transcript genuinely changed — is the pure `applyRecordingAppend` (`appendRecording.ts`); this is
+   * the thin wrapper that supplies the clock and persists. Refuses silently (no-op) on a signed note or
+   * a blank addition, mirroring `updateNoteSection`'s read-only enforcement at the seam.
+   */
+  appendRecording: (clientId: string, noteIndex: number, addition: RecordingAddition, timestampLabel: string) => Promise<void>;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -264,6 +275,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [persist],
   );
 
+  const appendRecording = useCallback(
+    async (clientId: string, noteIndex: number, addition: RecordingAddition, timestampLabel: string) => {
+      const snapshot = snapshotRef.current;
+      const list = snapshot.notes[clientId];
+      if (!list?.[noteIndex]) return;
+      const next = applyRecordingAppend(list[noteIndex], addition, timestampLabel);
+      if (!next) return;
+      const nextList = list.map((n, i) => (i === noteIndex ? next : n));
+      await persist({ ...snapshot, notes: { ...snapshot.notes, [clientId]: nextList } });
+    },
+    [persist],
+  );
+
   const value = useMemo<DataContextValue>(() => {
     const clientsById = Object.fromEntries(snapshot.clients.map((c) => [c.id, c]));
     return {
@@ -285,6 +309,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       unlockNote,
       updateNoteSection,
       generatePrescriptions,
+      appendRecording,
     };
   }, [
     snapshot,
@@ -298,6 +323,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     unlockNote,
     updateNoteSection,
     generatePrescriptions,
+    appendRecording,
   ]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

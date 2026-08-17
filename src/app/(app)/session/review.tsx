@@ -12,16 +12,10 @@ import { useClient, useClientNotes, useData, useDraftNote } from '../../../data/
 import { DraftNote, NoteSection, PrepItem } from '../../../data/types';
 import { authService } from '../../../services/auth';
 import { useTheme } from '../../../theme/ThemeProvider';
+import { formatTimestamp } from '../../../utils/formatTimestamp';
 
 const TABS = ['Note', 'Transcript', 'Context', '+ Screening tools'] as const;
 type Tab = (typeof TABS)[number];
-
-/** "13 Aug 14:18" — the real moment the clinician signed (F8), not a hardcoded timestamp. */
-function formatSignedAt(d: Date): string {
-  const date = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
-  return `${date} ${time}`;
-}
 
 /**
  * Serialize the full note to plain text for the clipboard — the exact SOAP content the clinician
@@ -252,7 +246,7 @@ export default function ReviewNote() {
   const sign = () => {
     if (!clientId) return;
     pendingEdits.current.forEach((flush) => flush());
-    signNote(clientId, noteIndex, clinician, formatSignedAt(new Date()));
+    signNote(clientId, noteIndex, clinician, formatTimestamp(new Date()));
   };
   // Reopens a signed note for editing. The read-only rule stays enforced at the `updateNoteSection`
   // seam (it refuses a signed note) — this flips `status` back to 'draft' so that seam honestly
@@ -414,6 +408,7 @@ export default function ReviewNote() {
                 auxiliaryNotes={draft.auxiliaryNotes}
                 audioLeftDevice={draft.audioLeftDevice}
                 transcriptFromCloud={draft.transcriptFromCloud}
+                transcriptMixedProvenance={draft.transcriptMixedProvenance}
                 draftedInCloud={draft.draftedInCloud}
                 signed={signed}
               />
@@ -887,6 +882,7 @@ function TranscriptPane({
   auxiliaryNotes,
   audioLeftDevice,
   transcriptFromCloud,
+  transcriptMixedProvenance,
   draftedInCloud,
   signed,
 }: {
@@ -897,6 +893,11 @@ function TranscriptPane({
   auxiliaryNotes?: string;
   audioLeftDevice?: boolean;
   transcriptFromCloud?: boolean;
+  /** True once "Add recording" spliced in a segment whose own cloud/typed origin disagrees with the
+   *  rest of the transcript (`appendRecording.ts`) — `transcriptFromCloud` alone can no longer describe
+   *  the WHOLE transcript truthfully, so this switches the caption to say so instead of picking one
+   *  claim that would misstate the other segment. The per-segment truth is in each divider line below. */
+  transcriptMixedProvenance?: boolean;
   draftedInCloud?: boolean;
   signed: boolean;
 }) {
@@ -920,7 +921,9 @@ function TranscriptPane({
   return (
     <View>
       <AppText variant="small" color="ink3" style={{ marginBottom: 10 }}>
-        {(transcriptFromCloud === true
+        {(transcriptMixedProvenance
+          ? 'This transcript combines more than one recording, added at different times, and they weren’t all produced the same way — each "Added recording" line below says whether that part was transcribed in the cloud or typed by hand.'
+          : transcriptFromCloud === true
           ? 'The transcript of this session, kept on this device. The audio was sent to the cloud (Groq) to transcribe, then deleted — only this text remains. There is no on-device de-identification hop in demo mode.'
           : transcriptFromCloud === false && audioLeftDevice === true
             ? 'This text was entered by the clinician, not produced by transcription — the audio was sent to the cloud (Groq) to transcribe, but no transcript came back. The recording has since been deleted, so this typed text is the only record of the session.' +
@@ -1003,7 +1006,12 @@ function ReviewRail({
       <Divider />
       {signed ? <AudioTrust audioLeftDevice={draft.audioLeftDevice} /> : null}
       <SignOff signed={signed} onSign={onSign} onUnlock={onUnlock} clinician={clinician} signedAt={signedAt} />
-      {clientId ? <ReRecordAction clientId={clientId} signed={signed} /> : null}
+      {clientId ? (
+        <Row gap={10} style={{ flexWrap: 'wrap' }}>
+          <ReRecordAction clientId={clientId} signed={signed} />
+          <AddRecordingAction clientId={clientId} noteIndex={noteIndex} signed={signed} />
+        </Row>
+      ) : null}
     </View>
   );
 }
@@ -1037,8 +1045,15 @@ function PrescriptionsRail({ draft, clientId, noteIndex }: { draft: DraftNote; c
   const generateFromNotes = async () => {
     if (alreadyGenerated || pending || !clientId) return;
     const plan = draft.sections.find((s) => s.marker === 'P');
-    const pulled: Rx[] = (plan?.bullets ?? []).map((b, i) => ({
-      id: `gen-${i}`,
+    // "Add recording" re-enables this control because the TRANSCRIPT genuinely changed
+    // (`appendRecording.ts` clears `prescriptionsGenerated`), but the Plan bullets themselves only
+    // change when the clinician edits that section by hand — so a bullet identical to one already
+    // pulled isn't new, and a second click over the same Plan must not duplicate it.
+    const already = new Set(items.filter((x) => x.generated).map((x) => x.text.trim().toLowerCase()));
+    const bullets = (plan?.bullets ?? []).filter((b) => !already.has(b.trim().toLowerCase()));
+    const base = items.length;
+    const pulled: Rx[] = bullets.map((b, i) => ({
+      id: `gen-${base + i}`,
       text: b,
       source: 'from Plan',
       done: false,
@@ -1365,6 +1380,34 @@ function ReRecordAction({ clientId, signed }: { clientId: string; signed: boolea
         />
       </Row>
     </View>
+  );
+}
+
+/**
+ * "Add recording" (captain, 2026-08-17) — next to Re-record, but the opposite shape: Re-record starts a
+ * FRESH note (the old draft rotates in the C4 retention list); Add recording appends the new capture's
+ * transcript onto THIS SAME note (`DataProvider.appendRecording`, threaded through as `mode=append` +
+ * `note=<noteIndex>` — mirroring how Re-record threads `clientId`) so nothing is discarded and no
+ * duplicate note is minted.
+ *
+ * Never available on a signed note (`signed` hides it entirely, no confirm dialog to bypass) — a
+ * signed note is read-only, the same rule `updateNoteSection` and `appendRecording` both enforce at
+ * their own seam, so this is belt-and-suspenders with those, not the only guard. No two-step confirm:
+ * appending is additive and nothing on the note is discarded, unlike Re-record's fresh-note risk to the
+ * C4 retention cap.
+ */
+function AddRecordingAction({ clientId, noteIndex, signed }: { clientId: string; noteIndex: number; signed: boolean }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const router = useRouter();
+  if (signed) return null;
+  return (
+    <Button
+      title="Add recording"
+      variant="secondary"
+      leftIcon={<PlusIcon size={15} color={c.ink} />}
+      onPress={() => router.replace(`/(app)/session?clientId=${encodeURIComponent(clientId)}&mode=append&note=${noteIndex}`)}
+    />
   );
 }
 

@@ -120,6 +120,17 @@ export type DraftNote = {
    * either way, because a cloud hop we can't prove is never claimed and neither is its absence.
    */
   draftedInCloud?: boolean;
+  /**
+   * True once "Add recording" (`appendRecording.ts`) has spliced a second capture onto this note's
+   * transcript whose OWN `transcriptFromCloud` disagreed with the note's prior claim — e.g. a
+   * cloud-transcribed original with a later hand-typed addition, or vice versa. `transcriptFromCloud`
+   * alone can no longer describe the WHOLE transcript truthfully at that point (a single boolean can't
+   * say "part of this is machine-transcribed, part isn't"), so this flags the Transcript tab to say so
+   * explicitly rather than pick one claim that misstates the other segment. The per-segment truth lives
+   * inline, in each "--- Added recording ---" divider. Absent/false when every segment agrees (the
+   * ordinary case, including every note with no appended recording).
+   */
+  transcriptMixedProvenance?: boolean;
   sections: NoteSection[];
   measures: { measure: string; today: string; prev: string; band: string }[];
   reviewCodes: ReviewCode[];

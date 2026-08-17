@@ -220,3 +220,18 @@ it('re-record on a signed note navigates immediately with no confirm', () => {
   fireEvent.press(screen.getByText('Re-record this session'));
   expect(mockReplace).toHaveBeenCalledWith(`/(app)/session?clientId=${CLIENT.id}`);
 });
+
+// "Add recording" (captain, 2026-08-17) — visible next to Re-record on an unsigned draft, and never
+// on a signed note (read-only), with no confirm dialog to bypass either way (append is additive).
+it('"Add recording" is offered on an unsigned draft and navigates in append mode for this note', () => {
+  mockDraft = DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByText('Add recording'));
+  expect(mockReplace).toHaveBeenCalledWith(`/(app)/session?clientId=${CLIENT.id}&mode=append&note=0`);
+});
+
+it('"Add recording" is absent on a signed note', () => {
+  mockDraft = SIGNED_DRAFT;
+  renderScreen();
+  expect(screen.queryByText('Add recording')).toBeNull();
+});
