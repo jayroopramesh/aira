@@ -128,5 +128,31 @@ const BASE_NOTE = {
   check('the prescriptions already pulled are NOT discarded — append is additive', next.prescriptions.length === 1 && next.prescriptions[0].text === 'Continue the sleep log', JSON.stringify(next.prescriptions));
 }
 
+// --- 7. Recording-screen comments concatenate — the strip's "kept with the note" promise holds across
+//        an append: earlier comments survive, the new capture's are added after them, none replaced ---
+{
+  const withComments = { ...BASE_NOTE, recordingComments: [{ ts: '03:12', text: 'Change talk here' }] };
+  const next = applyRecordingAppend(
+    withComments,
+    { transcript: 'New segment.', audioLeftDevice: true, transcriptFromCloud: true, recordingComments: [{ ts: '00:41', text: 'Ask about sleep' }] },
+    '17 Aug 14:32',
+  );
+  check(
+    'earlier comments survive and the new capture’s follow them, in order',
+    JSON.stringify(next.recordingComments) === JSON.stringify([{ ts: '03:12', text: 'Change talk here' }, { ts: '00:41', text: 'Ask about sleep' }]),
+    JSON.stringify(next.recordingComments),
+  );
+
+  const noNew = applyRecordingAppend(withComments, { transcript: 'No comments this time.', audioLeftDevice: true, transcriptFromCloud: true }, '17 Aug 14:32');
+  check(
+    'with no new comments, the earlier ones still survive untouched',
+    JSON.stringify(noNew.recordingComments) === JSON.stringify([{ ts: '03:12', text: 'Change talk here' }]),
+    JSON.stringify(noNew.recordingComments),
+  );
+
+  const neverAny = applyRecordingAppend(BASE_NOTE, { transcript: 'No comments at all.', audioLeftDevice: true, transcriptFromCloud: true }, '17 Aug 14:32');
+  check('a note that never had comments gains none', neverAny.recordingComments === undefined, String(neverAny.recordingComments));
+}
+
 console.log(failed ? `\n${failed} assertion(s) failed` : '\nAll append-recording assertions passed');
 process.exit(failed ? 1 : 0);
