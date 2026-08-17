@@ -790,7 +790,7 @@ const NOTE = {
     String(folded.snapshot.notes[folded.clientId][0].transcript),
   );
   check(
-    'save: the fold retains the prior session\'s transcript too (the 3-note cap, not an overwrite)',
+    'save: the fold retains the prior session\'s transcript too (the multi-note cap, not an overwrite)',
     folded.snapshot.notes[folded.clientId][1].transcript === TRANSCRIPT_TEXT,
     String(folded.snapshot.notes[folded.clientId][1].transcript),
   );
