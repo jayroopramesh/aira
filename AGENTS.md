@@ -144,6 +144,15 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
     `F41.1` chip) only when `input.sampleCapture === true`; every other session gets derive-only
     output (subjective/objective from the clinician's words + the risk scan, everything else left at
     `NOT_CAPTURED`). The flag defaults to absent = safe mode.
+  - **The sample may only analyse for a fully ANONYMOUS capture** (round 3, 2026-08-17): on the
+    capture screen, a linked client OR a typed name OR a typed Emirates ID makes it a real person's
+    session, so BOTH routes to the `mock://` clip — stopping with no live recorder, and "Use sample
+    audio" — refuse (`hasRealIdentity` in `session/index.tsx`; the stop takes `failedCaptureRef()`
+    into the type/paste recovery, the sample button explains inline). Before this gate, a named
+    no-mic capture saved the canned transcript, the F41.1 walkthrough code and a fabricated
+    "From a 47-min voice note" provenance into a real client record as an ordinary non-sample note
+    that "Undo sample data" can never remove. Proved by
+    `src/app/(app)/session/__tests__/index.test.tsx` (jest — it's component wiring).
   - With the proxy configured but NOT signed in, **transcription throws** `CloudSessionRequiredError`
     (`cloudSession.ts`) while **drafting falls back** to the stub over the same text, stamped
     `draftedInCloud: false`. Never make transcription fall back, never make drafting throw — that is
