@@ -1,5 +1,5 @@
 /**
- * "Add recording" — append a SECOND capture's transcript onto an already-drafted note, rather than
+ * "Continue recording" — append a SECOND capture's transcript onto an already-drafted note, rather than
  * starting a fresh note the way "Re-record" does. Lives outside the React provider on the same
  * principle as `applySessionNote` (`saveSession.ts`): a pure note→note function is what a harness or a
  * plain jest test can drive directly, and this is exactly the kind of honesty-critical merge that has

@@ -121,7 +121,7 @@ export type DraftNote = {
    */
   draftedInCloud?: boolean;
   /**
-   * True once "Add recording" (`appendRecording.ts`) has spliced a second capture onto this note's
+   * True once "Continue recording" (`appendRecording.ts`) has spliced a second capture onto this note's
    * transcript whose OWN `transcriptFromCloud` disagreed with the note's prior claim — e.g. a
    * cloud-transcribed original with a later hand-typed addition, or vice versa. `transcriptFromCloud`
    * alone can no longer describe the WHOLE transcript truthfully at that point (a single boolean can't

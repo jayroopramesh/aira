@@ -22,6 +22,14 @@ jest.mock('../../../../services/auth', () => ({
   authService: { getClinicianName: () => 'Test Clinician' },
 }));
 
+// A mutable module-scope fixture the mock reads on every render (same pattern as `mockDraft` below),
+// so individual tests can control what `audioVault` claims is kept for THIS note without touching
+// the real in-memory registry (which `session/index.tsx` alone writes to).
+let mockAudioSegments: { uri: string; durationMs: number; kind: 'original' | 'added'; label: string }[] = [];
+jest.mock('../../../../services/audioVault', () => ({
+  getAudioSegments: () => mockAudioSegments,
+}));
+
 const CLIENT: Client = {
   id: 'amara',
   name: 'Amara K.',
@@ -120,6 +128,7 @@ beforeEach(() => {
 
 afterEach(() => {
   mockDraft = DRAFT;
+  mockAudioSegments = [];
 });
 
 it('links the header client chip to the patient page', () => {
@@ -221,17 +230,74 @@ it('re-record on a signed note navigates immediately with no confirm', () => {
   expect(mockReplace).toHaveBeenCalledWith(`/(app)/session?clientId=${CLIENT.id}`);
 });
 
-// "Add recording" (captain, 2026-08-17) — visible next to Re-record on an unsigned draft, and never
+// "Continue recording" (captain, 2026-08-17) — visible next to Re-record on an unsigned draft, and never
 // on a signed note (read-only), with no confirm dialog to bypass either way (append is additive).
-it('"Add recording" is offered on an unsigned draft and navigates in append mode for this note', () => {
+it('"Continue recording" is offered on an unsigned draft and navigates in append mode for this note', () => {
   mockDraft = DRAFT;
   renderScreen();
-  fireEvent.press(screen.getByText('Add recording'));
+  fireEvent.press(screen.getByText('Continue recording'));
   expect(mockReplace).toHaveBeenCalledWith(`/(app)/session?clientId=${CLIENT.id}&mode=append&note=0`);
 });
 
-it('"Add recording" is absent on a signed note', () => {
+it('"Continue recording" is absent on a signed note', () => {
   mockDraft = SIGNED_DRAFT;
   renderScreen();
-  expect(screen.queryByText('Add recording')).toBeNull();
+  expect(screen.queryByText('Continue recording')).toBeNull();
+});
+
+/**
+ * Stitched-playback wiring (captain addition, 2026-08-17): "Keep the audio" only offers real
+ * sequential playback when `audioVault` actually has something for THIS note — mounts the real
+ * `AudioTrust` card (via the full review screen) so a dropped `clientId`/`noteIndex` prop, or the
+ * `window.Audio` construction, fails this test the way other wiring tests here catch a deleted
+ * `onPress`. A minimal fake `window.Audio` stands in for the browser constructor (absent by default
+ * in this RN test environment), matching the "no live stream / API → honest fallback" posture used
+ * elsewhere in this app rather than skipping the interaction entirely.
+ */
+class FakeAudio {
+  static instances: FakeAudio[] = [];
+  src: string;
+  onended: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  constructor(src?: string) {
+    this.src = src ?? '';
+    FakeAudio.instances.push(this);
+  }
+  play() {
+    return Promise.resolve();
+  }
+  pause() {}
+}
+
+const SEGMENTS = [
+  { uri: 'blob:https://app.example/original', durationMs: 60000, kind: 'original' as const, label: 'Original recording' },
+  { uri: 'blob:https://app.example/added-1', durationMs: 30000, kind: 'added' as const, label: 'Added · 17 Aug 21:11' },
+];
+
+beforeEach(() => {
+  FakeAudio.instances = [];
+  (globalThis as unknown as { window: { Audio: unknown } }).window.Audio = FakeAudio;
+});
+
+it('"Keep the audio" with real segments offers a real stitched play control', async () => {
+  mockDraft = SIGNED_DRAFT;
+  mockAudioSegments = SEGMENTS;
+  renderScreen();
+  fireEvent.press(screen.getByRole('switch'));
+  const playButton = await screen.findByText(/Play the stitched recording — the original plus 1 added segment, in order/);
+  fireEvent.press(playButton);
+  expect(FakeAudio.instances).toHaveLength(1);
+  expect(FakeAudio.instances[0].src).toBe(SEGMENTS[0].uri);
+  // `play()` resolves asynchronously (real `HTMLMediaElement.play()` returns a Promise) and flips the
+  // label to "Pause" — let that settle before the test ends so the update lands inside `act`.
+  await screen.findByText('Pause');
+});
+
+it('"Keep the audio" with no real segments says so honestly instead of offering a dead Play button', () => {
+  mockDraft = SIGNED_DRAFT;
+  mockAudioSegments = [];
+  renderScreen();
+  fireEvent.press(screen.getByRole('switch'));
+  expect(screen.getByText(/Nothing to play back/)).toBeTruthy();
+  expect(screen.queryByText(/Play the stitched recording/)).toBeNull();
 });

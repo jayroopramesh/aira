@@ -5,13 +5,14 @@ import { ClientLink } from '../../../components/ClientLink';
 import { Highlights } from '../../../components/Highlights';
 import { Screen } from '../../../components/Screen';
 import { Waveform } from '../../../components/Waveform';
-import { AlertTriangleIcon, FileUpIcon, MicIcon, PencilIcon, PlusIcon, ShieldIcon, SparklesIcon, StopIcon } from '../../../components/icons';
+import { AlertTriangleIcon, FileUpIcon, MicIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon, StopIcon } from '../../../components/icons';
 import { AppText, Button, Card, Row, TrustPill } from '../../../components/ui';
 import { useClient, useClientNotes, useData } from '../../../data/DataProvider';
 import { isValidEmiratesId } from '../../../data/sessionClient';
 import { DraftNote } from '../../../data/types';
 import { RecordingAddition } from '../../../data/appendRecording';
 import { formatTimestamp } from '../../../utils/formatTimestamp';
+import { addAudioSegment, setOriginalAudioSegment } from '../../../services/audioVault';
 import {
   ActiveRecording,
   failedCaptureRef,
@@ -86,8 +87,8 @@ export default function SessionCapture() {
   const client = useClient(clientId);
   const { saveSessionNote, appendRecording, hydrated } = useData();
 
-  // "Add recording" (as opposed to "Re-record", the ordinary entry to this screen) — the review
-  // screen's AddRecordingAction threads `mode=append&note=<noteIndex>` alongside `clientId`, mirroring
+  // "Continue recording" (as opposed to "Re-record", the ordinary entry to this screen) — the review
+  // screen's ContinueRecordingAction threads `mode=append&note=<noteIndex>` alongside `clientId`, mirroring
   // how re-record threads its own context. The target note must exist and be unsigned (a signed note
   // is read-only, enforced again at `appendRecording`'s own seam) — anything else bounces back to
   // review rather than silently starting an unrelated fresh capture under an append URL.
@@ -184,6 +185,11 @@ export default function SessionCapture() {
         : nameConflict
           ? '&conflict=1'
           : '';
+    // `withNote` (saveSession.ts) always prepends the newest note, so a just-drafted note — folded or
+    // freshly minted alike — is always index 0. Real audio only (a mock/failed capture's uri is
+    // never a `blob:`, so this is a silent no-op for those, never a fabricated "kept" playback).
+    const cap = capture.current;
+    if (cap) setOriginalAudioSegment(id, 0, { uri: cap.uri, durationMs: cap.durationMs, kind: 'original', label: 'Original recording' });
     router.replace(`/(app)/session/review?clientId=${id}${notice}`);
   };
 
@@ -192,7 +198,10 @@ export default function SessionCapture() {
   // separator, and the provenance honesty) and review re-opens on that exact note.
   const onAppended = async (addition: RecordingAddition) => {
     if (!client || appendNoteIndex === undefined) return;
-    await appendRecording(client.id, appendNoteIndex, addition, formatTimestamp(new Date()));
+    const timestampLabel = formatTimestamp(new Date());
+    await appendRecording(client.id, appendNoteIndex, addition, timestampLabel);
+    const cap = capture.current;
+    if (cap) addAudioSegment(client.id, appendNoteIndex, { uri: cap.uri, durationMs: cap.durationMs, kind: 'added', label: `Added · ${timestampLabel}` });
     router.replace(`/(app)/session/review?clientId=${encodeURIComponent(client.id)}&note=${appendNoteIndex}`);
   };
 
@@ -222,6 +231,7 @@ export default function SessionCapture() {
           displayName={displayName}
           sessionNumber={client?.sessionNumber ?? 1}
           live={!!recording.current}
+          activeRecording={recording.current ?? undefined}
           onStop={stopAndAnalyse}
           onUpload={onUpload}
           cloudReady={cloudReady}
@@ -247,7 +257,7 @@ export default function SessionCapture() {
 
 /**
  * Shared honesty banner for the three capture phases while `appendTarget` is set — says PLAINLY what
- * "Add recording" actually does (splice onto the existing note's transcript) so it's never mistaken
+ * "Continue recording" actually does (splice onto the existing note's transcript) so it's never mistaken
  * for Re-record's fresh-note behaviour mid-flow, only readable from a different screen entirely.
  */
 function AppendBanner({ sessionLabel }: { sessionLabel: string }) {
@@ -272,7 +282,7 @@ function AppendBanner({ sessionLabel }: { sessionLabel: string }) {
         <ShieldIcon size={15} color={c.brand} />
       </View>
       <AppText variant="small" tint={c.brand} style={{ flex: 1, lineHeight: 17 }}>
-        Adding to {sessionLabel} — this recording's transcript will be appended to that note, not saved
+        Continuing {sessionLabel} — this recording's transcript will be appended to that note, not saved
         as a new one. Nothing else on the note changes automatically.
       </AppText>
     </Row>
@@ -308,7 +318,7 @@ function PreCapture({
   onUseSample: () => void;
   returnTo: string;
   cloudReady: boolean | null;
-  /** Set only in "Add recording" mode — the note this capture will be appended to, not saved fresh. */
+  /** Set only in "Continue recording" mode — the note this capture will be appended to, not saved fresh. */
   appendTarget?: DraftNote;
 }) {
   const theme = useTheme();
@@ -556,6 +566,7 @@ function Recording({
   displayName,
   sessionNumber,
   live,
+  activeRecording,
   onStop,
   onUpload,
   cloudReady,
@@ -564,6 +575,9 @@ function Recording({
   displayName: string;
   sessionNumber: number;
   live: boolean;
+  /** The recorder itself — read for pause/resume + real waveform levels only; `live` alone still
+   *  decides whether a recorder exists at all. */
+  activeRecording?: ActiveRecording;
   onStop: () => void;
   onUpload: () => void;
   cloudReady: boolean | null;
@@ -578,24 +592,57 @@ function Recording({
   const willTranscribe = !live || (hasGroq && cloudReady !== false);
   const [seconds, setSeconds] = useState(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // A paused-then-resumed recording is still ONE segment (MediaRecorder keeps writing into the same
+  // clip) — distinct from "Continue recording", which appends a whole new segment to an
+  // already-drafted note. Gated on `activeRecording.supportsPause` so a build/browser without
+  // MediaRecorder.pause() never offers a control that would silently do nothing.
+  const [paused, setPaused] = useState(false);
+  const canPause = live && !!activeRecording?.supportsPause;
 
   useEffect(() => {
-    if (!live) return;
+    if (!live || paused) return;
     timer.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
+  }, [live, paused]);
+
+  // Pausing/resuming never changes screens, so this can't rely on a remount to reset — flip back to
+  // false if a fresh (non-live) Recording mount somehow inherited a stale true from elsewhere.
+  useEffect(() => {
+    if (!live) setPaused(false);
   }, [live]);
+
+  const togglePause = () => {
+    if (!canPause) return;
+    if (paused) {
+      activeRecording?.resume();
+      setPaused(false);
+    } else {
+      activeRecording?.pause();
+      setPaused(true);
+    }
+  };
 
   const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
   const ss = String(seconds % 60).padStart(2, '0');
 
   return (
     <View style={{ alignItems: 'center', paddingTop: theme.spacing.xl }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: c.riskBg, borderRadius: theme.radii.pill, paddingVertical: 8, paddingHorizontal: 16 }}>
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.riskFill }} />
-        <AppText variant="bodyStrong" tint={c.risk}>
-          {live ? 'Recording' : 'Ready'} · Session {sessionNumber} with {displayName}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          backgroundColor: paused ? c.sunken : c.riskBg,
+          borderRadius: theme.radii.pill,
+          paddingVertical: 8,
+          paddingHorizontal: 16,
+        }}
+      >
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: paused ? c.ink3 : c.riskFill }} />
+        <AppText variant="bodyStrong" tint={paused ? c.ink2 : c.risk}>
+          {paused ? 'Paused' : live ? 'Recording' : 'Ready'} · Session {sessionNumber} with {displayName}
         </AppText>
       </View>
       {appendTarget ? <AppendBanner sessionLabel={appendTarget.sessionLabel} /> : null}
@@ -603,7 +650,12 @@ function Recording({
         {mm}:{ss}
       </AppText>
       <View style={{ height: 18 }} />
-      <Waveform bars={13} />
+      <Waveform bars={13} getLevels={live ? activeRecording?.getLevels : undefined} />
+      {paused ? (
+        <AppText variant="small" color="ink3" center style={{ marginTop: 8, maxWidth: 420 }}>
+          Paused — nothing new is being captured. Resume to keep recording this same clip.
+        </AppText>
+      ) : null}
 
       {!live ? (
         <Card tone="sunken" elevation="none" radius="md" style={{ marginTop: 20, maxWidth: 520, backgroundColor: c.cautionBg, borderColor: c.cautionBg }}>
@@ -636,6 +688,16 @@ function Recording({
 
       <View style={{ height: 22 }} />
       <Row gap={12} style={{ flexWrap: 'wrap', justifyContent: 'center' }}>
+        {canPause ? (
+          <Button
+            title={paused ? 'Resume' : 'Pause'}
+            variant="secondary"
+            size="lg"
+            leftIcon={paused ? <PlayIcon size={15} color={c.brand} /> : <PauseIcon size={15} color={c.brand} />}
+            accessibilityLabel={paused ? 'Resume recording' : 'Pause recording — resume later without starting a new segment'}
+            onPress={togglePause}
+          />
+        ) : null}
         <Button title="Stop & transcribe" variant="secondary" size="lg" leftIcon={<StopIcon size={16} color={c.risk} />} onPress={onStop} />
         {isUploadSupported() ? (
           <Button title="Upload a clip instead" variant="ghost" leftIcon={<FileUpIcon size={15} color={c.brand} strokeWidth={2} />} onPress={onUpload} />
@@ -850,7 +912,7 @@ function Analysing({
   /** Whether a cloud draft is actually reachable, so the in-flight label names the drafting hop
    *  truthfully — the summarizer drafts on-device when there is no session token. */
   cloudReady: boolean | null;
-  /** Set only in "Add recording" mode. When present, the terminal action splices this capture's
+  /** Set only in "Continue recording" mode. When present, the terminal action splices this capture's
    *  transcript onto that note (`onAppend`) instead of running the summarizer to draft a new one. */
   appendTarget?: DraftNote;
   onAppend: (addition: RecordingAddition) => void | Promise<void>;
@@ -864,7 +926,7 @@ function Analysing({
   // to DO — a generic transcription/drafting failure gets the message alone.
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [clinicalWarnDismissed, setClinicalWarnDismissed] = useState(false);
-  // "Add recording" mode's own in-flight flag — no summarizer call runs, so `stage` never moves to
+  // "Continue recording" mode's own in-flight flag — no summarizer call runs, so `stage` never moves to
   // 'drafting' for this path; this is what disables the transcript editor and the terminal button
   // while `onAppend` persists.
   const [appending, setAppending] = useState(false);
@@ -1029,7 +1091,7 @@ function Analysing({
     }
   };
 
-  /** "Add recording"'s terminal action — mirrors `draftAndContinue`'s F11 quality guard (garbage audio
+  /** "Continue recording"'s terminal action — mirrors `draftAndContinue`'s F11 quality guard (garbage audio
    *  must not land in a real note's transcript either), but never calls the summarizer: the merge is
    *  `onAppend` → `appendRecording.ts`, not a fresh draft. */
   const appendAndContinue = async () => {

@@ -263,6 +263,64 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   when the current note is an unsigned draft — a fresh capture could rotate it out of the notes-per-
   client retention cap (`MAX_NOTES_PER_CLIENT`, `repository.ts`, C4 — 3→5 in round 2, 2026-08-17) before
   it's signed; a signed note re-records with no confirm since nothing there can be lost.
+- **Continue recording** (`ContinueRecordingAction` in `review.tsx`, captain 2026-08-17 — named "Continue
+  recording" in every user-facing label/test; internal identifiers and the `mode=append` route param
+  are unaffected by that naming) is Re-record's opposite:
+  it threads `?mode=append&note=<noteIndex>` onto the same `/(app)/session` route rather than minting a
+  fresh note, never available on a signed note (no confirm needed either — append is additive, nothing
+  is discarded). `session/index.tsx` detects append mode, skips `summarizationService.summarize()`
+  entirely for the terminal action, and instead hands the newly transcribed (+ speaker-separated, in
+  patient-session mode) text to `DataProvider.appendRecording`, which delegates the actual merge to the
+  pure `applyRecordingAppend` (`src/data/appendRecording.ts`, proved by
+  `scripts/append-recording-harness.mjs`) — the same pure-function-outside-React shape as
+  `applySessionNote` (`saveSession.ts`), for the same reason: a rule this honesty-critical needs a
+  harness that can drive it directly. It splices the new segment onto the note's existing transcript
+  behind a timestamped `--- Added recording · <ts> · <segment provenance> ---` divider (never replacing
+  or discarding the prior text or its own auxiliary notes, which concatenate). Provenance stays honest
+  under the note's existing single-boolean model exactly while every appended segment agrees with it;
+  `audioLeftDevice` only ever grows more true (up-only disclosure, same posture as the risk floor), and
+  the moment a cloud-transcribed segment and a hand-typed one are spliced together, a single
+  `transcriptFromCloud` boolean can no longer describe the WHOLE transcript truthfully — that's
+  `DraftNote.transcriptMixedProvenance`, which switches the Transcript tab to an explicit "combines more
+  than one recording" caption instead of picking one claim that misstates the other segment; the
+  per-segment truth then lives in the divider line itself. Appending resets `prescriptionsGenerated`
+  (the transcript genuinely changed, so "Generate from notes" honestly re-enables) — `PrescriptionsRail`
+  now dedupes by bullet text before pulling, since the Plan section itself isn't auto-redrafted on
+  append and a second pull over an unchanged Plan must not duplicate prescriptions.
+- **Stitched audio playback** (`StitchedAudioPlayer` in `review.tsx`, captain 2026-08-17): "Keep the
+  audio" (`AudioTrust`) now backs its own promise with a real `<Audio>`-driven sequential player — the
+  original capture, then each later Continue-recording segment, in order, via a single audio element
+  advancing on `ended`. The segment list lives in `src/services/audioVault.ts`, an IN-MEMORY
+  (module-scope, never vault-persisted) registry keyed by `clientId::noteIndex`, written only by
+  `session/index.tsx`'s `onDrafted`/`onAppended` and only for a REAL `blob:` capture
+  (`isRealAudioUri` — the sample clip and a failed recording never register, so a demo session can
+  never be offered a fabricated "kept audio" replay). In-memory is a deliberate, honestly-scoped
+  choice, not a shortcut: a `blob:` object URL is only valid for the page load that created it, and
+  the existing "Keep the audio" copy already promises persistence only "for this session" — a reload
+  genuinely loses it, matching that copy rather than quietly under-delivering on it. Proved by
+  `scripts/audio-vault-harness.mjs` (registry ordering/isolation) and a `review.test.tsx` wiring test
+  (toggling Keep with mocked segments drives a real `window.Audio` construction; with none, an honest
+  "Nothing to play back" message, never a dead button).
+- **Pause/resume + a real waveform** (captain 2026-08-17, `audioCapture.ts`'s `ActiveRecording`): a
+  paused-then-resumed recording is ONE segment (MediaRecorder's native `pause()`/`resume()` keep
+  writing into the same clip) — the opposite of Continue-recording's brand-new segment. `stop()`'s
+  `durationMs` excludes paused time (tracked via `totalPausedMs`/`pausedAt`, not trusted to the UI's
+  own timer). `supportsPause` gates the Recording screen's Pause button so an unsupported
+  browser/polyfill is never offered a control that would silently no-op. The waveform
+  (`Waveform.tsx`) is real amplitude when a live analyser exists: `startRecording()` taps a Web Audio
+  `AnalyserNode` off the SAME `MediaStream` MediaRecorder encodes (never connected to
+  `audioCtx.destination` — this only reads levels, never plays the mic back) and exposes
+  `getLevels(bars)`, polled by `Waveform` on a `requestAnimationFrame` loop that calls
+  `Animated.Value.setValue()` directly — an imperative update RN's Animated module applies without a
+  React re-render, which is what keeps a per-frame poll cheap (captain's explicit "no per-frame React
+  state churn"). `getLevels` returns `null` when no analyser exists (native, an unsupported browser,
+  or `AudioContext` construction failed) so `Waveform` falls back to its original ambient canned loop
+  — never a fake "responsive" one — and flattens to zero while paused. Verified live in a headless
+  Chrome launched with `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream` (grants a
+  synthetic mic stream with no permission prompt): real per-bar amplitude that visibly varies frame to
+  frame, flattens to the floor value the instant Pause is pressed, and resumes on Resume — plus the
+  resulting clip's stitched playback actually plays in a real `<audio>` element, proving the whole
+  capture→analyse→play pipeline end to end, not just each piece in isolation.
 - **Name vs. slug**: the user-visible product name is **Airava** (`app.json` `name`, the TopBar
   wordmark, onboarding/login lockups, the web `<title>`, and `public/manifest.json`). The shorthand
   **aira** stays for everything non-user-facing — repo, npm package, the `aira` `slug`/`scheme`, the

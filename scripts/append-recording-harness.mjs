@@ -1,5 +1,5 @@
 /**
- * "Add recording" harness. Proves `applyRecordingAppend` (the pure note→note merge behind
+ * "Continue recording" harness. Proves `applyRecordingAppend` (the pure note→note merge behind
  * `DataProvider.appendRecording`) end to end:
  *   1. Nothing already on the note is discarded — the prior transcript survives verbatim, with a
  *      timestamped, per-segment "--- Added recording ---" divider ahead of the new text.

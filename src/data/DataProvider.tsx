@@ -126,7 +126,7 @@ type DataContextValue = {
    */
   generatePrescriptions: (clientId: string, noteIndex: number, items: PrepItem[]) => Promise<void>;
   /**
-   * "Add recording" (as distinct from "Re-record", which starts a brand-new note): append a second
+   * "Continue recording" (as distinct from "Re-record", which starts a brand-new note): append a second
    * capture's transcript onto the SAME note rather than minting a new one. The merge itself — the
    * separator, the up-only `audioLeftDevice` disclosure, the mixed-provenance flag when the two
    * segments' `transcriptFromCloud` disagree, and resetting `prescriptionsGenerated` because the

@@ -16,6 +16,8 @@ import { CaptureRef } from './transcription';
 type MediaRecorderInstance = {
   start: () => void;
   stop: () => void;
+  pause?: () => void;
+  resume?: () => void;
   ondataavailable: ((e: { data: Blob }) => void) | null;
   onstop: (() => void) | null;
   state: string;
@@ -37,6 +39,25 @@ export function isUploadSupported(): boolean {
 export type ActiveRecording = {
   /** Stop capture and resolve the recorded clip as a CaptureRef. */
   stop: () => Promise<CaptureRef>;
+  /**
+   * Pause/resume the SAME in-progress capture — a paused-then-resumed recording is still ONE
+   * segment (MediaRecorder keeps writing into the same clip; this is distinct from "Continue
+   * recording", which starts a whole new segment appended to an already-drafted note). No-ops when
+   * `supportsPause` is false or the recorder isn't in the expected state, so a caller doesn't need
+   * to track recorder state itself to call these safely.
+   */
+  pause: () => void;
+  resume: () => void;
+  /** Whether this recorder actually supports pause/resume — gate the UI on this, never assume. */
+  supportsPause: boolean;
+  /**
+   * Real per-bar input levels (0..1, one per requested bar) sampled from the SAME MediaStream
+   * MediaRecorder is encoding, via a Web Audio AnalyserNode — never a canned animation. Returns
+   * `null` when no live analyser exists (Web Audio unsupported in this browser), so callers can
+   * honestly fall back to an ambient animation instead of faking responsiveness. Flattens to zero
+   * while paused, since nothing is being captured then.
+   */
+  getLevels: (bars: number) => number[] | null;
 };
 
 /**
@@ -62,6 +83,11 @@ export async function startRecording(): Promise<ActiveRecording> {
   const recorder = new MR(stream, mimeType ? { mimeType } : undefined);
   const chunks: Blob[] = [];
   const startedAt = Date.now();
+  // Paused time must not count as recorded duration — a 10-minute session with 2 minutes paused is
+  // an 8-minute clip, not 10. Tracked here rather than trusted to a UI timer, so `stop()`'s
+  // `durationMs` is right even if the caller's own on-screen clock drifts.
+  let totalPausedMs = 0;
+  let pausedAt: number | null = null;
 
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data);
@@ -82,12 +108,72 @@ export async function startRecording(): Promise<ActiveRecording> {
     if (settled) return;
     settled = true;
     stream.getTracks().forEach((t) => t.stop());
+    audioCtx?.close().catch(() => {});
+    const stillPausedMs = pausedAt !== null ? Date.now() - pausedAt : 0;
+    const durationMs = Math.max(0, Date.now() - startedAt - totalPausedMs - stillPausedMs);
     const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
-    resolveClip({ uri: URL.createObjectURL(blob), durationMs: Date.now() - startedAt });
+    resolveClip({ uri: URL.createObjectURL(blob), durationMs });
   };
 
   recorder.onstop = finish;
   recorder.start();
+
+  const supportsPause = typeof recorder.pause === 'function' && typeof recorder.resume === 'function';
+  const pause = () => {
+    if (!supportsPause || recorder.state !== 'recording') return;
+    recorder.pause?.();
+    pausedAt = Date.now();
+  };
+  const resume = () => {
+    if (!supportsPause || recorder.state !== 'paused') return;
+    recorder.resume?.();
+    if (pausedAt !== null) {
+      totalPausedMs += Date.now() - pausedAt;
+      pausedAt = null;
+    }
+  };
+
+  // A Web Audio AnalyserNode tapped off the SAME stream MediaRecorder reads, so the waveform reflects
+  // the real mic signal rather than a canned loop. Deliberately never connected to
+  // `audioCtx.destination` — this only reads levels, it must never play the mic back and cause
+  // feedback. Best-effort: some embed/test environments lack `AudioContext` entirely, and that must
+  // degrade to "no live levels" rather than throw and abort the whole recording.
+  let audioCtx: AudioContext | null = null;
+  let analyser: AnalyserNode | null = null;
+  let freqData: Uint8Array<ArrayBuffer> | null = null;
+  try {
+    const AC = (globalThis as { AudioContext?: new () => AudioContext }).AudioContext;
+    if (AC) {
+      audioCtx = new AC();
+      const source = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64; // 32 frequency bins — plenty for a bar count this small, and cheap per frame
+      source.connect(analyser);
+      freqData = new Uint8Array(analyser.frequencyBinCount);
+    }
+  } catch {
+    audioCtx = null;
+    analyser = null;
+    freqData = null;
+  }
+
+  const getLevels = (bars: number): number[] | null => {
+    if (!analyser || !freqData || bars <= 0) return null;
+    if (pausedAt !== null) return new Array(bars).fill(0); // flatten — nothing is being captured
+    analyser.getByteFrequencyData(freqData);
+    const binSize = Math.max(1, Math.floor(freqData.length / bars));
+    const levels: number[] = [];
+    for (let i = 0; i < bars; i++) {
+      let sum = 0;
+      let n = 0;
+      for (let j = i * binSize; j < Math.min(freqData.length, (i + 1) * binSize); j++) {
+        sum += freqData[j];
+        n++;
+      }
+      levels.push(n ? sum / n / 255 : 0);
+    }
+    return levels;
+  };
 
   return {
     stop: async () => {
@@ -99,6 +185,10 @@ export async function startRecording(): Promise<ActiveRecording> {
       }
       return clip;
     },
+    pause,
+    resume,
+    supportsPause,
+    getLevels,
   };
 }
 
