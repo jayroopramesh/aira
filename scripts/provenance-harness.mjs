@@ -234,7 +234,7 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
 // --- 3. sourceLine across every reachable combination of the three facts --------------------------
 {
   // No token → the Groq summarizer delegates on-device, so this exercises the real fallback path.
-  const offline = new GroqSummarizationService('https://proxy.invalid', async () => null, 'llama-3.3-70b-versatile');
+  const offline = new GroqSummarizationService('https://proxy.invalid', async () => null, 'openai/gpt-oss-120b');
   // `buildDraft` sentence-cases the provenance when there is no duration to prefix, so every phrase
   // assertion here is deliberately case-insensitive.
   const draft = (flags) => offline.summarize({ transcript: REAL_TRANSCRIPT, ...flags });
@@ -305,7 +305,7 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
       { status: 200, headers: { 'content-type': 'application/json' } },
     );
 
-  const live = new GroqSummarizationService('https://proxy.invalid', async () => 'session-token', 'llama-3.3-70b-versatile');
+  const live = new GroqSummarizationService('https://proxy.invalid', async () => 'session-token', 'openai/gpt-oss-120b');
   const cloud = await live.summarize({ transcript: REAL_TRANSCRIPT, audioLeftDevice: true, transcriptFromCloud: true });
   check('a token-backed draft is stamped drafted-in-cloud', cloud.draftedInCloud === true);
   check('cloud transcription + cloud draft collapses to one clause',
@@ -341,7 +341,7 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
 
   // The offline (no-token) delegate path is the same buildDraft call, so it must carry the same field —
   // there is deliberately only one place this is decided.
-  const offline = new GroqSummarizationService('https://proxy.invalid', async () => null, 'llama-3.3-70b-versatile');
+  const offline = new GroqSummarizationService('https://proxy.invalid', async () => null, 'openai/gpt-oss-120b');
   const offlineDraft = await offline.summarize({ transcript: REAL_TRANSCRIPT });
   check('the offline Groq-delegate path also stamps the transcript', offlineDraft.transcript === REAL_TRANSCRIPT, offlineDraft.transcript);
 
@@ -353,7 +353,7 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
       }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     );
-  const live = new GroqSummarizationService('https://proxy.invalid', async () => 'session-token', 'llama-3.3-70b-versatile');
+  const live = new GroqSummarizationService('https://proxy.invalid', async () => 'session-token', 'openai/gpt-oss-120b');
   const liveDraft = await live.summarize({ transcript: REAL_TRANSCRIPT, audioLeftDevice: true, transcriptFromCloud: true });
   check('the live cloud-drafted path stamps the same transcript the clinician reviewed', liveDraft.transcript === REAL_TRANSCRIPT, liveDraft.transcript);
   globalThis.fetch = originalFetch;

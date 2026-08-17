@@ -225,7 +225,7 @@ async function runScenarios() {
     check('the caller\'s session token never left the proxy',
       !upstream.rawBody.includes(SESSION_TOKEN) && upstream.authorization !== `Bearer ${SESSION_TOKEN}`, upstream.authorization);
     check('the caller-supplied model was overwritten with the pinned chat model',
-      upstream.model === 'llama-3.3-70b-versatile', upstream.model);
+      upstream.model === 'openai/gpt-oss-120b', upstream.model);
     check('the clinical messages were forwarded intact', upstream.body.messages.length === 2, JSON.stringify(upstream.body.messages));
     check('no response ever echoes the Groq secret', !ok.text.includes(SERVER_GROQ_KEY), 'it did');
   }
@@ -285,7 +285,7 @@ async function runScenarios() {
   {
     groqNextFailure = {
       status: 429,
-      body: { error: { message: 'Rate limit reached for model llama-3.3-70b-versatile', type: 'rate_limit_exceeded' } },
+      body: { error: { message: 'Rate limit reached for model openai/gpt-oss-120b', type: 'rate_limit_exceeded' } },
       headers: { 'retry-after': '17', 'x-ratelimit-remaining-requests': '0' },
     };
     const relayed = await call('upstream 429', `${PROXY}/chat/completions`, jsonPost(SESSION_TOKEN, chatBody()));

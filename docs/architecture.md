@@ -25,7 +25,7 @@ flowchart TB
     SUPA["Supabase Auth\naccounts: email+password\ncreate-account · recovery code"]
     PROXY["Supabase Edge Function · groq-proxy\nholds GROQ_API_KEY as a server secret\nverifies the counselor's session JWT\npins models · rate-limits · rejects identifiers"]
     GROQW["Groq · whisper-large-v3\ntranscription (demo)"]
-    GROQL["Groq · llama-3.3-70b\nSOAP draft generation (demo)"]
+    GROQL["Groq · gpt-oss-120b\nSOAP draft generation (demo)"]
   end
 
   subgraph PROD["🏗 Production path — built and parked"]

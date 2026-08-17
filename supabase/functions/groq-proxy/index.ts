@@ -9,7 +9,7 @@
 //
 // It proxies BOTH Groq calls the app uses:
 //   • POST /groq-proxy/transcriptions   — multipart audio → whisper-large-v3 (audio/transcriptions)
-//   • POST /groq-proxy/chat/completions — JSON messages   → llama-3.3-70b   (chat/completions)
+//   • POST /groq-proxy/chat/completions — JSON messages   → openai/gpt-oss-120b (chat/completions)
 //
 // Guarantees:
 //   • Only signed-in counselors spend quota. The Authorization bearer must be a valid *user* session
@@ -42,7 +42,7 @@ const GROQ_BASE_URL = (Deno.env.get("GROQ_BASE_URL") ?? "https://api.groq.com/op
 // The models this proxy is allowed to spend quota on. PINNED SERVER-SIDE: the caller's own `model`
 // is ignored and overwritten, so a rogue account (signup is open — see README) cannot point the
 // project's Groq quota at an arbitrary, more expensive model.
-const CHAT_MODEL = "llama-3.3-70b-versatile";
+const CHAT_MODEL = "openai/gpt-oss-120b";
 const TRANSCRIPTION_MODEL = "whisper-large-v3";
 
 // Per-caller rate limit. Best-effort in-memory fixed window, keyed by Supabase user id.
