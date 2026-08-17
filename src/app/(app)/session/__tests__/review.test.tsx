@@ -4,7 +4,7 @@
  * `ClientLink` in isolation) so a deleted `onPress` here would fail this test the way the Escalate
  * sheet's wiring tests are designed to catch the same class of regression.
  */
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider } from '../../../../theme/ThemeProvider';
@@ -67,18 +67,35 @@ const REOPENED_DRAFT: DraftNote = {
   signedAt: '17 Aug 09:00',
 };
 
+const DRAFT_WITH_PLAN: DraftNote = {
+  ...DRAFT,
+  sections: [{ id: 'sec-p', marker: 'P', title: 'Plan', body: [], bullets: ['Continue the sleep log'] }],
+};
+
+const ALREADY_GENERATED_DRAFT: DraftNote = {
+  ...DRAFT_WITH_PLAN,
+  prescriptionsGenerated: true,
+  prescriptions: [{ id: 'gen-0', text: 'Continue the sleep log', source: 'from Plan', done: false, generated: true }],
+};
+
 // A mutable module-scope fixture the mock reads on every render, so individual tests can swap in a
 // signed/reopened draft without re-mocking the module (name prefixed "mock" — required by
 // babel-plugin-jest-hoist for a jest.mock() factory to reference an out-of-scope variable).
 let mockDraft: DraftNote = DRAFT;
 const mockSignNote = jest.fn();
 const mockUnlockNote = jest.fn();
+const mockGeneratePrescriptions = jest.fn();
 
 jest.mock('../../../../data/DataProvider', () => ({
   useClient: () => CLIENT,
   useClientNotes: () => [mockDraft],
   useDraftNote: () => mockDraft,
-  useData: () => ({ signNote: mockSignNote, unlockNote: mockUnlockNote, updateNoteSection: jest.fn() }),
+  useData: () => ({
+    signNote: mockSignNote,
+    unlockNote: mockUnlockNote,
+    updateNoteSection: jest.fn(),
+    generatePrescriptions: mockGeneratePrescriptions,
+  }),
 }));
 
 const METRICS = { frame: { x: 0, y: 0, width: 1200, height: 900 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } };
@@ -98,6 +115,7 @@ beforeEach(() => {
   mockReplace.mockClear();
   mockSignNote.mockClear();
   mockUnlockNote.mockClear();
+  mockGeneratePrescriptions.mockClear();
 });
 
 afterEach(() => {
@@ -162,4 +180,43 @@ it('cancel disarms the sign-off confirm without signing', () => {
   fireEvent.press(screen.getByText('Cancel'));
   expect(mockSignNote).not.toHaveBeenCalled();
   expect(screen.queryByText('Confirm sign-off')).toBeNull();
+});
+
+it('"Generate from notes" is once per note: pressing it persists the pull and disables the control', async () => {
+  mockDraft = DRAFT_WITH_PLAN;
+  renderScreen();
+  const button = screen.getByRole('button', { name: 'Generate from notes' });
+  fireEvent.press(button);
+  await waitFor(() =>
+    expect(mockGeneratePrescriptions).toHaveBeenCalledWith(
+      CLIENT.id,
+      0,
+      expect.arrayContaining([expect.objectContaining({ text: 'Continue the sleep log', generated: true })]),
+    ),
+  );
+});
+
+it('a note already generated for (persisted, survives reload) stays disabled without a fresh click', () => {
+  mockDraft = ALREADY_GENERATED_DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Generate from notes' }));
+  // The persisted flag — not a local click — is what disables it, so a re-render with the SAME
+  // persisted note never re-fires the pull, exactly the reload case the captain asked for.
+  expect(mockGeneratePrescriptions).not.toHaveBeenCalled();
+});
+
+it('re-record on an unsigned draft requires an explicit confirm before navigating', () => {
+  mockDraft = DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByText('Re-record this session'));
+  expect(mockReplace).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByText('Start new recording'));
+  expect(mockReplace).toHaveBeenCalledWith(`/(app)/session?clientId=${CLIENT.id}`);
+});
+
+it('re-record on a signed note navigates immediately with no confirm', () => {
+  mockDraft = SIGNED_DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByText('Re-record this session'));
+  expect(mockReplace).toHaveBeenCalledWith(`/(app)/session?clientId=${CLIENT.id}`);
 });

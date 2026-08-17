@@ -332,7 +332,11 @@ const SELF_HARM_CUE = /self[- ]?harm|cutting|hurt (?:my|her|him|them)sel/;
  * answer must all be recognised: a report verb taking a none-object ("Client reports none"), a bare
  * none-subject with a report verb ("None elicited"), and a bare "Not disclosed" — but NOT "not
  * disclosed to <someone>", which describes who else knows rather than answering the row, and must not
- * cancel a disclosure sitting beside it.
+ * cancel a disclosure sitting beside it. "Not indicated" (the app's row wording since captain round 2,
+ * 2026-08-17 — replacing bare "Denied" in generated copy) is recognised the same way "no … present"
+ * is: `indicated` sits alongside `present/reported/endorsed/noted/raised/concerns` in the "no/not …
+ * <state-word>" branch below, so "Not indicated" and "Denied" are exact denial-equivalents and every
+ * existing "Denied" case keeps its verdict unchanged.
  *
  * Every one of these shapes has been read as a DISCLOSURE by an earlier, narrower predicate, and each
  * time it pinned an ordinary client to acute permanently — nothing lowers a tier. Exact bigrams
@@ -347,7 +351,7 @@ function deniesRisk(s: string): boolean {
     /\b(?:denied|denies|denying)\b(?!\s+(?:to\s+\w+\s+)?(?:a\s+|any\s+|the\s+)?(?:plan|intent|means|access|method|specific)\b)/.test(s) ||
     /\b(?:denied|denies|denying)\b[\s\w'/,-]{0,40}?\b(?:ideation|suicid\w*|self[- ]?harm|si|hi|thoughts of)\b/.test(s) ||
     /\b(?:no|not|none|without|nil|negative|absent|nothing)\b[\s\w'/,-]{0,20}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|si|hi)\b/.test(s) ||
-    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b(?:(?!\b(?:plan|intent|means|method|access)\b)[\s\w'/-]){0,20}?\b(?:present|reported|endorsed|noted|raised|concerns?)\b/.test(s) ||
+    /\b(?:no|not|none|without|nil|negative|absent|nothing)\b(?:(?!\b(?:plan|intent|means|method|access)\b)[\s\w'/-]){0,20}?\b(?:present|reported|endorsed|noted|raised|concerns?|indicated)\b/.test(s) ||
     /^\s*(?:no|none|nil|negative|absent|denied|denies|nad|n\/?a)\b(?![\s\w'/-]{0,30}?\b(?:ideation|suicid\w*|self[- ]?harm|thought|plan|intent|endorsed|present|active|passive|reported)\b)/.test(s) ||
     /\b(?:reports?|reported|endorses?|endorsed|elicited|voiced|describes?|described|denies|denied)\s+(?:no|none|nil|nothing)\b(?!\s+(?:of\s+)?(?:a\s+|any\s+)?(?:plan|intent|means))/.test(s) ||
     /\b(?:none|nil)\s+(?:elicited|endorsed|reported|noted|voiced|expressed|disclosed)\b/.test(s) ||

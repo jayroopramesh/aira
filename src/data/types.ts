@@ -44,6 +44,9 @@ export type PrepItem = {
   text: string;
   source: string; // provenance, e.g. "from Plan & Next Steps · 5 Apr"
   done: boolean;
+  /** True for a prescription pulled from the Plan section by "Generate from notes" (round-2 item 2),
+   *  as opposed to one the clinician wrote by hand. Persisted so the rail's badge survives reload. */
+  generated?: boolean;
 };
 
 export type NoteSection = {
@@ -122,6 +125,21 @@ export type DraftNote = {
   reviewCodes: ReviewCode[];
   /** Rail prescriptions — clinician-written, or generated from the Plan section. */
   prescriptions: PrepItem[];
+  /**
+   * True once "Generate from notes" has pulled the Plan bullets into `prescriptions` for THIS note
+   * (round-2 item 2 — "generate" is once per transcript). A capture-provider guard, not just UI
+   * state: it survives reload because it lives on the persisted note, and it re-enables naturally on
+   * a re-record/paste-new-transcript, since that always produces a brand-new DraftNote with this flag
+   * unset. Absent/false → never generated yet.
+   */
+  prescriptionsGenerated?: boolean;
+  /**
+   * The other speaker's turns, stripped from the main transcript by the capture screen's "Remove
+   * second speaker + add as auxiliary notes" action (round-2 item 1 — speaker separation). Machine-
+   * attributed, for review — never treated as a clinical finding. Absent when speaker separation
+   * never ran or nothing was removed.
+   */
+  auxiliaryNotes?: string;
 };
 
 export type Client = {
