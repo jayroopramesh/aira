@@ -93,10 +93,10 @@ function fakeSupabase(signUpResult) {
 
 // deviceStore namespaces keys under 'aira.vault.'; the recovery hash key auth.ts persists is this one.
 const RECOVERY_HASH_KEY = 'auth.recovery-hash';
-// The credential the unguarded MOCK path actually destroyed: its recovery hash is deterministic (the
-// RECOVERY_WORDS constant through an unsalted fnv1a), so a second createAccount rewrote an IDENTICAL
-// recovery hash — but PASSWORD_HASH_KEY took the second attempt's password and the counselor's real
-// password stopped opening signIn.
+// The already-registered GUARD stops before any write on a duplicate createAccount, so no credential
+// is destroyed today — but before that guard existed, the observable lockout was on THIS key: a
+// second createAccount overwrote it with the second attempt's password, so the counselor's real
+// (first) password stopped opening signIn.
 const PASSWORD_HASH_KEY = 'auth.password-hash';
 const DETAILS = {
   emiratesId: '784-1988-1234567-1',
@@ -192,8 +192,8 @@ const DETAILS = {
   check('mock duplicate account: throws AccountExistsError', thrown instanceof AccountExistsError, String(thrown));
   check('mock duplicate account: the error carries the email to prefill', thrown?.email === DETAILS.email, String(thrown?.email));
   check('mock duplicate account: the saved recovery hash is UNTOUCHED', (await deviceStore.get(RECOVERY_HASH_KEY)) === savedHash, String(await deviceStore.get(RECOVERY_HASH_KEY)));
-  // THE credential this guard saves on the mock path — it is the password hash that a second
-  // createAccount overwrote (the recovery hash is deterministic, so rewriting it changed nothing).
+  // THE credential this guard saves on the mock path: before the guard existed, a second
+  // createAccount would have overwritten the password hash with the new attempt's password.
   check('mock duplicate account: the saved PASSWORD hash is UNTOUCHED', (await deviceStore.get(PASSWORD_HASH_KEY)) === savedPasswordHash, String(await deviceStore.get(PASSWORD_HASH_KEY)));
   check('mock duplicate account: the vault is NOT unlocked', vault2.isUnlocked() === false, 'vault was unlocked');
   check('mock duplicate account: status stays none (not active/awaiting)', svc2.getStatus() === 'none', svc2.getStatus());
@@ -205,6 +205,99 @@ const DETAILS = {
   // And the saved recovery code still unlocks.
   const stillWorks = await svc2.signInWithRecoveryCode(recoveryCode.join(' '));
   check('mock duplicate account: the ORIGINAL saved code still unlocks', stillWorks.ok === true, JSON.stringify(stillWorks));
+}
+
+// --- 2d. Recovery codes are randomly generated (CSPRNG), stored salted, and old installs still unlock
+// A fixed/shared code was the bug this item fixes: EVERY keyless account used to get the exact same
+// 12 words (the old RECOVERY_WORDS constant), hashed unsalted, so a leaked or guessed code from one
+// account opened any other. Prove the fix on BOTH auth paths, prove the persisted format is salted,
+// and prove an EXISTING install's pre-upgrade (unsalted) saved hash still unlocks rather than being
+// silently locked out.
+{
+  // -- distinct codes across accounts, mock path --
+  mem.clear();
+  const codeA = (await new MockAuthService(fakeVault()).createAccount({ ...DETAILS, email: 'a@clinic.ae' })).recoveryCode;
+  mem.clear();
+  const codeB = (await new MockAuthService(fakeVault()).createAccount({ ...DETAILS, email: 'b@clinic.ae' })).recoveryCode;
+  check('mock: two accounts get DIFFERENT recovery codes', codeA.join(' ') !== codeB.join(' '), JSON.stringify({ codeA, codeB }));
+
+  // -- distinct codes across accounts, Supabase path --
+  mem.clear();
+  const codeC = (
+    await new SupabaseAuthService(fakeVault(), () => fakeSupabase({ error: null })).createAccount({ ...DETAILS, email: 'c@clinic.ae' })
+  ).recoveryCode;
+  mem.clear();
+  const codeD = (
+    await new SupabaseAuthService(fakeVault(), () => fakeSupabase({ error: null })).createAccount({ ...DETAILS, email: 'd@clinic.ae' })
+  ).recoveryCode;
+  check('supabase: two accounts get DIFFERENT recovery codes', codeC.join(' ') !== codeD.join(' '), JSON.stringify({ codeC, codeD }));
+
+  // -- the persisted hash is salted: `s2:<32-hex salt>:<64-hex SHA-256 digest>`, never the raw code --
+  mem.clear();
+  const svcE = new MockAuthService(fakeVault());
+  const { recoveryCode: codeE } = await svcE.createAccount({ ...DETAILS, email: 'e@clinic.ae' });
+  const storedE = await deviceStore.get(RECOVERY_HASH_KEY);
+  check(
+    'mock: the persisted hash is the salted v2 format (s2:<salt>:<digest>)',
+    /^s2:[0-9a-f]{32}:[0-9a-f]{64}$/.test(storedE ?? ''),
+    String(storedE),
+  );
+  check('mock: the persisted hash never contains the plaintext code', !storedE.includes(codeE.join(' ')), String(storedE));
+
+  // Two accounts that happened to land on the same code (astronomically unlikely, but salted-by-
+  // construction regardless) must still persist DIFFERENT hashes — the salt is per-account, not
+  // derived from the code. Force the collision by stubbing `Math` isn't available here (auth.ts no
+  // longer uses Math.random for this), so instead assert the salts themselves differ across E and a
+  // fresh account F, which is what actually guarantees non-identical hashes even on a code collision.
+  mem.clear();
+  const svcF = new MockAuthService(fakeVault());
+  await svcF.createAccount({ ...DETAILS, email: 'f@clinic.ae' });
+  const storedF = await deviceStore.get(RECOVERY_HASH_KEY);
+  const saltOf = (stored) => stored.split(':')[1];
+  check('mock: two accounts get DIFFERENT per-account salts', saltOf(storedE) !== saltOf(storedF), JSON.stringify({ storedE, storedF }));
+
+  // -- backward compatibility: an OLDER install's pre-upgrade (unsalted fnv1a) hash still unlocks --
+  // Replicates auth.ts's pre-upgrade format exactly (unsalted `fnv1a(normalizeCode(code))`, no version
+  // tag) so this proves the CURRENT code's fallback reads it, not that the two algorithms happen to
+  // agree by construction.
+  function legacyNormalize(code) {
+    return code.trim().toLowerCase().split(/\s+/).filter(Boolean).join(' ');
+  }
+  function legacyFnv1a(raw) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < raw.length; i++) {
+      h ^= raw.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return (h >>> 0).toString(16).padStart(8, '0');
+  }
+  mem.clear();
+  const legacyWords = ['harbor', 'lantern', 'cedar', 'quartz', 'tidal', 'ember', 'willow', 'basalt', 'saffron', 'meadow', 'cobalt', 'anchor'];
+  await deviceStore.set(RECOVERY_HASH_KEY, legacyFnv1a(legacyNormalize(legacyWords.join(' '))));
+  const legacyVault = fakeVault();
+  const legacySvc = new MockAuthService(legacyVault);
+  const legacyUnlock = await legacySvc.signInWithRecoveryCode(legacyWords.join(' '));
+  check('legacy install: an old unsalted-hash saved code still unlocks', legacyUnlock.ok === true, JSON.stringify(legacyUnlock));
+  // The SAME persisted legacy hash, but the WRONG words — must not accidentally match.
+  const legacySvc2 = new MockAuthService(fakeVault());
+  const legacyWrongAgainstReal = await legacySvc2.signInWithRecoveryCode('totally different words than the saved legacy code');
+  check(
+    'legacy install: the wrong code against a real legacy hash still fails',
+    legacyWrongAgainstReal.ok === false,
+    JSON.stringify(legacyWrongAgainstReal),
+  );
+
+  // A NEW account created on a device that still carries a legacy hash is blocked by the existing
+  // already-registered guard exactly as before — the guard reads presence, not format, so the
+  // upgrade doesn't need to touch it.
+  const blockedOnLegacy = new MockAuthService(fakeVault());
+  let legacyThrown = null;
+  try {
+    await blockedOnLegacy.createAccount({ ...DETAILS, email: 'returning@clinic.ae' });
+  } catch (e) {
+    legacyThrown = e;
+  }
+  check('legacy install: create-account still recognises the legacy hash as "already registered"', legacyThrown instanceof AccountExistsError, String(legacyThrown));
 }
 
 // --- Patient fixtures --------------------------------------------------------------------------

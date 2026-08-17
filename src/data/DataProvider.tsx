@@ -88,6 +88,15 @@ type DataContextValue = {
   /** Persist a sign-off onto the stored note (F8) so the attestation survives navigation/reload. */
   signNote: (clientId: string, noteIndex: number, signedBy: string, signedAt: string) => Promise<void>;
   /**
+   * Reopen a signed note for editing. Flips status back to 'draft' so the read-only rule enforced at
+   * the `updateNoteSection` seam (status === 'signed' → refuse) honestly permits edits again, rather
+   * than any caller bypassing that check. `signedBy`/`signedAt` are left on the record as the note's
+   * last-signed attestation — they're only ever read while `status === 'signed'`, so a reopened draft
+   * doesn't display as signed, but the review screen can still tell "never signed" apart from
+   * "unlocked after being signed" by checking whether `signedAt` is present on a draft-status note.
+   */
+  unlockNote: (clientId: string, noteIndex: number) => Promise<void>;
+  /**
    * Persist a clinician's inline edit to ONE note section, so the review screen's per-section Edit is a
    * real edit rather than a throwaway text box (no-dead-promise). Only the section prose moves — the
    * sign-off (status/signedBy/signedAt) and the structured riskLevel are never touched here.
@@ -184,6 +193,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [persist],
   );
 
+  const unlockNote = useCallback(
+    async (clientId: string, noteIndex: number) => {
+      const snapshot = snapshotRef.current;
+      const list = snapshot.notes[clientId];
+      if (!list?.[noteIndex]) return;
+      if (list[noteIndex].status !== 'signed') return;
+      const next = list.map((n, i) => (i === noteIndex ? { ...n, status: 'draft' as const } : n));
+      await persist({ ...snapshot, notes: { ...snapshot.notes, [clientId]: next } });
+    },
+    [persist],
+  );
+
   const updateNoteSection = useCallback(
     async (clientId: string, noteIndex: number, sectionId: string, body: string[], bullets?: string[]) => {
       const snapshot = snapshotRef.current;
@@ -220,9 +241,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       saveSessionNote,
       savePatientDetails,
       signNote,
+      unlockNote,
       updateNoteSection,
     };
-  }, [snapshot, hydrated, loadSample, clearAll, saveSessionNote, savePatientDetails, signNote, updateNoteSection]);
+  }, [snapshot, hydrated, loadSample, clearAll, saveSessionNote, savePatientDetails, signNote, unlockNote, updateNoteSection]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }

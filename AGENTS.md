@@ -389,11 +389,32 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   sign-off) and on native each save is an independent file write, so without an ordered queue the
   stale snapshot can land last and drop the signature. Proved by `scripts/persist-race-harness.mjs`.
   Read-only-after-sign is enforced at the seam too — `updateNoteSection` refuses a signed note.
+  A signed note can be reopened via `DataProvider.unlockNote` (review screen's rail, two-step
+  confirm mirroring sign-off's) — it only flips `status` back to `'draft'` so that same seam check
+  honestly permits edits again; it never bypasses the check. `signedBy`/`signedAt` are deliberately
+  left on a reopened draft (only ever read while `status === 'signed'`) so the review screen can
+  tell "never signed" apart from "unlocked after being signed" — `!!draft.signedAt` on a
+  draft-status note — and say so in the trust pill rather than reading as an ordinary first draft.
 - Sparse series (≤ 2 readings) render as a dot-strip with no trend line.
 - Login + recovery copy is isolated in `src/strings/recovery.ts`; the recovery-key policy is
   captain-resolved (`decision-recovery-key-policy`): account creation + one-time recovery code,
   shown once. The account/session lifecycle lives in the `AuthService` seam (`src/services/auth.ts`,
   mocked); the server-side key-escrow support path is policy-only and never surfaced in UI.
+  **The 12-word recovery code is generated fresh per account on BOTH auth paths**
+  (`generateRecoveryCode` in `auth.ts`, called from `MockAuthService.createAccount` and
+  `SupabaseAuthService.createAccount` alike) via a Fisher-Yates shuffle drawing from `expo-crypto`'s
+  CSPRNG (`secureRandomInt`, rejection sampling — never `Math.random`, and never a fixed/shared word
+  list). The persisted hash is salted: `s2:<16-byte salt, hex>:<SHA-256 digest, hex>`
+  (`persistRecoveryHash`/`saltedRecoveryDigest`), a fresh random salt per account via
+  `Crypto.getRandomBytes`. `recoveryCodeMatches` also recognises the PRE-upgrade format (a bare
+  unsalted `fnv1a(normalizeCode(code))` hex string, no version tag) so an existing install's saved
+  recovery code still unlocks — that fallback is read-only, `persistRecoveryHash` never writes it,
+  so it can't be reintroduced as a regression. Because `expo-crypto`'s native module doesn't resolve
+  outside Metro, `scripts/ts-service-loader.mjs` stubs it (backed by Node's own `crypto`, so the
+  harness still exercises real randomness and real SHA-256) — the same pattern already used there
+  for `react-native`/`@supabase/supabase-js`; extend that stub, never the app code, if a future
+  harness needs another native module. Proved by `scripts/duplicate-identity-harness.mjs` (section
+  "2d").
 - Patient data never leaves the device: persist through `ClientRepository` / `VaultStorage`; ASR
   through `TranscriptionService` (one-shot, model downloaded on first run, whisper.rn needs a dev
   build — not Expo Go).

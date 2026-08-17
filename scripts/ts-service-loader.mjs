@@ -4,8 +4,11 @@
  * Two things stand in the way and both are incidental to the logic under test:
  *   • Node's `--experimental-strip-types` cannot parse constructor parameter properties, which the
  *     Groq services use, so the source is transpiled through the repo's own TypeScript instead.
- *   • `services/supabase.ts` pulls in `react-native` and `@supabase/supabase-js`, neither of which
- *     loads outside the bundler. They are stubbed to the surface those modules actually use.
+ *   • `services/supabase.ts` pulls in `react-native` and `@supabase/supabase-js`, and `services/
+ *     auth.ts` pulls in `expo-crypto` — none of which load outside the bundler (expo-crypto's
+ *     `getRandomBytes`/`digestStringAsync` resolve to a native binding). Each is stubbed to the
+ *     surface the app code actually uses; the `expo-crypto` stub backs it with Node's own `crypto`
+ *     module so the harness exercises REAL randomness and REAL SHA-256, not a fake.
  *
  * Register it before the first import:
  *   import { register } from 'node:module';
@@ -18,6 +21,22 @@ import ts from 'typescript';
 const STUBS = {
   'react-native': 'export const Platform = { OS: "web" };\n',
   '@supabase/supabase-js': 'export function createClient() { return { auth: {} }; }\n',
+  'expo-crypto': `
+import { randomBytes, createHash } from 'node:crypto';
+export const CryptoDigestAlgorithm = { SHA1: 'SHA-1', SHA256: 'SHA-256', SHA384: 'SHA-384', SHA512: 'SHA-512', MD2: 'MD2', MD4: 'MD4', MD5: 'MD5' };
+export const CryptoEncoding = { HEX: 'hex', BASE64: 'base64' };
+export function getRandomBytes(byteCount) {
+  return new Uint8Array(randomBytes(byteCount));
+}
+export async function getRandomBytesAsync(byteCount) {
+  return getRandomBytes(byteCount);
+}
+export async function digestStringAsync(algorithm, data, options) {
+  const nodeAlgByName = { 'SHA-1': 'sha1', 'SHA-256': 'sha256', 'SHA-384': 'sha384', 'SHA-512': 'sha512', MD5: 'md5' };
+  const digest = createHash(nodeAlgByName[algorithm] || 'sha256').update(data, 'utf8').digest();
+  return digest.toString(options && options.encoding === 'base64' ? 'base64' : 'hex');
+}
+`,
 };
 
 export async function resolve(specifier, context, next) {
