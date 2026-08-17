@@ -1076,7 +1076,7 @@ function ReviewRail({
 
 /* -------------------------------------------------------- prescriptions --- */
 
-type Rx = PrepItem & { checked?: boolean; isNew?: boolean };
+type Rx = PrepItem & { isNew?: boolean };
 
 /**
  * Prescriptions rail (round-2 change #6, renamed from "Tasks for next session"). The
@@ -1087,17 +1087,36 @@ type Rx = PrepItem & { checked?: boolean; isNew?: boolean };
  * a brand-new DraftNote, so this is equivalently once per transcript. `draft.prescriptionsGenerated`
  * is the persisted source of truth — not local component state — so the button stays disabled across
  * a reload/remount instead of resurrecting for the same already-generated note.
+ *
+ * A hand-written "+ Add" item and every "Tick as you assign" toggle persist the same way, through
+ * `updatePrescriptions` — the tick writes the item's own persisted `done` field, never a throwaway
+ * local flag. The rail's copy invites the clinician to write and tick here, so both must survive
+ * switching notes in the session rail (a keyed remount) and a reload; before this they lived only in
+ * component state and were silently discarded. Only an in-progress "+ Add" draft (still `isNew`,
+ * uncommitted) stays local — it isn't a prescription until it's committed.
  */
 function PrescriptionsRail({ draft, clientId, noteIndex }: { draft: DraftNote; clientId?: string; noteIndex: number }) {
   const theme = useTheme();
   const c = theme.colors;
-  const { generatePrescriptions } = useData();
+  const { generatePrescriptions, updatePrescriptions } = useData();
   const [items, setItems] = useState<Rx[]>(draft.prescriptions.map((p) => ({ ...p })));
   const alreadyGenerated = !!draft.prescriptionsGenerated;
   const [pending, setPending] = useState(false);
   const nextRxId = useRef(0);
 
-  const toggle = (id: string) => setItems((xs) => xs.map((x) => (x.id === id ? { ...x, checked: !x.checked } : x)));
+  // Persist the committed list (never an uncommitted `isNew` draft row) onto the note. A note with no
+  // resolvable client can't be addressed through the seam — its rail stays screen-local, as before.
+  const persistItems = (xs: Rx[]) => {
+    if (!clientId) return;
+    void updatePrescriptions(clientId, noteIndex, xs.filter((x) => !x.isNew).map(({ isNew: _isNew, ...p }) => p));
+  };
+
+  const toggle = (id: string) =>
+    setItems((xs) => {
+      const next = xs.map((x) => (x.id === id ? { ...x, done: !x.done } : x));
+      persistItems(next);
+      return next;
+    });
   const setText = (id: string, text: string) => setItems((xs) => xs.map((x) => (x.id === id ? { ...x, text } : x)));
 
   const generateFromNotes = async () => {
@@ -1132,7 +1151,11 @@ function PrescriptionsRail({ draft, clientId, noteIndex }: { draft: DraftNote; c
   };
 
   const commit = (id: string) =>
-    setItems((xs) => xs.flatMap((x) => (x.id === id ? (x.text.trim() === '' ? [] : [{ ...x, text: x.text.trim(), isNew: false }]) : [x])));
+    setItems((xs) => {
+      const next = xs.flatMap((x) => (x.id === id ? (x.text.trim() === '' ? [] : [{ ...x, text: x.text.trim(), isNew: false }]) : [x]));
+      persistItems(next);
+      return next;
+    });
 
   return (
     <View>
@@ -1158,21 +1181,21 @@ function PrescriptionsRail({ draft, clientId, noteIndex }: { draft: DraftNote; c
           <Pressable
             onPress={() => toggle(t.id)}
             accessibilityRole="checkbox"
-            accessibilityState={{ checked: !!t.checked }}
+            accessibilityState={{ checked: !!t.done }}
             hitSlop={6}
             style={{
               width: 18,
               height: 18,
               borderRadius: 5,
               borderWidth: 1.5,
-              borderColor: t.checked ? c.brandStrong : c.line,
-              backgroundColor: t.checked ? c.brandStrong : 'transparent',
+              borderColor: t.done ? c.brandStrong : c.line,
+              backgroundColor: t.done ? c.brandStrong : 'transparent',
               alignItems: 'center',
               justifyContent: 'center',
               marginTop: 1,
             }}
           >
-            {t.checked ? <CheckIcon size={12} color={c.onBrand} /> : null}
+            {t.done ? <CheckIcon size={12} color={c.onBrand} /> : null}
           </Pressable>
           <View style={{ flex: 1 }}>
             {t.isNew ? (
@@ -1188,7 +1211,7 @@ function PrescriptionsRail({ draft, clientId, noteIndex }: { draft: DraftNote; c
               />
             ) : (
               <Row gap={7} style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-                <AppText variant="body" style={{ textDecorationLine: t.checked ? 'line-through' : 'none', color: t.checked ? c.ink3 : c.ink }}>
+                <AppText variant="body" style={{ textDecorationLine: t.done ? 'line-through' : 'none', color: t.done ? c.ink3 : c.ink }}>
                   {t.text}
                 </AppText>
                 {t.generated ? <Badge label="generated" tone="brand" /> : null}

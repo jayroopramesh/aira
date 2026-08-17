@@ -94,6 +94,7 @@ const mockSignNote = jest.fn();
 const mockUnlockNote = jest.fn();
 const mockGeneratePrescriptions = jest.fn();
 const mockUpdateNoteSection = jest.fn();
+const mockUpdatePrescriptions = jest.fn();
 
 jest.mock('../../../../data/DataProvider', () => ({
   useClient: () => CLIENT,
@@ -104,6 +105,7 @@ jest.mock('../../../../data/DataProvider', () => ({
     unlockNote: mockUnlockNote,
     updateNoteSection: mockUpdateNoteSection,
     generatePrescriptions: mockGeneratePrescriptions,
+    updatePrescriptions: mockUpdatePrescriptions,
   }),
 }));
 
@@ -126,6 +128,7 @@ beforeEach(() => {
   mockUnlockNote.mockClear();
   mockGeneratePrescriptions.mockClear();
   mockUpdateNoteSection.mockClear();
+  mockUpdatePrescriptions.mockClear();
 });
 
 afterEach(() => {
@@ -384,6 +387,51 @@ it('prose sections keep blank-line paragraph splitting — a manual line wrap st
     ['Low mood for two weeks,\nworse at night.', 'Denies thoughts of self-harm.'],
     undefined,
   );
+});
+
+/**
+ * Prescriptions-rail persistence (round 3, 2026-08-18): the rail's copy invites the clinician to
+ * "write them … Tick as you assign", so a hand-written "+ Add" item and every tick must persist onto
+ * the note through `updatePrescriptions` — before this they lived only in component state, and
+ * switching notes in the session rail (a keyed remount) or reloading silently discarded them. The
+ * tick writes the item's own persisted `done` field, and rendering reads that same field back, so a
+ * remount shows exactly what was persisted.
+ */
+it('ticking a prescription persists done=true onto the note, not a throwaway local flag', () => {
+  mockDraft = ALREADY_GENERATED_DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByRole('checkbox'));
+  // Exact deep equality on the persisted item: the tick flips `done`, and no screen-local flag
+  // (`isNew`) leaks into the stored note.
+  expect(mockUpdatePrescriptions).toHaveBeenCalledWith(CLIENT.id, 0, [
+    { id: 'gen-0', text: 'Continue the sleep log', source: 'from Plan', done: true, generated: true },
+  ]);
+});
+
+it('committing a hand-written "+ Add" prescription persists it onto the note', () => {
+  renderScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Add' }));
+  const input = screen.getByPlaceholderText('New prescription…');
+  fireEvent.changeText(input, 'Thought record — one entry each evening');
+  fireEvent(input, 'submitEditing');
+  expect(mockUpdatePrescriptions).toHaveBeenCalledWith(CLIENT.id, 0, [
+    { id: expect.stringMatching(/^rx-new-/), text: 'Thought record — one entry each evening', source: 'added by you', done: false },
+  ]);
+});
+
+it('an uncommitted "+ Add" draft row is never persisted', () => {
+  renderScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Add' }));
+  expect(mockUpdatePrescriptions).not.toHaveBeenCalled();
+});
+
+it('a prescription persisted as done renders ticked after a remount', () => {
+  mockDraft = {
+    ...DRAFT,
+    prescriptions: [{ id: 'rx-1', text: 'Continue nightly sleep log', source: 'added by you', done: true }],
+  };
+  renderScreen();
+  expect(screen.getByRole('checkbox', { checked: true })).toBeTruthy();
 });
 
 it('an existing multi-bullet list opens in the editor one item per line', () => {
