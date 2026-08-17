@@ -17,10 +17,15 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ clientId: undefined }),
 }));
 
+// Shared across renders so the comments-survive-stop test below can assert on the exact note the
+// screen handed to the save path (name prefixed "mock" — required by babel-plugin-jest-hoist for a
+// jest.mock() factory to reference an out-of-scope variable).
+const mockSaveSessionNote = jest.fn(async (_note: unknown, _identity?: unknown) => ({ clientId: 'c-1' }));
+
 jest.mock('../../../../data/DataProvider', () => ({
   useClient: () => undefined,
   useClientNotes: () => [],
-  useData: () => ({ saveSessionNote: jest.fn(), appendRecording: jest.fn(), hydrated: true }),
+  useData: () => ({ saveSessionNote: mockSaveSessionNote, appendRecording: jest.fn(), hydrated: true }),
 }));
 
 jest.mock('../../../../services/cloudSession', () => ({
@@ -34,29 +39,42 @@ jest.mock('../../../../services/cloudSession', () => ({
 const mockPause = jest.fn();
 const mockResume = jest.fn();
 const mockGetLevels = jest.fn((bars: number) => new Array(bars).fill(0.6));
-const mockStop = jest.fn(() => Promise.resolve({ uri: 'blob:https://app.example/test', durationMs: 1000 }));
 let mockSupportsPause = true;
 // Captured so a test can simulate the recorder ending on its own (stream loss), the same callback
 // `audioCapture.ts`'s real `startRecording` invokes from its `onstop` handler.
 let capturedOnInterrupted: (() => void) | undefined;
+// `stop()` resolves immediately by default; a test that needs the real double-tap window (a stop
+// still in flight when the second tap lands) flips `mockStopDeferred` and resolves by hand.
+let mockStopDeferred = false;
+let mockStopResolve: ((ref: { uri: string; durationMs: number }) => void) | undefined;
+const mockStop = jest.fn(() =>
+  mockStopDeferred
+    ? new Promise<{ uri: string; durationMs: number }>((resolve) => {
+        mockStopResolve = resolve;
+      })
+    : Promise.resolve({ uri: 'blob:https://app.example/test', durationMs: 1000 }),
+);
+const mockStartRecording = jest.fn((onInterrupted?: () => void) => {
+  capturedOnInterrupted = onInterrupted;
+  return Promise.resolve({
+    stop: mockStop,
+    pause: mockPause,
+    resume: mockResume,
+    get supportsPause() {
+      return mockSupportsPause;
+    },
+    getLevels: mockGetLevels,
+  });
+});
 
 jest.mock('../../../../services/audioCapture', () => ({
   isRecordingSupported: () => true,
   isUploadSupported: () => false,
   pickAudioFile: () => Promise.resolve(null),
   failedCaptureRef: (durationMs = 0) => ({ uri: 'capture://unavailable', durationMs }),
-  startRecording: (onInterrupted?: () => void) => {
-    capturedOnInterrupted = onInterrupted;
-    return Promise.resolve({
-      stop: mockStop,
-      pause: mockPause,
-      resume: mockResume,
-      get supportsPause() {
-        return mockSupportsPause;
-      },
-      getLevels: mockGetLevels,
-    });
-  },
+  // Lazy indirection on purpose: the hoisted factory runs before the const above initialises, so a
+  // direct `startRecording: mockStartRecording` captures undefined.
+  startRecording: (onInterrupted?: () => void) => mockStartRecording(onInterrupted),
 }));
 
 // The live-mode branch of Waveform (real levels vs the ambient fallback) is proved directly by its
@@ -91,11 +109,32 @@ async function goToRecording() {
 
 beforeEach(() => {
   mockSupportsPause = true;
+  mockStopDeferred = false;
+  mockStopResolve = undefined;
   mockPause.mockClear();
   mockResume.mockClear();
   mockGetLevels.mockClear();
   mockStop.mockClear();
+  mockSaveSessionNote.mockClear();
+  mockStartRecording.mockClear();
 });
+
+// An AnnoMI-style dictated recap — ≥12 varied words so the F11 quality guard lets it draft.
+const MI_TRANSCRIPT =
+  'Client reflected on cutting back drinking to weekends only. We explored what a typical evening ' +
+  'looks like and he named stress after work as the main trigger. Agreed to track urges this week ' +
+  'and revisit the plan at the next session.';
+
+/** Drive the type/paste recovery (this mock build refuses to transcribe a real capture) to a saved
+ *  note, so tests can assert on exactly what reached the persistence seam. */
+async function stopTypeAndDraft() {
+  fireEvent.press(screen.getByText('Stop & transcribe'));
+  await waitFor(() => expect(screen.getByPlaceholderText('Transcript will appear here.')).toBeTruthy());
+  fireEvent.changeText(screen.getByPlaceholderText('Transcript will appear here.'), MI_TRANSCRIPT);
+  fireEvent.press(screen.getByText('Next → draft the note'));
+  await waitFor(() => expect(mockSaveSessionNote).toHaveBeenCalledTimes(1));
+  return mockSaveSessionNote.mock.calls[0][0] as { recordingComments?: { ts: string; text: string }[] };
+}
 
 it('the live waveform is driven by the real ActiveRecording, not the ambient fallback', async () => {
   await goToRecording();
@@ -184,4 +223,63 @@ it('surfaces a distinct banner when the recorder ends on its own rather than fro
   await waitFor(() => expect(screen.getByText(/stopped on its own/)).toBeTruthy());
   // Pause no longer makes sense once the recorder itself has already stopped.
   expect(screen.queryByText('Pause')).toBeNull();
+});
+
+// ---- "Comment on your recording" — the strip promises comments are KEPT with the note, so they must
+// survive the recording phase and reach the note handed to the save path (they used to die in the
+// strip's local state the moment recording stopped, silently discarding what the clinician typed).
+
+it('a comment added during recording survives stop and lands on the drafted note', async () => {
+  await goToRecording();
+  fireEvent.changeText(screen.getByPlaceholderText('Type a comment…'), 'Change talk here — client named the weekend plan himself');
+  fireEvent.press(screen.getByLabelText('Add comment at this moment'));
+  const note = await stopTypeAndDraft();
+  expect(note.recordingComments).toEqual([
+    { ts: expect.any(String), text: 'Change talk here — client named the weekend plan himself' },
+  ]);
+});
+
+it('a comment still sitting un-submitted in the add card survives stop too', async () => {
+  await goToRecording();
+  fireEvent.changeText(screen.getByPlaceholderText('Type a comment…'), 'Ask about sleep next time');
+  const note = await stopTypeAndDraft();
+  expect(note.recordingComments).toEqual([{ ts: expect.any(String), text: 'Ask about sleep next time' }]);
+});
+
+it('a capture with no comments stamps none onto the note', async () => {
+  await goToRecording();
+  const note = await stopTypeAndDraft();
+  expect(note.recordingComments).toBeUndefined();
+});
+
+// ---- Double-tap guards (2026-08-18) — both capture transitions hold an `await` open while their
+// button is still on screen, so an impatient second tap used to re-enter mid-transition. On Stop
+// that meant the no-recorder branch answered a REALLY-recorded anonymous session with the demo
+// sample's canned transcript ("Denies passive ideation on screening today" is a safety finding
+// nobody made); on Record it opened a second mic stream and leaked the first.
+
+it('a double-tap on Stop & transcribe never swaps the real recording for the demo sample', async () => {
+  mockStopDeferred = true;
+  await goToRecording();
+  fireEvent.press(screen.getByText('Stop & transcribe'));
+  fireEvent.press(screen.getByText('Stop & transcribe'));
+  // The recording phase must hold until the real stop() resolves — if the second tap had taken the
+  // no-recorder branch, the screen would already be analysing the mock:// sample clip.
+  expect(screen.getByText('Stop & transcribe')).toBeTruthy();
+  expect(mockStop).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    mockStopResolve!({ uri: 'blob:https://app.example/test', durationMs: 1000 });
+  });
+  // The REAL capture finalised: this build refuses to transcribe it (typed recovery), and the
+  // canned sample transcript is nowhere on screen.
+  await waitFor(() => expect(screen.getByPlaceholderText('Transcript will appear here.')).toBeTruthy());
+  expect(screen.queryByDisplayValue(/steadier fortnight/)).toBeNull();
+});
+
+it('a double-tap on Tap to start capture opens one recorder, not two', async () => {
+  renderScreen();
+  fireEvent.press(screen.getByLabelText('Tap to start capture'));
+  fireEvent.press(screen.getByLabelText('Tap to start capture'));
+  await waitFor(() => expect(screen.getByText('Pause')).toBeTruthy());
+  expect(mockStartRecording).toHaveBeenCalledTimes(1);
 });

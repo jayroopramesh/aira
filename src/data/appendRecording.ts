@@ -8,7 +8,7 @@
  * persists the result.
  */
 
-import type { DraftNote } from './types';
+import type { DraftNote, RecordingComment } from './types';
 
 export type RecordingAddition = {
   /** The newly transcribed (and, in patient-session mode, speaker-separated) text — never empty. */
@@ -16,6 +16,9 @@ export type RecordingAddition = {
   audioLeftDevice: boolean;
   transcriptFromCloud: boolean;
   auxiliaryNotes?: string;
+  /** Comments typed on the recording screen during THIS added capture — clock values read within this
+   *  segment's own recording, concatenated after the note's existing comments, never replacing them. */
+  recordingComments?: RecordingComment[];
 };
 
 /** How THIS added segment's own text was produced — read at the point it's spliced in, so the divider
@@ -53,6 +56,7 @@ export function applyRecordingAppend(note: DraftNote, addition: RecordingAdditio
   const transcriptFromCloud = mixed ? false : priorText ? priorCloud && addition.transcriptFromCloud : addition.transcriptFromCloud;
 
   const auxParts = [note.auxiliaryNotes, addition.auxiliaryNotes].filter((x): x is string => !!x?.trim());
+  const comments = [...(note.recordingComments ?? []), ...(addition.recordingComments ?? [])];
 
   return {
     ...note,
@@ -61,6 +65,7 @@ export function applyRecordingAppend(note: DraftNote, addition: RecordingAdditio
     transcriptFromCloud,
     transcriptMixedProvenance: mixed || undefined,
     auxiliaryNotes: auxParts.length ? auxParts.join('\n\n') : undefined,
+    recordingComments: comments.length ? comments : undefined,
     // The transcript genuinely changed, so the once-per-note "Generate from notes" pull re-enables —
     // see PrescriptionsRail's dedup-by-text guard in review.tsx for why a second pull over an
     // unchanged Plan can't duplicate the same prescriptions.

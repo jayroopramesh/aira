@@ -10,7 +10,7 @@ import { ZeroState } from '../../../components/ZeroState';
 import { hasGroq } from '../../../config/env';
 import { useClient, useClientNotes, useData, useDraftNote } from '../../../data/DataProvider';
 import { MAX_NOTES_PER_CLIENT } from '../../../data/repository';
-import { DraftNote, NoteSection, PrepItem } from '../../../data/types';
+import { DraftNote, NoteSection, PrepItem, RecordingComment } from '../../../data/types';
 import { authService } from '../../../services/auth';
 import { AudioSegment, getAudioSegments } from '../../../services/audioVault';
 import { useTheme } from '../../../theme/ThemeProvider';
@@ -408,6 +408,7 @@ export default function ReviewNote() {
               <TranscriptPane
                 transcript={draft.transcript}
                 auxiliaryNotes={draft.auxiliaryNotes}
+                recordingComments={draft.recordingComments}
                 audioLeftDevice={draft.audioLeftDevice}
                 transcriptFromCloud={draft.transcriptFromCloud}
                 transcriptMixedProvenance={draft.transcriptMixedProvenance}
@@ -645,7 +646,11 @@ function Section({
   const theme = useTheme();
   const c = theme.colors;
   const [editing, setEditing] = useState(false);
-  const [text, setText] = useState([...section.body, ...(section.bullets ?? [])].join('\n\n'));
+  // Body paragraphs separated by blank lines; bullets one per line (matching how `commitEdit` reads
+  // them back), so an existing list opens in the same shape the clinician is asked to type it in.
+  const [text, setText] = useState(
+    [section.body.join('\n\n'), (section.bullets ?? []).join('\n')].filter(Boolean).join('\n\n'),
+  );
 
   const isRisk = section.isRisk;
 
@@ -655,16 +660,24 @@ function Section({
    * stay bullets — a bulleted section (Plan) keeps its bullets, and any block the clinician adds joins
    * them. Nothing typed is dropped.
    *
-   * Scope: this persists the edited SECTION onto the note and deliberately nothing else. It does not
-   * retroactively rewrite `draft.prescriptions` (which the rail seeds from, copied from the plan
-   * bullets at draft time) or a client's `lastPlan`. The prescriptions rail is independently editable,
-   * and "Generate from notes" re-pulls from the current Plan bullets on demand.
+   * In the bullets region, EVERY line is its own item — a clinician typing a plan list presses Enter
+   * once between items (blank-line separation is a formatting convention nobody is told about), and
+   * items that silently merge into one bullet become one merged reminder on the prep screen and one
+   * merged prescription in "Generate from notes". A leading `- `/`• `/`* ` marker the clinician types
+   * is stripped, since the rendered list draws its own bullet glyph (a bare "-5 on the PHQ-9" keeps
+   * its hyphen — only a marker followed by whitespace is markup). Body paragraphs keep the blank-line
+   * split so prose with a manual line wrap stays one paragraph.
    */
   const commitEdit = () => {
     const blocks = text.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
     if (section.bullets === undefined) return onSave(section.id, blocks);
     const cut = Math.min(section.body.length, blocks.length);
-    onSave(section.id, blocks.slice(0, cut), blocks.slice(cut));
+    const bullets = blocks
+      .slice(cut)
+      .flatMap((b) => b.split('\n'))
+      .map((l) => l.trim().replace(/^[-•*]\s+/, ''))
+      .filter(Boolean);
+    onSave(section.id, blocks.slice(0, cut), bullets);
   };
 
   // Every exit from the editor must persist, not just "Done": blur, unmount, and the sign-off flush
@@ -769,24 +782,31 @@ function Section({
       ) : null}
 
       {editing && editable ? (
-        <TextInput
-          multiline
-          value={text}
-          onChangeText={edit}
-          onBlur={flush}
-          style={{
-            fontFamily: theme.type.body.fontFamily,
-            fontSize: 15,
-            lineHeight: 23,
-            color: c.ink,
-            borderWidth: 1,
-            borderColor: c.brandBd,
-            borderRadius: theme.radii.sm,
-            padding: 12,
-            minHeight: 120,
-            backgroundColor: c.elevated,
-          }}
-        />
+        <View>
+          <TextInput
+            multiline
+            value={text}
+            onChangeText={edit}
+            onBlur={flush}
+            style={{
+              fontFamily: theme.type.body.fontFamily,
+              fontSize: 15,
+              lineHeight: 23,
+              color: c.ink,
+              borderWidth: 1,
+              borderColor: c.brandBd,
+              borderRadius: theme.radii.sm,
+              padding: 12,
+              minHeight: 120,
+              backgroundColor: c.elevated,
+            }}
+          />
+          {section.bullets !== undefined ? (
+            <AppText variant="small" color="ink3" style={{ marginTop: 6 }}>
+              One item per line: each line becomes its own bullet, reminder and generated prescription.
+            </AppText>
+          ) : null}
+        </View>
       ) : (
         <View>
           {section.body.map((p, i) => (
@@ -882,6 +902,7 @@ function MeasureTable({ measures }: { measures: DraftNote['measures'] }) {
 function TranscriptPane({
   transcript,
   auxiliaryNotes,
+  recordingComments,
   audioLeftDevice,
   transcriptFromCloud,
   transcriptMixedProvenance,
@@ -893,6 +914,11 @@ function TranscriptPane({
    *  separation (round-2 item 1). Shown as its own distinct card, never blended into the transcript
    *  above it — it was deliberately excluded from what the note was drafted from. */
   auxiliaryNotes?: string;
+  /** Comments the clinician typed on the recording screen while the capture ran, each stamped with
+   *  the recording clock. The comment strip PROMISES they're kept with the note, so this card is
+   *  where that promise is honoured — their own card, clinician-authored, never blended into the
+   *  transcript above and never sent to the summarizer. */
+  recordingComments?: RecordingComment[];
   audioLeftDevice?: boolean;
   transcriptFromCloud?: boolean;
   /** True once "Continue recording" spliced in a segment whose own cloud/typed origin disagrees with the
@@ -907,16 +933,44 @@ function TranscriptPane({
   const c = theme.colors;
   const text = transcript?.trim();
   const aux = auxiliaryNotes?.trim();
+  const comments = recordingComments?.filter((x) => x.text.trim()) ?? [];
+
+  // Rendered whether or not a transcript is stored — a typed-recovery capture can carry comments
+  // even when transcription produced nothing, and losing them here would re-break the promise.
+  const commentsCard = comments.length ? (
+    <View style={{ marginTop: theme.spacing.lg }}>
+      <AppText variant="small" color="ink3" style={{ marginBottom: 10, lineHeight: 17 }}>
+        Comments you typed while the recording ran, each stamped with the recording clock at that
+        moment. They’re kept with the note on this device: never merged into the transcript, never
+        sent to drafting.
+      </AppText>
+      <Card tone="sunken" elevation="none" radius="md">
+        {comments.map((x, i) => (
+          <Row key={i} gap={10} style={{ alignItems: 'flex-start', marginTop: i === 0 ? 0 : 10 }}>
+            <AppText variant="small" tint={c.brand} style={{ fontFamily: theme.type.numeric.fontFamily, marginTop: 2 }}>
+              {x.ts}
+            </AppText>
+            <AppText variant="body" color="ink2" selectable style={{ flex: 1, lineHeight: 22 }}>
+              {x.text}
+            </AppText>
+          </Row>
+        ))}
+      </Card>
+    </View>
+  ) : null;
 
   if (!text) {
     return (
-      <Card tone="sunken" elevation="none" radius="md">
-        <AppText variant="body" color="ink2">
-          No transcript is stored for this note. Sample data and notes captured before transcripts were
-          saved don’t include the session text. Nothing is shown here rather than standing in a placeholder
-          for the real session.
-        </AppText>
-      </Card>
+      <View>
+        <Card tone="sunken" elevation="none" radius="md">
+          <AppText variant="body" color="ink2">
+            No transcript is stored for this note. Sample data and notes captured before transcripts were
+            saved don’t include the session text. Nothing is shown here rather than standing in a placeholder
+            for the real session.
+          </AppText>
+        </Card>
+        {commentsCard}
+      </View>
     );
   }
 
@@ -958,6 +1012,8 @@ function TranscriptPane({
           </Card>
         </View>
       ) : null}
+
+      {commentsCard}
     </View>
   );
 }
@@ -1020,7 +1076,7 @@ function ReviewRail({
 
 /* -------------------------------------------------------- prescriptions --- */
 
-type Rx = PrepItem & { checked?: boolean; isNew?: boolean };
+type Rx = PrepItem & { isNew?: boolean };
 
 /**
  * Prescriptions rail (round-2 change #6, renamed from "Tasks for next session"). The
@@ -1031,17 +1087,36 @@ type Rx = PrepItem & { checked?: boolean; isNew?: boolean };
  * a brand-new DraftNote, so this is equivalently once per transcript. `draft.prescriptionsGenerated`
  * is the persisted source of truth — not local component state — so the button stays disabled across
  * a reload/remount instead of resurrecting for the same already-generated note.
+ *
+ * A hand-written "+ Add" item and every "Tick as you assign" toggle persist the same way, through
+ * `updatePrescriptions` — the tick writes the item's own persisted `done` field, never a throwaway
+ * local flag. The rail's copy invites the clinician to write and tick here, so both must survive
+ * switching notes in the session rail (a keyed remount) and a reload; before this they lived only in
+ * component state and were silently discarded. Only an in-progress "+ Add" draft (still `isNew`,
+ * uncommitted) stays local — it isn't a prescription until it's committed.
  */
 function PrescriptionsRail({ draft, clientId, noteIndex }: { draft: DraftNote; clientId?: string; noteIndex: number }) {
   const theme = useTheme();
   const c = theme.colors;
-  const { generatePrescriptions } = useData();
+  const { generatePrescriptions, updatePrescriptions } = useData();
   const [items, setItems] = useState<Rx[]>(draft.prescriptions.map((p) => ({ ...p })));
   const alreadyGenerated = !!draft.prescriptionsGenerated;
   const [pending, setPending] = useState(false);
   const nextRxId = useRef(0);
 
-  const toggle = (id: string) => setItems((xs) => xs.map((x) => (x.id === id ? { ...x, checked: !x.checked } : x)));
+  // Persist the committed list (never an uncommitted `isNew` draft row) onto the note. A note with no
+  // resolvable client can't be addressed through the seam — its rail stays screen-local, as before.
+  const persistItems = (xs: Rx[]) => {
+    if (!clientId) return;
+    void updatePrescriptions(clientId, noteIndex, xs.filter((x) => !x.isNew).map(({ isNew: _isNew, ...p }) => p));
+  };
+
+  const toggle = (id: string) =>
+    setItems((xs) => {
+      const next = xs.map((x) => (x.id === id ? { ...x, done: !x.done } : x));
+      persistItems(next);
+      return next;
+    });
   const setText = (id: string, text: string) => setItems((xs) => xs.map((x) => (x.id === id ? { ...x, text } : x)));
 
   const generateFromNotes = async () => {
@@ -1076,7 +1151,11 @@ function PrescriptionsRail({ draft, clientId, noteIndex }: { draft: DraftNote; c
   };
 
   const commit = (id: string) =>
-    setItems((xs) => xs.flatMap((x) => (x.id === id ? (x.text.trim() === '' ? [] : [{ ...x, text: x.text.trim(), isNew: false }]) : [x])));
+    setItems((xs) => {
+      const next = xs.flatMap((x) => (x.id === id ? (x.text.trim() === '' ? [] : [{ ...x, text: x.text.trim(), isNew: false }]) : [x]));
+      persistItems(next);
+      return next;
+    });
 
   return (
     <View>
@@ -1102,21 +1181,21 @@ function PrescriptionsRail({ draft, clientId, noteIndex }: { draft: DraftNote; c
           <Pressable
             onPress={() => toggle(t.id)}
             accessibilityRole="checkbox"
-            accessibilityState={{ checked: !!t.checked }}
+            accessibilityState={{ checked: !!t.done }}
             hitSlop={6}
             style={{
               width: 18,
               height: 18,
               borderRadius: 5,
               borderWidth: 1.5,
-              borderColor: t.checked ? c.brandStrong : c.line,
-              backgroundColor: t.checked ? c.brandStrong : 'transparent',
+              borderColor: t.done ? c.brandStrong : c.line,
+              backgroundColor: t.done ? c.brandStrong : 'transparent',
               alignItems: 'center',
               justifyContent: 'center',
               marginTop: 1,
             }}
           >
-            {t.checked ? <CheckIcon size={12} color={c.onBrand} /> : null}
+            {t.done ? <CheckIcon size={12} color={c.onBrand} /> : null}
           </Pressable>
           <View style={{ flex: 1 }}>
             {t.isNew ? (
@@ -1132,7 +1211,7 @@ function PrescriptionsRail({ draft, clientId, noteIndex }: { draft: DraftNote; c
               />
             ) : (
               <Row gap={7} style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-                <AppText variant="body" style={{ textDecorationLine: t.checked ? 'line-through' : 'none', color: t.checked ? c.ink3 : c.ink }}>
+                <AppText variant="body" style={{ textDecorationLine: t.done ? 'line-through' : 'none', color: t.done ? c.ink3 : c.ink }}>
                   {t.text}
                 </AppText>
                 {t.generated ? <Badge label="generated" tone="brand" /> : null}

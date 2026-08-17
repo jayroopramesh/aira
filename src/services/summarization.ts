@@ -242,27 +242,37 @@ export class MockSummarizationService implements SummarizationService {
 function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafety']> {
   const s = transcript.toLowerCase();
   const has = (...kws: string[]) => kws.some((k) => s.includes(k));
-  const ideation = has(
-    'suicid',
-    'kill myself',
-    'end my life',
-    'end it all',
-    'better off dead',
-    'better off not here',
-    'better off gone',
-    "don't want to be here",
-    'do not want to be here',
-    "don't want to be alive",
-    'not want to be alive',
-    'not worth living',
-    "wasn't here anymore",
-    'wasnt here anymore',
-  );
-  const selfHarm = has('self-harm', 'self harm', 'cut myself', 'cutting myself', 'hurt myself', 'harm myself');
+  // Reflexive-verb cues are regexes so inflected forms flag the same as the base form: a client says
+  // "thinking about killing myself" or a clinician writes "she has been hurting herself" at least as
+  // often as the bare "kill myself" / "hurt myself". An exact-substring list silently missed every
+  // one of those — and a miss here doesn't degrade gracefully, it makes the row ASSERT "Not raised
+  // this session" against a transcript that raised it. Pronouns mirror the denial regexes below.
+  const REFLEXIVE = `(?:her|him|my|them)sel(?:f|ves)`;
+  const ideation =
+    has(
+      'suicid',
+      'better off dead',
+      'better off not here',
+      'better off gone',
+      "don't want to be here",
+      'do not want to be here',
+      "don't want to be alive",
+      'not want to be alive',
+      'not worth living',
+      "wasn't here anymore",
+      'wasnt here anymore',
+    ) ||
+    new RegExp(`\\bkill(?:ing|ed|s)?\\s+${REFLEXIVE}`).test(s) ||
+    /\bend(?:ing|ed|s)?\s+(?:my|her|his|their)\s+(?:own\s+)?li(?:fe|ves)\b/.test(s) ||
+    /\bend(?:ing|ed|s)?\s+it\s+all\b/.test(s);
+  const selfHarm =
+    has('self-harm', 'self harm') || new RegExp(`\\b(?:cut|harm|hurt)(?:ting|ing|ed|s)?\\s+${REFLEXIVE}`).test(s);
 
-  // Whether the transcript NEGATES a cue ("denied suicidal ideation", "no self-harm").
+  // Whether the transcript NEGATES a cue ("denied suicidal ideation", "no self-harm", "has never
+  // thought about hurting myself") — "never" is a denial word here for the same reason "no"/"not"
+  // are: without it, an explicit lifetime denial read as an ordinary mention and flagged.
   const deniedNear = (cues: string) =>
-    new RegExp(`\\b(?:denied|denies)\\b[^.?!]{0,40}?(?:${cues})|\\b(?:no|not|without(?: any)?)\\s+(?:[\\w'-]+\\s+){0,2}(?:${cues})`).test(s);
+    new RegExp(`\\b(?:denied|denies)\\b[^.?!]{0,40}?(?:${cues})|\\b(?:no|not|never|without(?: any)?)\\s+(?:[\\w'-]+\\s+){0,2}(?:${cues})`).test(s);
   // A denial phrase is not enough to clear a cue: clinicians routinely deny the PLAN while recording
   // the ideation ("denies plan or intent; reports fleeting suicidal thoughts"), and a denial of
   // plan/intent/means must NEVER downgrade disclosed ideation. So a denial only clears a cue when
@@ -290,9 +300,9 @@ function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafet
     'ongoing',
   );
   const ideationDenied =
-    !disclosed && deniedNear('suicid|ideation|thoughts of|wanting to die|kill (?:her|him|my|them)sel(?:f|ves)');
+    !disclosed && deniedNear(`suicid|ideation|thoughts of|wanting to die|kill(?:ing|ed|s)? ${REFLEXIVE}`);
   const selfHarmDenied =
-    !disclosed && deniedNear('self[- ]?harm|(?:cut|harm|hurt)(?:ting|ming|ing)? (?:her|him|my|them)sel(?:f|ves)');
+    !disclosed && deniedNear(`self[- ]?harm|(?:cut|harm|hurt)(?:ting|ing|ed|s)? ${REFLEXIVE}`);
   const REVIEW = 'Possible reference in transcript — clinician to review and confirm';
   const NOT_INDICATED = 'Not indicated on an automated read of the transcript — clinician to confirm';
 

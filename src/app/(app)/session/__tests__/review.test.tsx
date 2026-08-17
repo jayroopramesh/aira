@@ -93,6 +93,8 @@ let mockDraft: DraftNote = DRAFT;
 const mockSignNote = jest.fn();
 const mockUnlockNote = jest.fn();
 const mockGeneratePrescriptions = jest.fn();
+const mockUpdateNoteSection = jest.fn();
+const mockUpdatePrescriptions = jest.fn();
 
 jest.mock('../../../../data/DataProvider', () => ({
   useClient: () => CLIENT,
@@ -101,8 +103,9 @@ jest.mock('../../../../data/DataProvider', () => ({
   useData: () => ({
     signNote: mockSignNote,
     unlockNote: mockUnlockNote,
-    updateNoteSection: jest.fn(),
+    updateNoteSection: mockUpdateNoteSection,
     generatePrescriptions: mockGeneratePrescriptions,
+    updatePrescriptions: mockUpdatePrescriptions,
   }),
 }));
 
@@ -124,6 +127,8 @@ beforeEach(() => {
   mockSignNote.mockClear();
   mockUnlockNote.mockClear();
   mockGeneratePrescriptions.mockClear();
+  mockUpdateNoteSection.mockClear();
+  mockUpdatePrescriptions.mockClear();
 });
 
 afterEach(() => {
@@ -300,4 +305,141 @@ it('"Keep the audio" with no real segments says so honestly instead of offering 
   fireEvent.press(screen.getByRole('switch'));
   expect(screen.getByText(/Nothing to play back/)).toBeTruthy();
   expect(screen.queryByText(/Play the stitched recording/)).toBeNull();
+});
+
+it('recording comments persisted on the note render on the Transcript tab, stamped with their clock', () => {
+  mockDraft = {
+    ...DRAFT,
+    transcript: 'Client reflected on cutting back drinking to weekends only.',
+    recordingComments: [{ ts: '03:12', text: 'Change talk here — client named the weekend plan himself' }],
+  };
+  renderScreen();
+  fireEvent.press(screen.getByText('Transcript'));
+  expect(screen.getByText('03:12')).toBeTruthy();
+  expect(screen.getByText('Change talk here — client named the weekend plan himself')).toBeTruthy();
+});
+
+it('recording comments still render when no transcript is stored (typed-recovery edge)', () => {
+  mockDraft = { ...DRAFT, recordingComments: [{ ts: '00:41', text: 'Ask about sleep next time' }] };
+  renderScreen();
+  fireEvent.press(screen.getByText('Transcript'));
+  expect(screen.getByText(/No transcript is stored/)).toBeTruthy();
+  expect(screen.getByText('00:41')).toBeTruthy();
+  expect(screen.getByText('Ask about sleep next time')).toBeTruthy();
+});
+
+/**
+ * Section-editor list handling (round 3, 2026-08-18): a clinician typing a Plan list presses Enter
+ * once between items — the editor must not silently merge those lines into ONE bullet (which then
+ * becomes one merged reminder on prep and one merged prescription in "Generate from notes"). Each
+ * line in the bullets region is its own item, typed `- `/`• ` markers are stripped (the list renders
+ * its own glyph), and prose sections keep blank-line paragraph splitting so a manual line wrap
+ * doesn't shatter a paragraph.
+ */
+const EDITABLE_DRAFT: DraftNote = {
+  ...DRAFT,
+  sections: [
+    { id: 'subjective', marker: 'S', title: 'Subjective', body: ['Original subjective text.'] },
+    { id: 'plan', marker: 'P', title: 'Plan & Next Steps', body: [], bullets: ['Not captured in this draft — review required'] },
+  ],
+};
+
+it('plan items typed one per line become separate bullets, not one merged bullet', () => {
+  mockDraft = EDITABLE_DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Plan & Next Steps' }));
+  const editor = screen.getByDisplayValue('Not captured in this draft — review required');
+  fireEvent.changeText(editor, 'Send sister one short message\nNo screens after 23:00\nWorry journal once nightly');
+  fireEvent.press(screen.getByRole('button', { name: 'Save your edits to Plan & Next Steps' }));
+  expect(mockUpdateNoteSection).toHaveBeenCalledWith(CLIENT.id, 0, 'plan', [], [
+    'Send sister one short message',
+    'No screens after 23:00',
+    'Worry journal once nightly',
+  ]);
+});
+
+it('typed bullet markers are stripped from list items; a bare leading hyphen is kept', () => {
+  mockDraft = EDITABLE_DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Plan & Next Steps' }));
+  const editor = screen.getByDisplayValue('Not captured in this draft — review required');
+  fireEvent.changeText(editor, '- Sleep log daily\n• Message sister\n* Review next session\n-5 on the PHQ-9 is the target');
+  fireEvent.press(screen.getByRole('button', { name: 'Save your edits to Plan & Next Steps' }));
+  expect(mockUpdateNoteSection).toHaveBeenCalledWith(CLIENT.id, 0, 'plan', [], [
+    'Sleep log daily',
+    'Message sister',
+    'Review next session',
+    '-5 on the PHQ-9 is the target',
+  ]);
+});
+
+it('prose sections keep blank-line paragraph splitting — a manual line wrap stays one paragraph', () => {
+  mockDraft = EDITABLE_DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Subjective' }));
+  const editor = screen.getByDisplayValue('Original subjective text.');
+  fireEvent.changeText(editor, 'Low mood for two weeks,\nworse at night.\n\nDenies thoughts of self-harm.');
+  fireEvent.press(screen.getByRole('button', { name: 'Save your edits to Subjective' }));
+  expect(mockUpdateNoteSection).toHaveBeenCalledWith(
+    CLIENT.id,
+    0,
+    'subjective',
+    ['Low mood for two weeks,\nworse at night.', 'Denies thoughts of self-harm.'],
+    undefined,
+  );
+});
+
+/**
+ * Prescriptions-rail persistence (round 3, 2026-08-18): the rail's copy invites the clinician to
+ * "write them … Tick as you assign", so a hand-written "+ Add" item and every tick must persist onto
+ * the note through `updatePrescriptions` — before this they lived only in component state, and
+ * switching notes in the session rail (a keyed remount) or reloading silently discarded them. The
+ * tick writes the item's own persisted `done` field, and rendering reads that same field back, so a
+ * remount shows exactly what was persisted.
+ */
+it('ticking a prescription persists done=true onto the note, not a throwaway local flag', () => {
+  mockDraft = ALREADY_GENERATED_DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByRole('checkbox'));
+  // Exact deep equality on the persisted item: the tick flips `done`, and no screen-local flag
+  // (`isNew`) leaks into the stored note.
+  expect(mockUpdatePrescriptions).toHaveBeenCalledWith(CLIENT.id, 0, [
+    { id: 'gen-0', text: 'Continue the sleep log', source: 'from Plan', done: true, generated: true },
+  ]);
+});
+
+it('committing a hand-written "+ Add" prescription persists it onto the note', () => {
+  renderScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Add' }));
+  const input = screen.getByPlaceholderText('New prescription…');
+  fireEvent.changeText(input, 'Thought record — one entry each evening');
+  fireEvent(input, 'submitEditing');
+  expect(mockUpdatePrescriptions).toHaveBeenCalledWith(CLIENT.id, 0, [
+    { id: expect.stringMatching(/^rx-new-/), text: 'Thought record — one entry each evening', source: 'added by you', done: false },
+  ]);
+});
+
+it('an uncommitted "+ Add" draft row is never persisted', () => {
+  renderScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Add' }));
+  expect(mockUpdatePrescriptions).not.toHaveBeenCalled();
+});
+
+it('a prescription persisted as done renders ticked after a remount', () => {
+  mockDraft = {
+    ...DRAFT,
+    prescriptions: [{ id: 'rx-1', text: 'Continue nightly sleep log', source: 'added by you', done: true }],
+  };
+  renderScreen();
+  expect(screen.getByRole('checkbox', { checked: true })).toBeTruthy();
+});
+
+it('an existing multi-bullet list opens in the editor one item per line', () => {
+  mockDraft = {
+    ...DRAFT,
+    sections: [{ id: 'plan', marker: 'P', title: 'Plan & Next Steps', body: [], bullets: ['Sleep log daily', 'Message sister'] }],
+  };
+  renderScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Plan & Next Steps' }));
+  expect(screen.getByDisplayValue('Sleep log daily\nMessage sister')).toBeTruthy();
 });

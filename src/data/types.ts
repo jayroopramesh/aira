@@ -72,6 +72,14 @@ export type ReviewCode = {
   relevance: 'high' | 'med' | 'low';
 };
 
+/**
+ * One comment the clinician typed on the recording screen while the capture ran, stamped with the
+ * recording clock ("03:12") at the moment it was added. Clinician-authored context — never machine
+ * output, never sent to the summarizer, never blended into the transcript. After "Continue
+ * recording" appends a second capture, a comment's clock reads within its OWN recording segment.
+ */
+export type RecordingComment = { ts: string; text: string };
+
 export type DraftNote = {
   sessionLabel: string; // "Session 5 — 12 Aug"
   sourceLine: string; // "From a 47-min voice note · transcribed on-device · Identifiers never left this device"
@@ -151,6 +159,15 @@ export type DraftNote = {
    * never ran or nothing was removed.
    */
   auxiliaryNotes?: string;
+  /**
+   * Comments the clinician typed on the recording screen while this note's capture(s) ran, in the
+   * order they were added (chronological; "Continue recording" concatenates the new capture's
+   * comments after the existing ones — see `applyRecordingAppend`). The recording screen's comment
+   * strip PROMISES these are kept with the note, so they must reach the persisted note and the
+   * review screen's Transcript tab rather than dying with the recording UI's local state. Absent
+   * when none were typed.
+   */
+  recordingComments?: RecordingComment[];
   /**
    * True only for a note authored by the sample cohort (`buildSampleSnapshot`), stamped at load time —
    * never guessed later by name/content sniffing. This is what "Undo sample data" (Settings) uses to
