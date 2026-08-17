@@ -9,7 +9,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { buildSampleSnapshot, CaseloadSnapshot, clientRepository, EMPTY_SNAPSHOT, PatientDetailsEntry } from './repository';
-import { CaseloadKpi, Client, DayDashboard, DraftNote, NoteSection } from './types';
+import { CaseloadKpi, Client, DayDashboard, DraftNote, NoteSection, PrepItem } from './types';
 import { applySessionNote } from './saveSession';
 
 /**
@@ -107,6 +107,14 @@ type DataContextValue = {
    * act elsewhere — never an automatic downgrade.
    */
   updateNoteSection: (clientId: string, noteIndex: number, sectionId: string, body: string[], bullets?: string[]) => Promise<void>;
+  /**
+   * Persist the "Generate from notes" pull (round-2 item 2): appends `items` (already computed by the
+   * caller from the note's own Plan bullets) onto the note's `prescriptions` and marks
+   * `prescriptionsGenerated`, so the rail's disabled state survives reload — it is a fact about this
+   * note's transcript, not transient screen state. A no-op once already generated, so a caller racing
+   * the guard can never append the pulled items twice.
+   */
+  generatePrescriptions: (clientId: string, noteIndex: number, items: PrepItem[]) => Promise<void>;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -225,6 +233,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [persist],
   );
 
+  const generatePrescriptions = useCallback(
+    async (clientId: string, noteIndex: number, items: PrepItem[]) => {
+      const snapshot = snapshotRef.current;
+      const list = snapshot.notes[clientId];
+      if (!list?.[noteIndex]) return;
+      // Idempotent guard AT the seam, not just the rail's disabled button — a second call (a racing
+      // double-press) must never append the pulled items twice.
+      if (list[noteIndex].prescriptionsGenerated) return;
+      const next: DraftNote[] = list.map((n, i) =>
+        i === noteIndex ? { ...n, prescriptions: [...n.prescriptions, ...items], prescriptionsGenerated: true } : n,
+      );
+      await persist({ ...snapshot, notes: { ...snapshot.notes, [clientId]: next } });
+    },
+    [persist],
+  );
+
   const value = useMemo<DataContextValue>(() => {
     const clientsById = Object.fromEntries(snapshot.clients.map((c) => [c.id, c]));
     return {
@@ -243,8 +267,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       signNote,
       unlockNote,
       updateNoteSection,
+      generatePrescriptions,
     };
-  }, [snapshot, hydrated, loadSample, clearAll, saveSessionNote, savePatientDetails, signNote, unlockNote, updateNoteSection]);
+  }, [
+    snapshot,
+    hydrated,
+    loadSample,
+    clearAll,
+    saveSessionNote,
+    savePatientDetails,
+    signNote,
+    unlockNote,
+    updateNoteSection,
+    generatePrescriptions,
+  ]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }

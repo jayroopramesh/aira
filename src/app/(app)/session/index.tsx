@@ -5,7 +5,7 @@ import { ClientLink } from '../../../components/ClientLink';
 import { Highlights } from '../../../components/Highlights';
 import { Screen } from '../../../components/Screen';
 import { Waveform } from '../../../components/Waveform';
-import { AlertTriangleIcon, FileUpIcon, MicIcon, PencilIcon, PlusIcon, ShieldIcon, StopIcon } from '../../../components/icons';
+import { AlertTriangleIcon, FileUpIcon, MicIcon, PencilIcon, PlusIcon, ShieldIcon, SparklesIcon, StopIcon } from '../../../components/icons';
 import { AppText, Button, Card, Row, TrustPill } from '../../../components/ui';
 import { useClient, useData } from '../../../data/DataProvider';
 import { isValidEmiratesId } from '../../../data/sessionClient';
@@ -20,6 +20,7 @@ import {
 } from '../../../services/audioCapture';
 import { hasGroq } from '../../../config/env';
 import { cloudSessionReady, isCloudSessionRequiredError } from '../../../services/cloudSession';
+import { speakerSeparationService, SpeakerTurn } from '../../../services/speakerSeparation';
 import { summarizationService } from '../../../services/summarization';
 import {
   CaptureRef,
@@ -31,6 +32,14 @@ import {
 import { useTheme } from '../../../theme/ThemeProvider';
 
 type Phase = 'precapture' | 'recording' | 'analysing';
+
+/**
+ * Scribe options (round-2 item 1, 2026-08-17): "patient session" is a real session that can carry more
+ * than one voice, so it gets the speaker-separation pass; "retrospective" is the clinician talking to
+ * themselves about a session that already happened, so the whole transcript is assumed to be the
+ * therapist and no separation pass runs.
+ */
+type ScribeMode = 'patient' | 'retrospective';
 
 /**
  * The built-in sample clip, so the flow demos end-to-end with no mic and no upload.
@@ -76,6 +85,7 @@ export default function SessionCapture() {
   const { saveSessionNote } = useData();
 
   const [phase, setPhase] = useState<Phase>('precapture');
+  const [mode, setMode] = useState<ScribeMode>('patient');
   const [name, setName] = useState('');
   // Optional Emirates ID for a NEW client — the local uniqueness key. When it matches someone already
   // on the caseload the capture folds into that record instead of minting a duplicate patient.
@@ -172,6 +182,8 @@ export default function SessionCapture() {
           onName={setName}
           emiratesId={emiratesId}
           onEmiratesId={setEmiratesId}
+          mode={mode}
+          onMode={setMode}
           onRecord={beginRecording}
           onUpload={onUpload}
           onUseSample={() => goAnalyse(mockCaptureRef())}
@@ -194,6 +206,7 @@ export default function SessionCapture() {
           capture={capture.current ?? failedCaptureRef()}
           client={client ?? undefined}
           name={name}
+          mode={mode}
           onDrafted={onDrafted}
           returnTo={returnTo}
           cloudReady={cloudReady}
@@ -211,6 +224,8 @@ function PreCapture({
   onName,
   emiratesId,
   onEmiratesId,
+  mode,
+  onMode,
   onRecord,
   onUpload,
   onUseSample,
@@ -222,6 +237,8 @@ function PreCapture({
   onName: (v: string) => void;
   emiratesId: string;
   onEmiratesId: (v: string) => void;
+  mode: ScribeMode;
+  onMode: (m: ScribeMode) => void;
   onRecord: () => void;
   onUpload: () => void;
   onUseSample: () => void;
@@ -249,6 +266,8 @@ function PreCapture({
           ? 'In demo mode Airava transcribes and drafts in the cloud (Groq). You review and sign every note; the draft and transcript stay on this device.'
           : 'Demo services aren’t configured, so this build has no automatic transcription. You can still record: type or paste the transcript afterwards and Airava drafts the note on this device, with nothing sent anywhere. “Use sample audio” runs the full walkthrough on a built-in demo clip.'}
       </AppText>
+
+      <ScribeOptions mode={mode} onMode={onMode} />
 
       {cloudSignedOut ? (
         <Row
@@ -413,6 +432,52 @@ function PreCapture({
 
       <View style={{ height: 16 }} />
       <TrustPill label={hasGroq ? 'Draft & transcript stay on this device' : 'On-device · nothing uploaded'} icon={<ShieldIcon size={13} color={c.brand} />} />
+    </View>
+  );
+}
+
+/**
+ * Scribe options (round-2 item 1). "Patient session" is a real session that can carry more than one
+ * voice — Airava runs a post-transcription speaker-separation pass and offers to pull a second speaker
+ * out into auxiliary notes. "Retrospective" is the clinician talking through a session on their own
+ * afterwards — the whole transcript is assumed to be them, so no separation pass runs. Styled after the
+ * SOAP/DAP pill switcher on the review screen for a consistent segmented-control shape app-wide.
+ */
+function ScribeOptions({ mode, onMode }: { mode: ScribeMode; onMode: (m: ScribeMode) => void }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const OPTIONS: { key: ScribeMode; label: string }[] = [
+    { key: 'patient', label: 'Patient session' },
+    { key: 'retrospective', label: 'Retrospective' },
+  ];
+  return (
+    <View style={{ width: '100%', marginTop: theme.spacing.lg, alignItems: 'center' }}>
+      <AppText variant="label" color="ink3" uppercase style={{ marginBottom: 8 }}>
+        Scribe options
+      </AppText>
+      <Row style={{ borderWidth: 1, borderColor: c.line, borderRadius: theme.radii.pill, overflow: 'hidden' }}>
+        {OPTIONS.map((o) => {
+          const active = o.key === mode;
+          return (
+            <Pressable
+              key={o.key}
+              onPress={() => onMode(o.key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              style={{ paddingVertical: 8, paddingHorizontal: 18, backgroundColor: active ? c.brandBg : 'transparent' }}
+            >
+              <AppText variant="bodyStrong" tint={active ? c.brand : c.ink3} style={{ fontSize: 13 }}>
+                {o.label}
+              </AppText>
+            </Pressable>
+          );
+        })}
+      </Row>
+      <AppText variant="small" color="ink3" center style={{ marginTop: 8, maxWidth: 420, lineHeight: 16 }}>
+        {mode === 'patient'
+          ? 'This session can have more than one voice — Airava identifies speakers after transcription.'
+          : 'Just you talking through the session afterwards — the whole transcript is treated as your own words.'}
+      </AppText>
     </View>
   );
 }
@@ -698,6 +763,7 @@ function Analysing({
   capture,
   client,
   name,
+  mode,
   onDrafted,
   returnTo,
   cloudReady,
@@ -705,6 +771,7 @@ function Analysing({
   capture: CaptureRef;
   client: ReturnType<typeof useClient>;
   name: string;
+  mode: ScribeMode;
   onDrafted: (note: DraftNote) => void;
   returnTo: string;
   /** Whether a cloud draft is actually reachable, so the in-flight label names the drafting hop
@@ -731,6 +798,18 @@ function Analysing({
   // so both stay false there.
   const [audioLeftDevice, setAudioLeftDevice] = useState(false);
   const [transcriptFromCloud, setTranscriptFromCloud] = useState(false);
+
+  // Speaker separation (round-2 item 1) — a POST-transcription LLM pass, "patient session" mode only.
+  // `speakerState` degrades honestly: 'unavailable' when there's no live cloud session to run it,
+  // never a faked local split. `separatedFor` pins the turns to the exact transcript text they were
+  // derived from, so an edit to the transcript afterwards visibly retires the stale panel rather than
+  // silently applying a removal against text the model never saw.
+  const [speakerState, setSpeakerState] = useState<'idle' | 'loading' | 'ready' | 'unavailable' | 'error'>('idle');
+  const [speakerTurns, setSpeakerTurns] = useState<SpeakerTurn[] | null>(null);
+  const [separatedFor, setSeparatedFor] = useState<string | null>(null);
+  const [speakersApplied, setSpeakersApplied] = useState(false);
+  const [auxiliaryNotes, setAuxiliaryNotes] = useState<string | undefined>(undefined);
+  const autoSeparateRan = useRef(false);
 
   useEffect(() => {
     const ctrl = controller.current;
@@ -778,6 +857,54 @@ function Analysing({
     return () => ctrl.abort();
   }, [capture, isMockCapture]);
 
+  // Speaker separation runs automatically once, right after transcription lands — "patient session"
+  // mode only (retrospective assumes a single therapist voice and never runs this). Never fires for an
+  // empty transcript, and never re-fires for the same transcript text (autoSeparateRan) — editing the
+  // transcript afterwards just retires the stale panel below rather than re-triggering a fresh call.
+  useEffect(() => {
+    if (stage !== 'ready' || mode !== 'patient' || autoSeparateRan.current) return;
+    const text = transcript.trim();
+    if (!text) return;
+    autoSeparateRan.current = true;
+    if (!speakerSeparationService || cloudReady !== true) {
+      setSpeakerState('unavailable');
+      return;
+    }
+    const ctrl = new AbortController();
+    setSpeakerState('loading');
+    speakerSeparationService
+      .separate(text, { signal: ctrl.signal })
+      .then((result) => {
+        setSpeakerTurns(result.turns);
+        setSeparatedFor(text);
+        setSpeakerState('ready');
+      })
+      .catch((e) => {
+        if ((e as Error).name === 'AbortError') return;
+        // A no-session rejection reads the same as build-unconfigured here — either way there is no
+        // cloud path to run this pass, and the honest thing is to say so, not to fake a local split.
+        setSpeakerState(isCloudSessionRequiredError(e) ? 'unavailable' : 'error');
+      });
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, mode, cloudReady]);
+
+  // The transcript no longer matches what the speaker panel was derived from (the clinician edited it,
+  // or applied the removal already) — never apply a stale split against text the model didn't see.
+  const speakerPanelStale = speakerTurns !== null && separatedFor !== transcript;
+
+  const applySpeakerRemoval = () => {
+    if (!speakerTurns || speakerPanelStale || speakersApplied) return;
+    const kept = speakerTurns.filter((t) => t.speaker !== 'Speaker 2');
+    const removed = speakerTurns.filter((t) => t.speaker === 'Speaker 2');
+    if (!removed.length) return;
+    const nextTranscript = kept.map((t) => t.text).join(' ');
+    setTranscript(nextTranscript);
+    setSeparatedFor(nextTranscript);
+    setAuxiliaryNotes(removed.map((t) => t.text).join(' '));
+    setSpeakersApplied(true);
+  };
+
   const draftAndContinue = async () => {
     const trimmed = transcript.trim();
     if (!trimmed) return;
@@ -804,6 +931,7 @@ function Analysing({
       audioLeftDevice,
       transcriptFromCloud,
       sampleCapture: isMockCapture,
+      auxiliaryNotes,
     };
     try {
       // The summarizer stamps transcript + every provenance field itself, from the input it was given
@@ -972,6 +1100,17 @@ function Analysing({
         />
       </View>
 
+      {mode === 'patient' && !working ? (
+        <SpeakersPanel
+          state={speakerState}
+          turns={speakerTurns}
+          stale={speakerPanelStale}
+          applied={speakersApplied}
+          onApply={applySpeakerRemoval}
+          returnTo={returnTo}
+        />
+      ) : null}
+
       <View style={{ height: theme.spacing.lg }} />
       <View style={{ alignItems: 'flex-end' }}>
         {!working && transcriptEmpty ? (
@@ -988,5 +1127,148 @@ function Analysing({
         />
       </View>
     </View>
+  );
+}
+
+/* -------------------------------------------------------------- speakers --- */
+
+/**
+ * Speakers panel (round-2 item 1). Renders the machine-attributed turn split for "patient session"
+ * mode once transcription lands, with the offer to remove Speaker 2's turns into auxiliary notes.
+ * HONESTY: every state here either shows real model output labelled as a guess, or says plainly that
+ * separation didn't run — never a fabricated split. Renders nothing while stale (the transcript has
+ * since diverged from what the turns were derived from) or idle (still waiting on transcription).
+ */
+function SpeakersPanel({
+  state,
+  turns,
+  stale,
+  applied,
+  onApply,
+  returnTo,
+}: {
+  state: 'idle' | 'loading' | 'ready' | 'unavailable' | 'error';
+  turns: SpeakerTurn[] | null;
+  stale: boolean;
+  applied: boolean;
+  onApply: () => void;
+  returnTo: string;
+}) {
+  const theme = useTheme();
+  const c = theme.colors;
+
+  if (state === 'idle' || stale) return null;
+
+  if (state === 'loading') {
+    return (
+      <Card tone="sunken" elevation="none" radius="md" style={{ marginTop: theme.spacing.md }}>
+        <Row gap={10}>
+          <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2.5, borderColor: c.brandBd, borderTopColor: c.brand }} />
+          <AppText variant="bodyStrong" style={{ fontSize: 13 }}>
+            Identifying speakers…
+          </AppText>
+        </Row>
+      </Card>
+    );
+  }
+
+  if (state === 'unavailable') {
+    return (
+      <Row
+        gap={10}
+        style={{
+          marginTop: theme.spacing.md,
+          alignItems: 'flex-start',
+          backgroundColor: c.sunken,
+          borderColor: c.line,
+          borderWidth: 1,
+          borderRadius: theme.radii.md,
+          padding: theme.spacing.md,
+        }}
+      >
+        <View style={{ marginTop: 1 }}>
+          <ShieldIcon size={15} color={c.ink3} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <AppText variant="small" color="ink2" style={{ lineHeight: 17 }}>
+            {hasGroq
+              ? 'Speaker separation needs a live cloud session, and this device doesn’t have one right now — the transcript above is used as-is.'
+              : 'This build has no automatic speaker separation — the transcript above is used as-is.'}
+          </AppText>
+          {hasGroq ? (
+            <View style={{ height: 8 }} />
+          ) : null}
+          {hasGroq ? <SignInToCloud label="Sign in to identify speakers on your next capture" returnTo={returnTo} /> : null}
+        </View>
+      </Row>
+    );
+  }
+
+  if (state === 'error') {
+    return (
+      <Row gap={9} style={{ marginTop: theme.spacing.md, alignItems: 'flex-start' }}>
+        <View style={{ marginTop: 1 }}>
+          <AlertTriangleIcon size={15} color={c.caution} />
+        </View>
+        <AppText variant="small" tint={c.caution} style={{ flex: 1, lineHeight: 17 }}>
+          Couldn’t identify speakers for this transcript — the transcript above is used as-is; you can still
+          draft the note.
+        </AppText>
+      </Row>
+    );
+  }
+
+  const hasSecondSpeaker = (turns ?? []).some((t) => t.speaker === 'Speaker 2');
+
+  return (
+    <Card tone="sunken" elevation="none" radius="md" style={{ marginTop: theme.spacing.md, backgroundColor: c.brandBg, borderColor: c.brandBd }}>
+      <Row gap={8} style={{ flexWrap: 'wrap' }}>
+        <SparklesIcon size={14} color={c.brand} />
+        <AppText variant="bodyStrong" tint={c.brand} style={{ fontSize: 12.5 }}>
+          Speakers · machine-attributed
+        </AppText>
+        <AppText variant="small" color="ink3" style={{ fontSize: 11 }}>
+          a guess from conversational cues — review before relying on it
+        </AppText>
+      </Row>
+      <View style={{ height: 10 }} />
+      {(turns ?? []).map((t, i) => (
+        <Row key={i} gap={8} style={{ alignItems: 'flex-start', marginBottom: 8 }}>
+          <View
+            style={{
+              backgroundColor: t.speaker === 'Speaker 2' ? c.cautionBg : c.elevated,
+              borderRadius: theme.radii.xs,
+              paddingVertical: 3,
+              paddingHorizontal: 7,
+              minWidth: 68,
+            }}
+          >
+            <AppText variant="small" tint={t.speaker === 'Speaker 2' ? c.caution : c.ink2} style={{ fontSize: 11 }}>
+              {t.speaker}
+            </AppText>
+          </View>
+          <AppText variant="body" color="ink2" style={{ flex: 1, fontSize: 13.5 }}>
+            {t.text}
+          </AppText>
+        </Row>
+      ))}
+      <View style={{ height: 4 }} />
+      {applied ? (
+        <Row gap={7} style={{ alignItems: 'flex-start' }}>
+          <View style={{ marginTop: 1 }}>
+            <ShieldIcon size={13} color={c.brand} />
+          </View>
+          <AppText variant="small" tint={c.brand} style={{ flex: 1, fontSize: 12, lineHeight: 16 }}>
+            Speaker 2 removed from the transcript above and saved as auxiliary notes on this session.
+          </AppText>
+        </Row>
+      ) : hasSecondSpeaker ? (
+        <Button title="Remove Speaker 2 + add as auxiliary notes" variant="ghost" leftIcon={<SparklesIcon size={14} color={c.brand} />} onPress={onApply} />
+      ) : (
+        <AppText variant="small" color="ink3" style={{ fontSize: 11.5 }}>
+          Only the therapist and client were identified — nothing to remove.
+        </AppText>
+      )}
+    </Card>
   );
 }

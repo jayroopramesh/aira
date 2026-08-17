@@ -43,6 +43,14 @@ export type SummaryInput = {
    * Absent → treated as a real session, so the safe mode is the default.
    */
   sampleCapture?: boolean;
+  /**
+   * The other speaker's turns, stripped from `transcript` by the capture screen's speaker-separation
+   * "Remove second speaker + add as auxiliary notes" action (round-2 item 1). Purely stored onto the
+   * note (`DraftNote.auxiliaryNotes`) for the review screen's Transcript tab — never sent to the
+   * summarizer as part of the drafting prompt, since it was deliberately excluded from the clinical
+   * transcript.
+   */
+  auxiliaryNotes?: string;
 };
 
 export interface SummarizationService {
@@ -80,12 +88,13 @@ safety, not reassurance: "clear" only when suicidal ideation and self-harm were 
 denied; "acute" for ANY disclosed/endorsed current suicidal ideation — passive, transient, fleeting,
 "better off not here", with or without a plan (a stated plan/means/intent is still acute); "elevated"
 for endorsed self-harm without suicidal ideation; "watch" when risk could not be assessed this session.
+Phrase a screened-and-not-present risk item's row value as "Not indicated" (never "Denied").
 
 Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY this shape:
 {
   "subjective": { "body": ["1-3 short paragraphs, the client's reported experience"], "quote": "one short verbatim-style client quote or empty string" },
   "objective": { "body": ["1-2 short paragraphs: observed presentation, engagement, mental status observations"] },
-  "riskSafety": { "summary": "one plain sentence on risk screened this session", "rows": [ { "label": "Suicidal ideation", "value": "Denied / Passive / ..." }, { "label": "Self-harm", "value": "..." }, { "label": "Safety plan", "value": "..." } ], "level": "clear | watch | elevated | acute" },
+  "riskSafety": { "summary": "one plain sentence on risk screened this session", "rows": [ { "label": "Suicidal ideation", "value": "Not indicated / Passive / ..." }, { "label": "Self-harm", "value": "..." }, { "label": "Safety plan", "value": "..." } ], "level": "clear | watch | elevated | acute" },
   "assessment": { "body": ["1-2 short paragraphs: clinical impression and progress toward goals"] },
   "plan": { "bullets": ["3-6 concrete, actionable next-step items — these become prescriptions"] },
   "reviewCodes": [ { "code": "e.g. F41.1", "label": "human-readable label", "relevance": "high|med|low" } ]
@@ -166,7 +175,7 @@ export class GroqSummarizationService implements SummarizationService {
 
 /**
  * Deterministic on-device drafting. It is a STUB — no clinical model runs — so it must never fabricate
- * a "Denied / clear" risk finding it did not assess (F4-mock-clear); it derives the risk row + tier
+ * a "Not indicated / clear" risk finding it did not assess (F4-mock-clear); it derives the risk row + tier
  * from a lightweight scan of the transcript (disclosed ideation → acute, self-harm → elevated, clear
  * only when nothing was raised), so a real dictated transcript that discloses ideation is never rated
  * "clear" here.
@@ -226,6 +235,9 @@ export class MockSummarizationService implements SummarizationService {
  *    transcript explicitly contradicts. A denial alongside a disclosure still flags: see `disclosed`.
  *  • Even when it does flag, the row says a possible REFERENCE was seen and asks the clinician to
  *    confirm — it never asserts "Disclosed in session", which the stub cannot establish.
+ *
+ * Row wording (captain round 2, 2026-08-17): a screened-and-not-present finding reads "Not indicated"
+ * rather than "Denied" — `deniesRisk` in `sessionClient.ts` recognises both as the same denial.
  */
 function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafety']> {
   const s = transcript.toLowerCase();
@@ -282,7 +294,7 @@ function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafet
   const selfHarmDenied =
     !disclosed && deniedNear('self[- ]?harm|(?:cut|harm|hurt)(?:ting|ming|ing)? (?:her|him|my|them)sel(?:f|ves)');
   const REVIEW = 'Possible reference in transcript — clinician to review and confirm';
-  const DENIED = 'Denied on an automated read of the transcript — clinician to confirm';
+  const NOT_INDICATED = 'Not indicated on an automated read of the transcript — clinician to confirm';
 
   if (ideation && !ideationDenied) {
     return {
@@ -310,8 +322,8 @@ function scanTranscriptRisk(transcript: string): NonNullable<LlmDraft['riskSafet
     return {
       summary: 'Ideation / self-harm appear to have been raised and denied in this session — confirm with the client.',
       rows: [
-        { label: 'Suicidal ideation', value: ideationDenied ? DENIED : 'Not raised this session' },
-        { label: 'Self-harm', value: selfHarmDenied ? DENIED : 'Not raised this session' },
+        { label: 'Suicidal ideation', value: ideationDenied ? NOT_INDICATED : 'Not raised this session' },
+        { label: 'Self-harm', value: selfHarmDenied ? NOT_INDICATED : 'Not raised this session' },
         { label: 'Safety plan', value: 'Not discussed this session' },
       ],
       level: 'clear',
@@ -340,7 +352,7 @@ function toPrep(bullets: string[]): PrepItem[] {
 
 /**
  * Shown when a section has no content the draft can honestly stand behind. Never backfill it with
- * plausible clinical content — a synthesized "Denied" or invented prose would attach fabricated
+ * plausible clinical content — a synthesized "Not indicated" or invented prose would attach fabricated
  * findings to a real transcript. Two things surface it: a gap in the live model's reply, and every
  * section the `deriveOnly` stub cannot read out of the clinician's own words.
  */
@@ -376,15 +388,6 @@ function buildDraft(
   });
 
   sections.push({
-    id: 'risk',
-    marker: 'R',
-    title: 'Risk & Safety Check',
-    body: d.riskSafety?.summary ? [d.riskSafety.summary] : [NOT_CAPTURED],
-    rows: d.riskSafety?.rows?.length ? d.riskSafety.rows : [{ label: 'Risk screening', value: NOT_CAPTURED }],
-    isRisk: true,
-  });
-
-  sections.push({
     id: 'assessment',
     marker: 'A',
     title: 'Assessment',
@@ -398,6 +401,17 @@ function buildDraft(
     title: 'Plan & Next Steps',
     body: [],
     bullets: planBullets.length ? planBullets : [NOT_CAPTURED],
+  });
+
+  // Risk & Safety renders LAST on the review page (captain round 2, 2026-08-17) — the clinical
+  // narrative (S/O/A/P) reads before the routine safety check.
+  sections.push({
+    id: 'risk',
+    marker: 'R',
+    title: 'Risk & Safety Check',
+    body: d.riskSafety?.summary ? [d.riskSafety.summary] : [NOT_CAPTURED],
+    rows: d.riskSafety?.rows?.length ? d.riskSafety.rows : [{ label: 'Risk screening', value: NOT_CAPTURED }],
+    isRisk: true,
   });
 
   const reviewCodes: ReviewCode[] = (d.reviewCodes ?? [])
@@ -447,6 +461,7 @@ function buildDraft(
     // caller re-attaching it after the fact. A blank/whitespace-only transcript stores as absent, same
     // honesty rule as every other "nothing to show" case in this note.
     transcript: input.transcript?.trim() || undefined,
+    auxiliaryNotes: input.auxiliaryNotes?.trim() || undefined,
     audioLeftDevice: audioLeft,
     transcriptFromCloud: cloudTranscript,
     draftedInCloud,

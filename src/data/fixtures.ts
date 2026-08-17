@@ -471,8 +471,9 @@ export const AMARA_DRAFT: DraftNote = {
   sessionLabel: 'Session 5 — 12 Aug',
   sourceLine: 'Sample note · fictional session, no real PHI — nothing was transcribed',
   status: 'draft',
-  // SOAP order (round-2 change #9): Subjective · Objective · Risk & Safety Check · Assessment · Plan.
-  // Risk is its own always-present section, between Objective and Assessment.
+  // SOAP order (round-2 change #9, revised captain round 2 2026-08-17): Subjective · Objective ·
+  // Assessment · Plan · Risk & Safety Check. Risk is its own always-present section, now LAST so the
+  // clinical narrative (S/O/A/P) reads before the routine safety check.
   sections: [
     {
       id: 'sec-s',
@@ -493,20 +494,6 @@ export const AMARA_DRAFT: DraftNote = {
       ],
     },
     {
-      id: 'sec-risk',
-      marker: 'risk',
-      title: 'Risk & Safety Check',
-      isRisk: true,
-      rows: [
-        { label: 'Passive ideation (PHQ-9 item 9)', value: 'Not present today' },
-        { label: 'Plan / intent / means', value: 'Denied' },
-        { label: 'Protective factors', value: 'Strong — friends, faith, goals' },
-      ],
-      body: [
-        'Safety plan from Session 2 reviewed and remains current. Continue routine re-screening each session. Standing escalation affordance available if this changes.',
-      ],
-    },
-    {
       id: 'sec-a',
       marker: 'A',
       title: 'Assessment',
@@ -524,6 +511,20 @@ export const AMARA_DRAFT: DraftNote = {
         'Introduce exam-specific cognitive reframe; assign one worry-window per day.',
         'Re-administer PHQ-9 & GAD-7 next session; re-screen passive ideation (routine).',
         'Book Session 6 for the week of 26 Aug (post-exam).',
+      ],
+    },
+    {
+      id: 'sec-risk',
+      marker: 'risk',
+      title: 'Risk & Safety Check',
+      isRisk: true,
+      rows: [
+        { label: 'Passive ideation (PHQ-9 item 9)', value: 'Not present today' },
+        { label: 'Plan / intent / means', value: 'Not indicated' },
+        { label: 'Protective factors', value: 'Strong — friends, faith, goals' },
+      ],
+      body: [
+        'Safety plan from Session 2 reviewed and remains current. Continue routine re-screening each session. Standing escalation affordance available if this changes.',
       ],
     },
   ],

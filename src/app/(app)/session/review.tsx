@@ -280,7 +280,17 @@ export default function ReviewNote() {
   const showSessions = notes.length > 1;
 
   const rail = (
-    <ReviewRail key={noteKey} draft={draft} signed={signed} onSign={sign} onUnlock={unlock} clinician={signedByName} signedAt={signedAt} />
+    <ReviewRail
+      key={noteKey}
+      draft={draft}
+      signed={signed}
+      onSign={sign}
+      onUnlock={unlock}
+      clinician={signedByName}
+      signedAt={signedAt}
+      clientId={clientId}
+      noteIndex={noteIndex}
+    />
   );
   const sessions =
     client && showSessions ? (
@@ -401,6 +411,7 @@ export default function ReviewNote() {
             ) : tab === 'Transcript' ? (
               <TranscriptPane
                 transcript={draft.transcript}
+                auxiliaryNotes={draft.auxiliaryNotes}
                 audioLeftDevice={draft.audioLeftDevice}
                 transcriptFromCloud={draft.transcriptFromCloud}
                 draftedInCloud={draft.draftedInCloud}
@@ -537,8 +548,9 @@ function NotePane({
       ) : null}
 
       {/* Note-format switcher (round-4 item 5). Re-lays the note in place: DAP merges Subjective +
-          Objective (incl. the measures table) under one D — Data section; Risk & Safety Check stays
-          its own always-present section, then A, then P. SOAP is the default. */}
+          Objective (incl. the measures table) under one D — Data section, then A, then P; Risk & Safety
+          Check stays its own always-present section, now LAST (captain round 2, 2026-08-17) so the
+          clinical narrative reads before the routine safety check. SOAP is the default. */}
       <Row gap={10} style={{ alignItems: 'center', marginBottom: theme.spacing.lg, flexWrap: 'wrap' }}>
         <AppText variant="label" color="ink3" uppercase>
           Note format
@@ -562,9 +574,9 @@ function NotePane({
       ) : (
         <>
           {subjective && objective ? <DataSection subjective={subjective} objective={objective} measures={draft.measures} /> : null}
-          {risk ? <Section key={risk.id} section={risk} measures={draft.measures} editable={editable} onSave={saveSection} pendingEdits={pendingEdits} /> : null}
           {assessment ? <Section key={assessment.id} section={assessment} measures={draft.measures} editable={editable} onSave={saveSection} pendingEdits={pendingEdits} /> : null}
           {plan ? <Section key={plan.id} section={plan} measures={draft.measures} editable={editable} onSave={saveSection} pendingEdits={pendingEdits} /> : null}
+          {risk ? <Section key={risk.id} section={risk} measures={draft.measures} editable={editable} onSave={saveSection} pendingEdits={pendingEdits} /> : null}
         </>
       )}
     </View>
@@ -872,18 +884,26 @@ function MeasureTable({ measures }: { measures: DraftNote['measures'] }) {
  */
 function TranscriptPane({
   transcript,
+  auxiliaryNotes,
   audioLeftDevice,
   transcriptFromCloud,
   draftedInCloud,
   signed,
 }: {
   transcript?: string;
+  /** The other speaker's turns, stripped from the main transcript by the capture screen's speaker
+   *  separation (round-2 item 1). Shown as its own distinct card, never blended into the transcript
+   *  above it — it was deliberately excluded from what the note was drafted from. */
+  auxiliaryNotes?: string;
   audioLeftDevice?: boolean;
   transcriptFromCloud?: boolean;
   draftedInCloud?: boolean;
   signed: boolean;
 }) {
+  const theme = useTheme();
+  const c = theme.colors;
   const text = transcript?.trim();
+  const aux = auxiliaryNotes?.trim();
 
   if (!text) {
     return (
@@ -919,6 +939,20 @@ function TranscriptPane({
           {text}
         </AppText>
       </Card>
+
+      {aux ? (
+        <View style={{ marginTop: theme.spacing.lg }}>
+          <AppText variant="small" color="ink3" style={{ marginBottom: 10, lineHeight: 17 }}>
+            A second speaker was identified and removed from the transcript above (machine-attributed —
+            for review). Their turns are kept here as auxiliary notes rather than folded into the session.
+          </AppText>
+          <Card tone="sunken" elevation="none" radius="md" style={{ backgroundColor: c.cautionBg, borderColor: c.cautionBg }}>
+            <AppText variant="body" color="ink2" selectable style={{ lineHeight: 22 }}>
+              {aux}
+            </AppText>
+          </Card>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -948,6 +982,8 @@ function ReviewRail({
   onUnlock,
   clinician,
   signedAt,
+  clientId,
+  noteIndex,
 }: {
   draft: DraftNote;
   signed: boolean;
@@ -955,41 +991,51 @@ function ReviewRail({
   onUnlock: () => void;
   clinician: string;
   signedAt: string | null;
+  clientId?: string;
+  noteIndex: number;
 }) {
   const theme = useTheme();
   return (
     <View style={{ gap: theme.spacing.lg }}>
-      <PrescriptionsRail draft={draft} />
+      <PrescriptionsRail draft={draft} clientId={clientId} noteIndex={noteIndex} />
       <Divider />
       <ReviewCodes draft={draft} />
       <Divider />
       {signed ? <AudioTrust audioLeftDevice={draft.audioLeftDevice} /> : null}
       <SignOff signed={signed} onSign={onSign} onUnlock={onUnlock} clinician={clinician} signedAt={signedAt} />
+      {clientId ? <ReRecordAction clientId={clientId} signed={signed} /> : null}
     </View>
   );
 }
 
 /* -------------------------------------------------------- prescriptions --- */
 
-type Rx = PrepItem & { generated?: boolean; checked?: boolean; isNew?: boolean };
+type Rx = PrepItem & { checked?: boolean; isNew?: boolean };
 
 /**
  * Prescriptions rail (round-2 change #6, renamed from "Tasks for next session"). The
  * clinician writes prescriptions ("+ Add", inline editable) or pulls them from the Plan
  * section ("Generate from notes", tagged "generated"). Checklist ticking lives here.
+ *
+ * "Generate from notes" is ONCE PER NOTE (round-2 item 2, 2026-08-17): a fresh capture always mints
+ * a brand-new DraftNote, so this is equivalently once per transcript. `draft.prescriptionsGenerated`
+ * is the persisted source of truth — not local component state — so the button stays disabled across
+ * a reload/remount instead of resurrecting for the same already-generated note.
  */
-function PrescriptionsRail({ draft }: { draft: DraftNote }) {
+function PrescriptionsRail({ draft, clientId, noteIndex }: { draft: DraftNote; clientId?: string; noteIndex: number }) {
   const theme = useTheme();
   const c = theme.colors;
+  const { generatePrescriptions } = useData();
   const [items, setItems] = useState<Rx[]>(draft.prescriptions.map((p) => ({ ...p })));
-  const [generated, setGenerated] = useState(false);
+  const alreadyGenerated = !!draft.prescriptionsGenerated;
+  const [pending, setPending] = useState(false);
   const nextRxId = useRef(0);
 
   const toggle = (id: string) => setItems((xs) => xs.map((x) => (x.id === id ? { ...x, checked: !x.checked } : x)));
   const setText = (id: string, text: string) => setItems((xs) => xs.map((x) => (x.id === id ? { ...x, text } : x)));
 
-  const generateFromNotes = () => {
-    if (generated) return;
+  const generateFromNotes = async () => {
+    if (alreadyGenerated || pending || !clientId) return;
     const plan = draft.sections.find((s) => s.marker === 'P');
     const pulled: Rx[] = (plan?.bullets ?? []).map((b, i) => ({
       id: `gen-${i}`,
@@ -998,8 +1044,13 @@ function PrescriptionsRail({ draft }: { draft: DraftNote }) {
       done: false,
       generated: true,
     }));
+    setPending(true);
     setItems((xs) => [...xs, ...pulled]);
-    setGenerated(true);
+    try {
+      await generatePrescriptions(clientId, noteIndex, pulled);
+    } finally {
+      setPending(false);
+    }
   };
 
   const add = () => {
@@ -1023,7 +1074,7 @@ function PrescriptionsRail({ draft }: { draft: DraftNote }) {
           variant="ghost"
           leftIcon={<SparklesIcon size={15} color={c.brand} />}
           onPress={generateFromNotes}
-          disabled={generated}
+          disabled={alreadyGenerated || pending || !clientId}
         />
         <Button title="Add" variant="secondary" leftIcon={<PlusIcon size={15} color={c.ink} />} onPress={add} />
       </Row>
@@ -1267,6 +1318,53 @@ function SignOffButton({ onSign }: { onSign: () => void }) {
         onPress={onSign}
       />
     </Row>
+  );
+}
+
+/**
+ * Re-record affordance (round-2 item 3, 2026-08-17). "There is no rerecord option for the analysis
+ * page" — the review screen previously had no way back to capture other than the generic Back link,
+ * which returns to wherever the counselor came from rather than starting a fresh capture for this
+ * client. This returns to `/(app)/session` for the SAME client (the exact route `today/ready.tsx`
+ * uses to begin a session), via `router.replace` — same navigation shape as that entry point.
+ *
+ * Two-step confirm (mirrors `UnlockNoteButton`'s arm/confirm shape — Cancel is the only way back, no
+ * timeout) ONLY when it would actually discard something: an UNSIGNED draft is a review-in-progress
+ * that a fresh recording could bury (up to 3 notes are retained per client — C4 — so a 4th capture
+ * rotates the oldest out). A SIGNED note is already a finalised record nothing here can lose, so that
+ * case re-records immediately with no confirm.
+ */
+function ReRecordAction({ clientId, signed }: { clientId: string; signed: boolean }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const goRecord = () => router.replace(`/(app)/session?clientId=${encodeURIComponent(clientId)}`);
+
+  if (!confirming) {
+    return (
+      <Button
+        title="Re-record this session"
+        variant="secondary"
+        onPress={() => (signed ? goRecord() : setConfirming(true))}
+      />
+    );
+  }
+  return (
+    <View>
+      <AppText variant="small" color="ink2">
+        Start a new recording for this client? This draft stays saved as one of your recent notes — but
+        it hasn’t been signed yet, and only the 3 most recent notes are kept per client, so it can be
+        rotated out later. Sign or note it down first if you need to keep it front and center.
+      </AppText>
+      <Row gap={10} style={{ marginTop: 10 }}>
+        <Button title="Cancel" variant="secondary" onPress={() => setConfirming(false)} />
+        <Button
+          title="Start new recording"
+          variant="secondary"
+          accessibilityLabel="Confirm re-record — returns to capture for this client"
+          onPress={goRecord}
+        />
+      </Row>
+    </View>
   );
 }
 

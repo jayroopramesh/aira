@@ -169,6 +169,23 @@ const cases = [
   { name: 'live: bare "Nil" stays clear', in: note({ level: 'clear', rows: ideationRow('Nil') }), want: 'clear' },
   { name: 'live: bare "Absent" stays clear', in: note({ level: 'clear', rows: ideationRow('Absent') }), want: 'clear' },
   { name: 'live: fully denied, level=clear stays clear', in: note({ level: 'clear', rows: [{ label: 'Suicidal ideation', value: 'Denied' }, { label: 'Self-harm', value: 'Denied' }] }), want: 'clear' },
+
+  // --- "Not indicated" (captain round 2, 2026-08-17 wording — replaces "Denied" in generated copy) --
+  // must be recognised as the exact same denial as "Denied", so every case above holds under the new
+  // wording too: a bare denial stays clear, a trailing clause doesn't turn it into a disclosure, and a
+  // genuine disclosure elsewhere in the note still floors up regardless of how THIS row denies.
+  { name: 'live: "Not indicated" ideation row stays clear', in: note({ level: 'clear', rows: ideationRow('Not indicated') }), want: 'clear' },
+  { name: 'live: "Not indicated; protective factors noted" stays clear', in: note({ level: 'clear', rows: ideationRow('Not indicated; protective factors noted') }), want: 'clear' },
+  { name: 'live: "Not indicated this session" stays clear', in: note({ level: 'clear', rows: ideationRow('Not indicated this session') }), want: 'clear' },
+  { name: 'live: fully "Not indicated", level=clear stays clear', in: note({ level: 'clear', rows: [{ label: 'Suicidal ideation', value: 'Not indicated' }, { label: 'Self-harm', value: 'Not indicated' }] }), want: 'clear' },
+  { name: 'live: self-harm endorsed but level=watch, ideation "Not indicated" → elevated floor', in: note({ level: 'watch', rows: [{ label: 'Self-harm', value: 'Endorsed cutting this week' }, { label: 'Suicidal ideation', value: 'Not indicated' }] }), want: 'elevated' },
+  { name: 'live: model already acute stays acute ("Not indicated" rows never lower it)', in: note({ level: 'acute', rows: ideationRow('Not indicated') }), want: 'acute' },
+  { name: 'live: model elevated with "Not indicated" rows stays elevated (floor never lowers)', in: note({ level: 'elevated', rows: ideationRow('Not indicated') }), want: 'elevated' },
+  { name: 'mock: "Not indicated on an automated read" stays clear', in: note({ level: 'clear', rows: ideationRow('Not indicated on an automated read of the transcript — clinician to confirm'), summary: 'Ideation / self-harm appear to have been raised and denied in this session — confirm with the client.' }), want: 'clear' },
+  { name: '"SI"-labelled row, "Not indicated", level=watch → stays watch (no false acute)', in: note({ level: 'watch', rows: [{ label: 'SI', value: 'Not indicated' }] }), want: 'watch' },
+  // A genuine ideation disclosure must still floor to acute even when an UNRELATED row in the same
+  // note reads "Not indicated" — the new wording must not leak a denial across rows.
+  { name: 'live: named ideation disclosure floors to acute alongside an unrelated "Not indicated" self-harm row', in: note({ level: 'watch', rows: [{ label: 'Suicidal ideation', value: 'Active suicidal ideation with a plan' }, { label: 'Self-harm', value: 'Not indicated' }] }), want: 'acute' },
   // A denial word with words appended is still a denial — requiring it to be the whole value read
   // every one of these as a disclosure and pinned a benign client to acute.
   { name: 'live: "Absent this session" stays clear', in: note({ level: 'clear', rows: ideationRow('Absent this session') }), want: 'clear' },
