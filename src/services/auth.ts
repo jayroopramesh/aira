@@ -17,6 +17,7 @@
  * envelope + registry check behind the same interface without touching callers.
  */
 
+import * as Crypto from 'expo-crypto';
 import { hasSupabase } from '../config/env';
 import { deviceStore } from './deviceStore';
 import { getSupabase } from './supabase';
@@ -26,8 +27,9 @@ import { UnlockResult, vaultStorage, VaultStorage } from './storage';
  * The recovery code and the clinician's name must survive a page reload — the whole point of the
  * recovery code is that it works when you come back locked out (F1), and the sign-off attestation
  * must name the clinician who actually signed in (F8). Both persist through `deviceStore` (the same
- * device-local layer the vault uses). The recovery code is stored as a non-reversible hash, not the
- * words themselves — the real Argon2id vault replaces this with a proper key-derivation envelope.
+ * device-local layer the vault uses). The recovery code is stored as a salted, non-reversible hash,
+ * not the words themselves — the real Argon2id vault replaces this with a proper key-derivation
+ * envelope.
  */
 const RECOVERY_HASH_KEY = 'auth.recovery-hash';
 const CLINICIAN_NAME_KEY = 'auth.clinician-name';
@@ -39,7 +41,8 @@ function normalizeCode(code: string): string {
   return code.trim().toLowerCase().split(/\s+/).filter(Boolean).join(' ');
 }
 
-/** FNV-1a 32-bit → hex. Not cryptographic (v1 stores no crypto), but avoids keeping secrets in cleartext. */
+/** FNV-1a 32-bit → hex. Not cryptographic — still used for the password hash (unchanged, out of
+ * scope here) and for reading a pre-upgrade recovery hash (see `legacyRecoveryHash` below). */
 function fnv1a(raw: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < raw.length; i++) {
@@ -49,19 +52,77 @@ function fnv1a(raw: string): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-/** The recovery code is normalized before hashing; a password is NOT (it is case- and space-sensitive). */
-function hashRecoveryCode(code: string): string {
+function bytesToHex(bytes: Uint8Array): string {
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
+  return hex;
+}
+
+/**
+ * Unbiased random integer in `[0, maxExclusive)`, drawn from `expo-crypto`'s CSPRNG via rejection
+ * sampling — never `Math.random()`, which is not cryptographically secure and is predictable enough
+ * that a recovery code drawn from it could in principle be guessed. Rejection sampling (rather than a
+ * plain modulo) avoids the small bias a modulo would introduce whenever `maxExclusive` doesn't evenly
+ * divide the byte range.
+ */
+function secureRandomInt(maxExclusive: number): number {
+  if (maxExclusive <= 1) return 0;
+  const bytesNeeded = Math.ceil(Math.ceil(Math.log2(maxExclusive)) / 8) || 1;
+  const range = 256 ** bytesNeeded;
+  const limit = range - (range % maxExclusive);
+  for (;;) {
+    const bytes = Crypto.getRandomBytes(bytesNeeded);
+    let value = 0;
+    for (let i = 0; i < bytesNeeded; i++) value = value * 256 + bytes[i];
+    if (value < limit) return value % maxExclusive;
+  }
+}
+
+/** Tags the current (post-upgrade) stored format: `s2:<16-byte salt, hex>:<SHA-256 digest, hex>`. */
+const RECOVERY_HASH_VERSION = 's2';
+
+/** SHA-256(saltHex + normalizeCode(code)), hex-encoded — the digest half of the stored value. */
+async function saltedRecoveryDigest(code: string, saltHex: string): Promise<string> {
+  return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, saltHex + normalizeCode(code), {
+    encoding: Crypto.CryptoEncoding.HEX,
+  });
+}
+
+/**
+ * Pre-upgrade format: `fnv1a(normalizeCode(code))` alone, unsalted, with no version tag — every
+ * account created before this salted-SHA-256 upgrade has its recovery hash stored this way. Reading
+ * it (never writing it — `persistRecoveryHash` always writes the current format) is what lets an
+ * existing install's saved recovery code keep unlocking after the upgrade instead of being silently
+ * locked out.
+ */
+function legacyRecoveryHash(code: string): string {
   return fnv1a(normalizeCode(code));
 }
 
+/** Mint a fresh per-account salt and persist the salted digest — never the same salt (or, since the
+ * code itself is now random too, never the same digest) across two accounts. */
 async function persistRecoveryHash(words: string[]): Promise<void> {
-  await deviceStore.set(RECOVERY_HASH_KEY, hashRecoveryCode(words.join(' ')));
+  const saltHex = bytesToHex(Crypto.getRandomBytes(16));
+  const digest = await saltedRecoveryDigest(words.join(' '), saltHex);
+  await deviceStore.set(RECOVERY_HASH_KEY, `${RECOVERY_HASH_VERSION}:${saltHex}:${digest}`);
 }
 
-/** True when the entered code hashes to the value persisted at account creation (survives reloads). */
+/**
+ * True when the entered code matches the value persisted at account creation (survives reloads).
+ * Understands both the current salted format and the legacy unsalted one so an existing install's
+ * saved recovery code is never locked out by this upgrade — only `persistRecoveryHash` writes, and it
+ * always writes the current (salted) format, so this fallback only ever reads what an older build
+ * left behind; it can never be reintroduced as a write path.
+ */
 async function recoveryCodeMatches(entered: string): Promise<boolean> {
   const stored = await deviceStore.get(RECOVERY_HASH_KEY);
-  return !!stored && stored === hashRecoveryCode(entered);
+  if (!stored) return false;
+  const parts = stored.split(':');
+  if (parts.length === 3 && parts[0] === RECOVERY_HASH_VERSION) {
+    const [, saltHex, digest] = parts;
+    return (await saltedRecoveryDigest(entered, saltHex)) === digest;
+  }
+  return stored === legacyRecoveryHash(entered);
 }
 
 /** What account creation collects (Emirates ID for the manual-recovery identity check). */
@@ -104,35 +165,25 @@ export class AccountExistsError extends Error {
 /** The demo password the mock login accepts; anything else drives the wrong-password state. */
 const DEMO_PASSWORD = 'clinicvault';
 
-/** The one-time recovery code the prototype commits to (seed-phrase convention, 12 words). */
-const RECOVERY_WORDS = [
-  'harbor',
-  'lantern',
-  'cedar',
-  'quartz',
-  'tidal',
-  'ember',
-  'willow',
-  'basalt',
-  'saffron',
-  'meadow',
-  'cobalt',
-  'anchor',
-] as const;
-
-/** A fresh 12-word recovery code (seed-phrase convention) — generated once per account. */
+/** The pool a fresh 12-word recovery code (seed-phrase convention) is drawn from — a DIFFERENT,
+ * randomly-ordered 12 for every account (never the same code twice, and never Math.random). */
 const RECOVERY_POOL = [
   'harbor', 'lantern', 'cedar', 'quartz', 'tidal', 'ember', 'willow', 'basalt', 'saffron', 'meadow',
   'cobalt', 'anchor', 'marina', 'pebble', 'coral', 'lagoon', 'compass', 'driftwood', 'seabreeze',
   'current', 'beacon', 'estuary', 'ripple', 'shoal',
 ] as const;
 
+/**
+ * A fresh 12-word recovery code, generated once per account on EVERY build (mock and Supabase alike
+ * — both `createAccount` implementations call this; neither hands out a fixed/shared code). A
+ * cryptographically secure Fisher-Yates shuffle (via `secureRandomInt`, backed by `expo-crypto`'s
+ * CSPRNG) over the word pool, sliced to 12 — never `Math.random()`, which is not secure enough for a
+ * credential that unlocks the vault.
+ */
 function generateRecoveryCode(): string[] {
-  // No crypto RNG needed for a demo recovery moment; a shuffled 12 of the pool reads as a
-  // real seed phrase. (The real vault derives this from the Argon2id envelope instead.)
   const pool = [...RECOVERY_POOL];
   for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = secureRandomInt(i + 1);
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
   return pool.slice(0, 12);
@@ -169,7 +220,10 @@ export interface AuthService {
 
 export class MockAuthService implements AuthService {
   private status: AccountStatus = 'none';
-  private recoveryCode: string[] = [...RECOVERY_WORDS];
+  // Generated once inside createAccount — NOT at construction — for the same reason as
+  // SupabaseAuthService below: a reload must never display a fresh code under the "shown once"
+  // framing while the real (persisted) code is a different one.
+  private recoveryCode: string[] = [];
   private createdPassword: string | null = null;
   private knownEmail: string | null = null;
   private clinicianName: string | null = null;
@@ -204,13 +258,12 @@ export class MockAuthService implements AuthService {
     // to ask here, but the device already carries the evidence: a persisted recovery hash means an
     // account was created on it.
     //
-    // The credential a second createAccount destroyed on THIS path is the PASSWORD hash, not the
-    // recovery one: the mock's code is the RECOVERY_WORDS constant and fnv1a is unsalted, so the
-    // rewritten recovery hash was identical and the saved code kept working — but PASSWORD_HASH_KEY was
-    // overwritten with the second attempt's password, so the counselor's real password stopped opening
-    // signIn. Same silent lockout as the Supabase path, reached through the other credential. So STOP
-    // the same way: no new code, no hash write, no password-hash write, no status change. The create
-    // screen already routes AccountExistsError to sign-in with the email prefilled.
+    // The already-registered guard STOPS before any write, so on THIS path a second createAccount
+    // never even reaches the recovery-hash write below — but it used to also mint no new PASSWORD
+    // hash for the same reason, and that WAS the observable lockout (a returning counselor's real
+    // password stopped opening signIn) before this guard existed. So STOP the same way: no new
+    // code, no hash write, no password-hash write, no status change. The create screen already
+    // routes AccountExistsError to sign-in with the email prefilled.
     if (await deviceStore.get(RECOVERY_HASH_KEY)) {
       throw new AccountExistsError(details.email);
     }
@@ -219,7 +272,7 @@ export class MockAuthService implements AuthService {
     this.createdPassword = details.password;
     this.knownEmail = details.email;
     this.clinicianName = details.fullName;
-    this.recoveryCode = [...RECOVERY_WORDS];
+    this.recoveryCode = generateRecoveryCode();
     // Persist the code's hash + the clinician name + the email so recovery works, the sign-off is
     // attributed, and login prefills the right email after a reload.
     await persistRecoveryHash(this.recoveryCode);
