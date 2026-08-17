@@ -126,6 +126,16 @@ type DataContextValue = {
    */
   generatePrescriptions: (clientId: string, noteIndex: number, items: PrepItem[]) => Promise<void>;
   /**
+   * Persist the prescriptions rail's clinician interactions — a hand-written "+ Add" item and every
+   * "Tick as you assign" toggle — by replacing the note's stored `prescriptions` wholesale. Without
+   * this seam those lived only in the rail's component state, so switching notes in the session rail
+   * (a keyed remount) or reloading silently discarded them while the copy promised otherwise.
+   * Deliberately NOT gated on `status === 'signed'`: prescriptions are assignment tracking alongside
+   * the note, not attested note content — ticking continues after sign-off, exactly as the rail stays
+   * interactive on a signed note (and as `generatePrescriptions` already behaves).
+   */
+  updatePrescriptions: (clientId: string, noteIndex: number, prescriptions: PrepItem[]) => Promise<void>;
+  /**
    * "Continue recording" (as distinct from "Re-record", which starts a brand-new note): append a second
    * capture's transcript onto the SAME note rather than minting a new one. The merge itself — the
    * separator, the up-only `audioLeftDevice` disclosure, the mixed-provenance flag when the two
@@ -275,6 +285,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     [persist],
   );
 
+  const updatePrescriptions = useCallback(
+    async (clientId: string, noteIndex: number, prescriptions: PrepItem[]) => {
+      const snapshot = snapshotRef.current;
+      const list = snapshot.notes[clientId];
+      if (!list?.[noteIndex]) return;
+      const next: DraftNote[] = list.map((n, i) => (i === noteIndex ? { ...n, prescriptions } : n));
+      await persist({ ...snapshot, notes: { ...snapshot.notes, [clientId]: next } });
+    },
+    [persist],
+  );
+
   const appendRecording = useCallback(
     async (clientId: string, noteIndex: number, addition: RecordingAddition, timestampLabel: string) => {
       const snapshot = snapshotRef.current;
@@ -309,6 +330,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       unlockNote,
       updateNoteSection,
       generatePrescriptions,
+      updatePrescriptions,
       appendRecording,
     };
   }, [
@@ -323,6 +345,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     unlockNote,
     updateNoteSection,
     generatePrescriptions,
+    updatePrescriptions,
     appendRecording,
   ]);
 
