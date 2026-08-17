@@ -47,7 +47,7 @@ export default function Caseload() {
           body="Your caseload is empty. Capture a session to add your first client, or load the sample cohort to explore patterns, charts and a fully-drafted note."
           primary={{ label: 'Start a session', onPress: () => router.push('/(app)/session') }}
           secondary={{ label: 'Load sample data', onPress: () => void loadSample() }}
-          note="Sample data is fictional (no real PHI) and lives only on this device — clear it anytime in Settings."
+          note="Sample data is fictional (no real PHI) and lives only on this device. Clear it anytime in Settings."
         />
       </Screen>
     );
@@ -244,7 +244,7 @@ function buildMailto(client: Client, kind: OutreachKind): string {
   const templates: Record<OutreachKind, { subject: string; body: string }> = {
     followup: {
       subject: `Following up after our session`,
-      body: `Dear ${first},\n\nI hope you are well. Thank you for meeting me last week — I wanted to follow up and see how things have been since.${sig}`,
+      body: `Dear ${first},\n\nI hope you are well. Thank you for meeting me last week. I wanted to follow up and see how things have been since.${sig}`,
     },
     thanks: {
       subject: `Thank you for dropping in`,

@@ -85,7 +85,7 @@ export default function SafetyPlan() {
               {safety.lastRiskNote}
             </AppText>
             <AppText variant="small" color="ink3" style={{ marginTop: 12, lineHeight: 17 }}>
-              Coping steps and trusted-contact detail live in the signed risk notes above — Airava never
+              Coping steps and trusted-contact detail live in the signed risk notes above. Airava never
               summarises a safety plan into anything you didn’t write and sign.
             </AppText>
           </Card>
@@ -99,7 +99,7 @@ export default function SafetyPlan() {
           </AppText>
           <AppText variant="body" color="ink2" style={{ marginTop: 8, lineHeight: 22 }}>
             {client.name.split(' ')[0]} doesn’t have a completed safety plan recorded yet. When you complete
-            one in a session — coping steps and a trusted contact — it’ll appear here alongside the signed
+            one in a session (coping steps and a trusted contact), it’ll appear here alongside the signed
             risk note.
           </AppText>
           {safetyPlanItems.length ? (

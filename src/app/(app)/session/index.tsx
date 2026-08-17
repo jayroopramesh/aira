@@ -314,7 +314,7 @@ function AppendBanner({ sessionLabel }: { sessionLabel: string }) {
         <ShieldIcon size={15} color={c.brand} />
       </View>
       <AppText variant="small" tint={c.brand} style={{ flex: 1, lineHeight: 17 }}>
-        Continuing {sessionLabel} — this recording's transcript will be appended to that note, not saved
+        Continuing {sessionLabel}. This recording's transcript will be appended to that note, not saved
         as a new one. Nothing else on the note changes automatically.
       </AppText>
     </Row>
@@ -372,7 +372,7 @@ function PreCapture({
         {client ? `10:30 · Individual · Session ${client.sessionNumber}` : 'New session'}
       </AppText>
       <AppText variant="display" style={{ fontSize: 28, lineHeight: 32, marginTop: 8 }} center>
-        {client ? `Ready to capture — ${client.name}` : 'Ready to capture a session'}
+        {client ? `Ready to capture ${client.name}’s session` : 'Ready to capture a session'}
       </AppText>
       <AppText variant="body" color="ink2" center style={{ marginTop: 10, maxWidth: 460 }}>
         {hasGroq
@@ -404,7 +404,7 @@ function PreCapture({
           <View style={{ flex: 1 }}>
             <AppText variant="small" color="ink2" style={{ lineHeight: 17 }}>
               Cloud transcription needs a live sign-in, and this device doesn’t have one right now. You can
-              record anyway — you’ll type or paste the transcript afterwards and Airava will draft the note
+              record anyway. You’ll type or paste the transcript afterwards and Airava will draft the note
               on this device, with nothing sent anywhere. Or sign in first to transcribe this session in the
               cloud.
             </AppText>
@@ -487,12 +487,12 @@ function PreCapture({
           {emiratesId.trim() && !isValidEmiratesId(emiratesId) ? (
             <AppText variant="small" tint={c.caution} style={{ marginTop: 8, fontSize: 11.5, lineHeight: 16 }}>
               That isn’t a recognised Emirates ID (784 followed by 12 digits), so it won’t be used to identify
-              this client. You can still capture the session — it’ll be matched by name instead.
+              this client. You can still capture the session. It’ll be matched by name instead.
             </AppText>
           ) : null}
           <AppText variant="small" color="ink3" style={{ marginTop: 8, fontSize: 11.5, lineHeight: 16 }}>
             The captured session is added to your caseload afterwards. A valid Emirates ID (784 + 12 digits)
-            opens the client saved under it when the name agrees too, or — if the ID is new — saves it onto the
+            opens the client saved under it when the name agrees too, or, if the ID is new, saves it onto the
             one client of that name who has no ID yet. If the ID is on file under a different name, or a client
             of that name has a different ID, or more than one shares the name, a separate record is created and
             you’ll be told. Without an ID, the session is matched by name to a client you’ve already captured.
@@ -523,7 +523,7 @@ function PreCapture({
         {canRecord ? 'Tap to start capture' : 'Tap to begin'}
       </AppText>
       <AppText variant="small" color="ink3" center style={{ marginTop: 6, maxWidth: 420 }}>
-        The mascot stays away here — recording a real session isn’t a cute moment.
+        The mascot stays away here. Recording a real session isn’t a cute moment.
       </AppText>
 
       {/* Alternative inputs — upload a clip, or use a sample when there's no mic. */}
@@ -552,8 +552,8 @@ function PreCapture({
         <AppText variant="small" tint={c.caution} center style={{ marginTop: 10, maxWidth: 420, fontSize: 11.5, lineHeight: 16 }}>
           The sample is a fictional walkthrough, so it can’t be filed under a real client’s record.{' '}
           {client
-            ? `Start a new session without ${client.name} attached to see it — or capture their real session here.`
-            : 'Clear the client name and Emirates ID above to see it — or capture their real session here.'}
+            ? `Start a new session without ${client.name} attached to see it. Or capture their real session here.`
+            : 'Clear the client name and Emirates ID above to see it. Or capture their real session here.'}
         </AppText>
       ) : null}
 
@@ -602,8 +602,8 @@ function ScribeOptions({ mode, onMode }: { mode: ScribeMode; onMode: (m: ScribeM
       </Row>
       <AppText variant="small" color="ink3" center style={{ marginTop: 8, maxWidth: 420, lineHeight: 16 }}>
         {mode === 'patient'
-          ? 'This session can have more than one voice — Airava identifies speakers after transcription.'
-          : 'Just you talking through the session afterwards — the whole transcript is treated as your own words.'}
+          ? 'This session can have more than one voice. Airava identifies speakers after transcription.'
+          : 'Just you talking through the session afterwards. The whole transcript is treated as your own words.'}
       </AppText>
     </View>
   );
@@ -724,7 +724,7 @@ function Recording({
       <Waveform bars={13} getLevels={live ? activeRecording?.getLevels : undefined} />
       {paused ? (
         <AppText variant="small" color="ink3" center style={{ marginTop: 8, maxWidth: 420 }}>
-          Paused — nothing new is being captured. Resume to keep recording this same clip.
+          Paused. Nothing new is being captured. Resume to keep recording this same clip.
         </AppText>
       ) : null}
 
@@ -735,7 +735,7 @@ function Recording({
               <AlertTriangleIcon size={15} color={c.caution} />
             </View>
             <AppText variant="small" tint={c.caution} style={{ flex: 1, lineHeight: 17 }}>
-              The recording stopped on its own — the microphone stream ended (unplugged, permission revoked, or a
+              The recording stopped on its own. The microphone stream ended (unplugged, permission revoked, or a
               device change), not a Stop tap. Everything captured up to that point is saved; stop to transcribe it.
             </AppText>
           </Row>
@@ -762,8 +762,8 @@ function Recording({
             {willTranscribe
               ? 'Audio is held on this device; in demo mode it’s sent to the cloud (Groq) to transcribe when you stop.'
               : hasGroq
-                ? 'Audio is held on this device and won’t be sent anywhere — cloud transcription needs a live sign-in and there isn’t one, so you’ll type or paste the transcript after you stop.'
-                : 'Audio is held on this device and won’t be sent anywhere — this build has no automatic transcription, so you’ll type or paste the transcript after you stop.'}
+                ? 'Audio is held on this device and won’t be sent anywhere. Cloud transcription needs a live sign-in, and there isn’t one, so you’ll type or paste the transcript after you stop.'
+                : 'Audio is held on this device and won’t be sent anywhere. This build has no automatic transcription, so you’ll type or paste the transcript after you stop.'}
           </AppText>
         </View>
       )}
@@ -777,7 +777,7 @@ function Recording({
             Discard this recording?
           </AppText>
           <AppText variant="small" color="ink2" style={{ marginTop: 4, lineHeight: 17 }}>
-            This stops the microphone and throws away everything captured so far — it can’t be recovered.
+            This stops the microphone and throws away everything captured so far. It can’t be recovered.
           </AppText>
           <View style={{ height: 12 }} />
           <Row gap={10} wrap>
@@ -793,7 +793,7 @@ function Recording({
               variant="secondary"
               size="lg"
               leftIcon={paused ? <PlayIcon size={15} color={c.brand} /> : <PauseIcon size={15} color={c.brand} />}
-              accessibilityLabel={paused ? 'Resume recording' : 'Pause recording — resume later without starting a new segment'}
+              accessibilityLabel={paused ? 'Resume recording' : 'Pause recording. Resume later without starting a new segment'}
               onPress={togglePause}
             />
           ) : null}
@@ -806,7 +806,7 @@ function Recording({
       )}
       <AppText variant="small" color="ink3" center style={{ marginTop: 18, maxWidth: 420, lineHeight: 18 }}>
         <AppText variant="bodyStrong" color="ink2" style={{ fontSize: 12.5 }}>
-          Nothing is authoritative yet — this is a draft you will review and sign.
+          Nothing is authoritative yet. This is a draft you’ll review and sign.
         </AppText>{' '}
         {willTranscribe
           ? 'When you stop, Airava transcribes, drafts the note, then deletes the recording (unless you keep it).'
@@ -1090,10 +1090,10 @@ function Analysing({
         setNeedsSignIn(noSession);
         setError(
           noSession
-            ? 'Cloud transcription needs a live sign-in — nothing was sent and this recording stayed on this device. Type or paste the transcript below and Airava will draft the note on this device. Signing in enables cloud transcription for your next capture; it can’t transcribe the recording you just made, and leaving this screen discards it.'
+            ? 'Cloud transcription needs a live sign-in. Nothing was sent, and this recording stayed on this device. Type or paste the transcript below and Airava will draft the note on this device. Signing in enables cloud transcription for your next capture; it can’t transcribe the recording you just made, and leaving this screen discards it.'
             : isTranscriptionUnavailableError(e)
               ? 'This build has no automatic transcription, so nothing was transcribed and nothing was sent anywhere. Type or paste the transcript below and Airava will draft the note on this device.'
-              : 'Transcription failed — type or paste the transcript below, then draft the note.',
+              : 'Transcription failed. Type or paste the transcript below, then draft the note.',
         );
         setStage('ready');
       }
@@ -1160,7 +1160,7 @@ function Analysing({
       setError(
         quality === 'too-short'
           ? 'This capture is too short to draft a reliable note. Check the recording or upload, or paste the session transcript below, then draft.'
-          : 'This capture didn’t contain enough clear speech to draft from (a dead mic, muted input, or failed upload can cause this). Re-capture or paste the real transcript below — Airava won’t write up a note from an unclear recording.',
+          : 'This capture didn’t contain enough clear speech to draft from (a dead mic, muted input, or failed upload can cause this). Re-capture or paste the real transcript below. Airava won’t write up a note from an unclear recording.',
       );
       return;
     }
@@ -1187,7 +1187,7 @@ function Analysing({
       if ((e as Error).name === 'AbortError') return;
       // Drafting has no no-session failure mode: with no token the summarizer drafts on-device over
       // this same text. Anything reaching here is a real failure (network, proxy, malformed reply).
-      setError('Drafting failed — nothing was drafted. Check your connection, review the transcript below, and try again.');
+      setError('Drafting failed. Nothing was drafted. Check your connection, review the transcript below, and try again.');
       setStage('ready');
     }
   };
@@ -1231,8 +1231,8 @@ function Analysing({
           ? 'Drafting the note…'
           : stage === 'ready'
             ? appendTarget
-              ? 'Transcript ready — review before adding it to the note'
-              : 'Transcript ready — review before drafting'
+              ? 'Transcript ready. Review before adding it to the note'
+              : 'Transcript ready. Review before drafting'
             : 'Preparing…';
 
   // The sublabel names the hop the CURRENT stage is running, because the two hops route
@@ -1321,8 +1321,8 @@ function Analysing({
               This doesn’t look like clinical text
             </AppText>
             <AppText variant="small" color="ink2" style={{ marginTop: 2, lineHeight: 17 }}>
-              It may be room noise, a phone call, or off-topic. Review the transcript below before drafting —
-              you can still proceed.
+              It may be room noise, a phone call, or off-topic. Review the transcript below before drafting.
+              You can still proceed.
             </AppText>
           </View>
           <Pressable
@@ -1465,8 +1465,8 @@ function SpeakersPanel({
         <View style={{ flex: 1 }}>
           <AppText variant="small" color="ink2" style={{ lineHeight: 17 }}>
             {hasGroq
-              ? 'Speaker separation needs a live cloud session, and this device doesn’t have one right now — the transcript above is used as-is.'
-              : 'This build has no automatic speaker separation — the transcript above is used as-is.'}
+              ? 'Speaker separation needs a live cloud session, and this device doesn’t have one right now. The transcript above is used as-is.'
+              : 'This build has no automatic speaker separation. The transcript above is used as-is.'}
           </AppText>
           {hasGroq ? (
             <View style={{ height: 8 }} />
@@ -1484,7 +1484,7 @@ function SpeakersPanel({
           <AlertTriangleIcon size={15} color={c.caution} />
         </View>
         <AppText variant="small" tint={c.caution} style={{ flex: 1, lineHeight: 17 }}>
-          Couldn’t identify speakers for this transcript — the transcript above is used as-is; you can still
+          Couldn’t identify speakers for this transcript. The transcript above is used as-is; you can still
           draft the note.
         </AppText>
       </Row>
@@ -1501,7 +1501,7 @@ function SpeakersPanel({
           Speakers · machine-attributed
         </AppText>
         <AppText variant="small" color="ink3" style={{ fontSize: 11 }}>
-          a guess from conversational cues — review before relying on it
+          a guess from conversational cues. Review before relying on it
         </AppText>
       </Row>
       <View style={{ height: 10 }} />
@@ -1539,7 +1539,7 @@ function SpeakersPanel({
         <Button title="Remove Speaker 2 + add as auxiliary notes" variant="ghost" leftIcon={<SparklesIcon size={14} color={c.brand} />} onPress={onApply} />
       ) : (
         <AppText variant="small" color="ink3" style={{ fontSize: 11.5 }}>
-          Only the therapist and client were identified — nothing to remove.
+          Only the therapist and client were identified. Nothing to remove.
         </AppText>
       )}
     </Card>

@@ -35,7 +35,7 @@ export default function TodayDashboard() {
           body="When you have clients, today's sessions and a calm countdown show up here. Capture a session to begin, or load the sample cohort to see a full day."
           primary={{ label: 'Start a session', onPress: () => router.push('/(app)/session') }}
           secondary={{ label: 'Load sample data', onPress: () => void loadSample() }}
-          note="Notes and client records are stored only on this device — nothing is synced to a server."
+          note="Notes and client records are stored only on this device. Nothing is synced to a server."
         />
       </Screen>
     );

@@ -284,7 +284,7 @@ it('"Keep the audio" with real segments offers a real stitched play control', as
   mockAudioSegments = SEGMENTS;
   renderScreen();
   fireEvent.press(screen.getByRole('switch'));
-  const playButton = await screen.findByText(/Play the stitched recording — the original plus 1 added segment, in order/);
+  const playButton = await screen.findByText(/Play the stitched recording: the original plus 1 added segment, in order/);
   fireEvent.press(playButton);
   expect(FakeAudio.instances).toHaveLength(1);
   expect(FakeAudio.instances[0].src).toBe(SEGMENTS[0].uri);

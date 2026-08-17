@@ -26,7 +26,7 @@ function plainCode(words: string[]) {
 
 /** A numbered, human-readable file body, for the Save affordance. */
 function fileBody(words: string[]) {
-  return `Airava recovery code — keep this private.\n\n${words.map((w, i) => `${String(i + 1).padStart(2, '0')}. ${w}`).join('\n')}\n`;
+  return `Airava recovery code. Keep this private.\n\n${words.map((w, i) => `${String(i + 1).padStart(2, '0')}. ${w}`).join('\n')}\n`;
 }
 
 /**
@@ -202,7 +202,7 @@ export default function WelcomeRecovery() {
       </Row>
       {!canUseWebTools ? (
         <AppText variant="small" tint="rgba(234,247,243,0.9)" center style={{ marginTop: 10, maxWidth: 360, lineHeight: 18 }}>
-          Copy and Save as file aren’t available on this device yet — write the 12 words down before continuing.
+          Copy and Save as file aren’t available on this device yet. Write the 12 words down before continuing.
         </AppText>
       ) : null}
 

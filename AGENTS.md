@@ -364,6 +364,13 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   `src/components/mascotMoods.tsx` (`MOOD_ART` registry, `MascotMood`, and the per-workflow
   `appBarMood` map); heroes are wired per screen. The app icon derives from `Mascot Designz/logo2.png`
   via `app.json`. (The earlier hand-drawn inline-SVG mascot has been retired.)
+- **UI copy voice** lives in `docs/copy-voice.md` — the warm, plain, therapy-friendly register
+  (studied from Calm/Headspace/Wysa/7 Cups/Supanote/Takalam): short sentences, no em-dash chains or
+  assistant-isms, forward-pointing empty states, calm actionable errors. Honesty copy keeps its exact
+  meaning while following the register; the WIP banner copy is a locked literal (never reword). Em-dashes
+  in UI copy were removed in a dedicated pass; the ones that remain are intentional — `'—'` no-value
+  placeholders, the `Session N — date` label format (parsed by a regex), and the plaintext note-export
+  section marker/attribution in `review.tsx`'s `noteToPlainText`.
 - Risk is clay, never alarm-red; colour is never the only signal (always paired with a word).
 - Escalate is a standing, dismissible sheet — never modal, never alarm. No safety control may be a
   dead promise: the crisis line, warm handoff and safety plan each do a real thing or say plainly why

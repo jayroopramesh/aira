@@ -164,7 +164,7 @@ function EscalateSheet({ visible, clientId, clientToken, onClose }: { visible: b
                 <Eyebrow color="risk">Escalate · calm options</Eyebrow>
               </Row>
               <AppText variant="body" color="ink2" style={{ marginTop: 6 }}>
-                Always one tap away. Nothing here alarms the client or auto-messages anyone — every path routes to you.
+                Always one tap away. Nothing here alarms the client or auto-messages anyone. Every path routes to you.
               </AppText>
             </View>
             <Pressable onPress={onClose} accessibilityLabel="Close" hitSlop={8} style={{ padding: 6 }}>
@@ -258,7 +258,7 @@ function EscalateSheet({ visible, clientId, clientToken, onClose }: { visible: b
             <Row gap={8}>
               <ShieldIcon size={16} color={c.brand} />
               <AppText variant="small" color="ink2" style={{ flex: 1 }}>
-                Escalation is a standing, sober affordance — the same on every screen. It never blocks your work.
+                Escalation is a standing, sober affordance, the same on every screen. It never blocks your work.
               </AppText>
             </Row>
           </Card>
