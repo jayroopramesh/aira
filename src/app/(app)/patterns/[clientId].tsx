@@ -133,6 +133,13 @@ function PatternsView({ clientId }: { clientId: string }) {
   const phq = client?.measures.find((m) => m.key === 'phq9');
   const sleep = client?.measures.find((m) => m.key === 'sleep');
   const phqReadingsInRange = phq ? filterReadingsByRange(phq.readings, range, new Date()) : [];
+  // The caption below the chart is derived from the readings actually plotted — never a canned
+  // direction claim. A worsening series must read "up", a flat one "level"; the fixed
+  // "down from moderate-severe at intake" wording once contradicted the honest headline above it.
+  const rangeFirst = phqReadingsInRange[0];
+  const rangeLast = phqReadingsInRange[phqReadingsInRange.length - 1];
+  const rangeDelta = rangeFirst && rangeLast ? rangeLast.value - rangeFirst.value : 0;
+  const rangeTrend = rangeDelta < 0 ? `down ${-rangeDelta}` : rangeDelta > 0 ? `up ${rangeDelta}` : 'level';
 
   if (!client) return null;
   // A freshly-captured client has no assessment series yet — respect the sparse-series rule.
@@ -191,8 +198,17 @@ function PatternsView({ clientId }: { clientId: string }) {
             {phqReadingsInRange.length > 0 ? (
               <>
                 <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
-                  {phqReadingsInRange[0].value} → {phq.latest} across {phqReadingsInRange.length} visits · now in
-                  the <AppText variant="bodyStrong">{phq.band}</AppText> band, down from moderate-severe at intake.
+                  {phqReadingsInRange.length === 1 ? (
+                    <>
+                      One visit in this range · PHQ-9 {rangeLast.value}, in the{' '}
+                      <AppText variant="bodyStrong">{phq.band}</AppText> band.
+                    </>
+                  ) : (
+                    <>
+                      {rangeFirst.value} → {rangeLast.value} across {phqReadingsInRange.length} visits · now in
+                      the <AppText variant="bodyStrong">{phq.band}</AppText> band, {rangeTrend} since {rangeFirst.label}.
+                    </>
+                  )}
                 </AppText>
                 <View style={{ height: 14 }} />
                 <BandedChart readings={phqReadingsInRange} />

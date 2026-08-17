@@ -51,8 +51,13 @@ const NOOR: Client = {
   lastPlan: [],
 };
 
+let mockCurrentClient: Client;
+beforeEach(() => {
+  mockCurrentClient = NOOR;
+});
+
 jest.mock('../../../../data/DataProvider', () => ({
-  useClient: () => NOOR,
+  useClient: () => mockCurrentClient,
   useClientNotes: () => [],
 }));
 
@@ -73,17 +78,47 @@ it('3m shows fewer visits than 6m, which shows fewer than 1y, for the same serie
   renderScreen();
 
   // Default range is 6m: 3 May and 12 Aug fall inside the last 6 months of 17 Aug (cutoff 17 Feb).
-  expect(screen.getByText(/across 2 visits/)).toBeTruthy();
+  // The caption is derived from the plotted readings: 10 → 9, down 1 since the range's first visit.
+  expect(screen.getByText(/10 → 9 across 2 visits/)).toBeTruthy();
+  expect(screen.getByText(/down 1 since 3 May/)).toBeTruthy();
 
   act(() => {
     fireEvent.press(screen.getByText('3m'));
   });
-  // Only 12 Aug is within 3 months of 17 Aug.
-  expect(screen.getByText(/across 1 visits/)).toBeTruthy();
+  // Only 12 Aug is within 3 months of 17 Aug — one reading is a point, not an arrow ("9 → 9").
+  expect(screen.getByText(/One visit in this range · PHQ-9 9/)).toBeTruthy();
 
   act(() => {
     fireEvent.press(screen.getByText('1y'));
   });
   // Every reading in this series is within a year of 17 Aug.
-  expect(screen.getByText(/across 5 visits/)).toBeTruthy();
+  expect(screen.getByText(/18 → 9 across 5 visits/)).toBeTruthy();
+  expect(screen.getByText(/down 9 since 12 Jan/)).toBeTruthy();
+});
+
+it('a worsening series reads "up", never a canned improvement claim', () => {
+  jest.useFakeTimers({ now: new Date('2026-08-17T00:00:00Z') });
+  // Sofia-shaped ground truth: 10 → 11 → 12 is a rise. The old fixed caption called every client
+  // "down from moderate-severe at intake", contradicting the headline right above it.
+  mockCurrentClient = {
+    ...NOOR,
+    measures: [
+      {
+        key: 'phq9',
+        name: 'PHQ-9',
+        readings: [
+          { date: '2026-06-01', label: '1 Jun', value: 10 },
+          { date: '2026-07-01', label: '1 Jul', value: 11 },
+          { date: '2026-08-12', label: '12 Aug', value: 12 },
+        ],
+        latest: 12,
+        band: 'moderate',
+      },
+    ],
+  };
+  renderScreen();
+
+  expect(screen.getByText(/10 → 12 across 3 visits/)).toBeTruthy();
+  expect(screen.getByText(/up 2 since 1 Jun/)).toBeTruthy();
+  expect(screen.queryByText(/down from moderate-severe at intake/)).toBeNull();
 });
