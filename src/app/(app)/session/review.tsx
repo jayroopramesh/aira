@@ -803,7 +803,7 @@ function Section({
           />
           {section.bullets !== undefined ? (
             <AppText variant="small" color="ink3" style={{ marginTop: 6 }}>
-              One item per line — each line becomes its own bullet, reminder and generated prescription.
+              One item per line: each line becomes its own bullet, reminder and generated prescription.
             </AppText>
           ) : null}
         </View>
@@ -941,7 +941,7 @@ function TranscriptPane({
     <View style={{ marginTop: theme.spacing.lg }}>
       <AppText variant="small" color="ink3" style={{ marginBottom: 10, lineHeight: 17 }}>
         Comments you typed while the recording ran, each stamped with the recording clock at that
-        moment. They’re kept with the note on this device — never merged into the transcript, never
+        moment. They’re kept with the note on this device: never merged into the transcript, never
         sent to drafting.
       </AppText>
       <Card tone="sunken" elevation="none" radius="md">

@@ -907,7 +907,7 @@ function RecordingNotes({ liveTs, onComments }: { liveTs: string; onComments: (c
           Comment on your recording
         </AppText>
         <AppText variant="small" color="ink3" style={{ marginTop: 2, lineHeight: 16 }}>
-          Each comment is stamped with the recording clock and kept with the note — you’ll find them on
+          Each comment is stamped with the recording clock and kept with the note. You’ll find them on
           the review screen’s Transcript tab
         </AppText>
       </View>
