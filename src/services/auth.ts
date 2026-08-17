@@ -212,7 +212,7 @@ export interface AuthService {
   getClinicianName(): string | null;
   /** Sign in with username/email + password; unlocks the vault on success. */
   signIn(username: string, password: string): Promise<SignInResult>;
-  /** Fallback path: unlock with the saved 12-word recovery code (lets them reset later). */
+  /** Fallback path: unlock the vault with the saved 12-word recovery code. Does not change the password. */
   signInWithRecoveryCode(code: string): Promise<SignInResult>;
   /** Drop the session (re-locks the vault). */
   signOut(): Promise<void>;
@@ -465,7 +465,12 @@ export class SupabaseAuthService implements AuthService {
 
   async signOut() {
     const supabase = this.resolveSupabase();
-    if (supabase) await supabase.auth.signOut().catch(() => {});
+    if (supabase) {
+      // The local lock below proceeds regardless — a failed remote sign-out never blocks re-locking
+      // this device — but a genuinely-failed remote sign-out should still be visible somewhere rather
+      // than silently discarded.
+      await supabase.auth.signOut().catch((e) => console.error('Remote sign-out failed', e));
+    }
     // Re-lock the vault AND drop the session so the route guard re-challenges (F2).
     this.status = 'none';
     await this.vault.lock();

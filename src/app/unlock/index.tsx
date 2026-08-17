@@ -195,6 +195,17 @@ export default function UnlockScreen() {
               <AuthSubmit title={R.recoveryCodeCta} onPress={unlockWithRecovery} />
             </View>
           )}
+          <View style={{ height: 16 }} />
+          <AuthLink
+            label={R.backToSignInLink}
+            onPress={() => {
+              setPhase('login');
+              setRecoveryOpen(false);
+              setRecoveryCode('');
+              setRecoveryError(false);
+              setPassword('');
+            }}
+          />
         </View>
       ) : (
         <>

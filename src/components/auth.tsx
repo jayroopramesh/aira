@@ -141,17 +141,21 @@ export function AuthField({
   );
 }
 
-/** A password field with an inline Show/Hide toggle. */
+/** A password field with an inline Show/Hide toggle, and optional error hint. */
 export function AuthPasswordField({
   label,
   value,
   onChangeText,
   autoComplete,
+  error,
+  hint,
 }: {
   label: string;
   value: string;
   onChangeText: (t: string) => void;
   autoComplete?: TextInputProps['autoComplete'];
+  error?: boolean;
+  hint?: string;
 }) {
   const [hidden, setHidden] = useState(true);
   const [focused, setFocused] = useState(false);
@@ -175,7 +179,7 @@ export function AuthPasswordField({
             height: 46,
             borderRadius: 12,
             borderWidth: 1.4,
-            borderColor: focused ? MINT : FIELD_BORDER,
+            borderColor: error ? ERROR_INK : focused ? MINT : FIELD_BORDER,
             backgroundColor: focused ? FIELD_BG_FOCUS : FIELD_BG,
             paddingLeft: 14,
             paddingRight: 62,
@@ -202,6 +206,11 @@ export function AuthPasswordField({
           </AppText>
         </Pressable>
       </View>
+      {hint ? (
+        <AppText variant="small" tint={error ? ERROR_INK : INK2} style={{ lineHeight: 17 }}>
+          {hint}
+        </AppText>
+      ) : null}
     </View>
   );
 }

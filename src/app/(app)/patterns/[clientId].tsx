@@ -12,6 +12,7 @@ import { AMARA_SCALES } from '../../../data/scales';
 import { useClient, useClientNotes } from '../../../data/DataProvider';
 import { Client } from '../../../data/types';
 import { deriveTrajectory, MIN_SESSIONS_FOR_TRAJECTORY } from '../../../data/trajectory';
+import { filterReadingsByRange, MeasureRange } from '../../../data/measureRange';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 export default function ClientPatterns() {
@@ -128,9 +129,10 @@ function PatternsView({ clientId }: { clientId: string }) {
   const { width } = useWindowDimensions();
   const wide = width >= 900;
   const client = useClient(clientId);
-  const [range, setRange] = useState('6m');
+  const [range, setRange] = useState<MeasureRange>('6m');
   const phq = client?.measures.find((m) => m.key === 'phq9');
   const sleep = client?.measures.find((m) => m.key === 'sleep');
+  const phqReadingsInRange = phq ? filterReadingsByRange(phq.readings, range, new Date()) : [];
 
   if (!client) return null;
   // A freshly-captured client has no assessment series yet — respect the sparse-series rule.
@@ -181,17 +183,25 @@ function PatternsView({ clientId }: { clientId: string }) {
             <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
               <AppText variant="h2">PHQ-9 over time</AppText>
               <Row gap={8}>
-                {['3m', '6m', '1y'].map((r) => (
+                {(['3m', '6m', '1y'] as MeasureRange[]).map((r) => (
                   <Chip key={r} label={r} active={range === r} onPress={() => setRange(r)} />
                 ))}
               </Row>
             </Row>
-            <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
-              {phq.readings[0].value} → {phq.latest} across {phq.readings.length} visits · now in the{' '}
-              <AppText variant="bodyStrong">{phq.band}</AppText> band, down from moderate-severe at intake.
-            </AppText>
-            <View style={{ height: 14 }} />
-            <BandedChart readings={phq.readings} />
+            {phqReadingsInRange.length > 0 ? (
+              <>
+                <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
+                  {phqReadingsInRange[0].value} → {phq.latest} across {phqReadingsInRange.length} visits · now in
+                  the <AppText variant="bodyStrong">{phq.band}</AppText> band, down from moderate-severe at intake.
+                </AppText>
+                <View style={{ height: 14 }} />
+                <BandedChart readings={phqReadingsInRange} />
+              </>
+            ) : (
+              <AppText variant="body" color="ink2" style={{ marginTop: 8 }}>
+                No readings in the last {range}.
+              </AppText>
+            )}
           </Card>
         )}
 

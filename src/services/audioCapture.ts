@@ -73,8 +73,16 @@ export function failedCaptureRef(durationMs = 0): CaptureRef {
   return { uri: 'capture://unavailable', durationMs };
 }
 
-/** Begin microphone capture (web). Rejects if the mic is denied or unsupported. */
-export async function startRecording(): Promise<ActiveRecording> {
+/**
+ * Begin microphone capture (web). Rejects if the mic is denied or unsupported.
+ *
+ * `onInterrupted` fires if the recorder ends on ITS OWN — every track of the captured stream ending
+ * (mic unplugged, permission revoked mid-session, device switch) — rather than from a caller-invoked
+ * `stop()`. The partial clip up to that point is still captured and resolved normally; this is purely
+ * so the UI can tell the clinician *why* it stopped short instead of silently finalising like an
+ * ordinary Stop tap.
+ */
+export async function startRecording(onInterrupted?: () => void): Promise<ActiveRecording> {
   if (!isRecordingSupported()) throw new Error('Recording is not supported on this platform.');
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -100,6 +108,9 @@ export async function startRecording(): Promise<ActiveRecording> {
   // which must not be allowed to look like a capture failure. The counselor's audio is in `chunks`
   // either way, so settle from there exactly once.
   let settled = false;
+  // Set only by our own `stop()` below — distinguishes an explicit Stop from the recorder's `onstop`
+  // firing on its own (stream loss), so `finish()` can tell `onInterrupted` apart from the ordinary case.
+  let stopRequested = false;
   let resolveClip: (ref: CaptureRef) => void;
   const clip = new Promise<CaptureRef>((resolve) => {
     resolveClip = resolve;
@@ -113,6 +124,7 @@ export async function startRecording(): Promise<ActiveRecording> {
     const durationMs = Math.max(0, Date.now() - startedAt - totalPausedMs - stillPausedMs);
     const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
     resolveClip({ uri: URL.createObjectURL(blob), durationMs });
+    if (!stopRequested) onInterrupted?.();
   };
 
   recorder.onstop = finish;
@@ -177,6 +189,7 @@ export async function startRecording(): Promise<ActiveRecording> {
 
   return {
     stop: async () => {
+      stopRequested = true;
       try {
         if (recorder.state !== 'inactive') recorder.stop();
         else finish();

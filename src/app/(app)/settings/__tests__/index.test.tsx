@@ -70,3 +70,33 @@ it('Cancel on the confirm step never calls undoSample', () => {
   expect(mockUndoSample).not.toHaveBeenCalled();
   expect(screen.queryByText('Undo sample data?')).toBeNull();
 });
+
+// fix-these #15: "Sign out & lock" used to fire immediately, unlike every other destructive control
+// on this screen — it now two-step confirms the same way.
+describe('sign out & lock', () => {
+  const { authService } = jest.requireMock('../../../../services/auth');
+
+  beforeEach(() => {
+    authService.signOut.mockClear();
+  });
+
+  it('two-step confirms before calling signOut', async () => {
+    renderScreen();
+    fireEvent.press(screen.getByText('Sign out & lock'));
+    expect(screen.getByText('Sign out & lock?')).toBeTruthy();
+    expect(authService.signOut).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('Yes, sign out'));
+    });
+    expect(authService.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('Cancel on the confirm step never calls signOut', () => {
+    renderScreen();
+    fireEvent.press(screen.getByText('Sign out & lock'));
+    fireEvent.press(screen.getByText('Cancel'));
+    expect(authService.signOut).not.toHaveBeenCalled();
+    expect(screen.queryByText('Sign out & lock?')).toBeNull();
+  });
+});

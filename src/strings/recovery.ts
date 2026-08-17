@@ -34,13 +34,14 @@ export const recoveryStrings = {
   wrongTitle: 'Let’s try once more',
   wrongSubtitle: 'No account is locked — take your time. Your notes vault exists only on this device.',
   wrongHint: 'Password didn’t match this vault. Attempt 2 — take your time.',
+  backToSignInLink: '← Back to sign in',
 
   // Recovery-code fallback (revealed inline on the wrong-password screen)
   forgotLink: 'Forgot your password? Use your recovery code',
   recoveryCodeLabel: 'Recovery code',
   recoveryCodePlaceholder: 'harbor  lantern  cedar  …',
   recoveryCodeHint:
-    'Enter the 12-word code you saved when you created your vault. It unlocks the vault and lets you set a new password.',
+    'Enter the 12-word code you saved when you created your vault. It unlocks the vault on this device — your password stays the same.',
   recoveryCodeCta: 'Unlock with recovery code',
   recoveryCodeError: 'That code didn’t match — check the 12 words and spacing.',
 
