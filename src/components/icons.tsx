@@ -267,6 +267,14 @@ export function PlayIcon({ size = 16, color = 'currentColor', strokeWidth = 2 }:
   );
 }
 
+export function PauseIcon({ size = 16, color = 'currentColor', strokeWidth = 2 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+      <Path d="M6 4h4v16H6zM14 4h4v16h-4z" />
+    </Svg>
+  );
+}
+
 /** Paper-plane — the "send a follow-up email" outreach action. */
 export function SendIcon({ size = 16, color = 'currentColor', strokeWidth = 2 }: IconProps) {
   return (

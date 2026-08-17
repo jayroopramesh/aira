@@ -2,18 +2,43 @@ import React, { useEffect, useRef } from 'react';
 import { AccessibilityInfo, Animated, Easing, View } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
 
-/** A calm recording waveform — animated bars. Static under reduced-motion. */
-export function Waveform({ bars = 13, color }: { bars?: number; color?: string }) {
+/**
+ * A recording waveform — real per-bar input levels when `getLevels` is supplied (driven off the
+ * live MediaStream via a Web Audio AnalyserNode, see `audioCapture.ts`), a calm ambient animation
+ * otherwise. `getLevels` is polled on a `requestAnimationFrame` loop and fed straight into each
+ * bar's `Animated.Value` via `.setValue()` — an imperative update RN's Animated module applies
+ * without going through React state/re-render, which is what keeps a per-frame poll cheap. Static
+ * under reduced-motion (ambient mode only — real levels ARE the honest signal, not decoration, so
+ * they still animate under reduced-motion; they just never run at all without a live stream).
+ */
+export function Waveform({ bars = 13, color, getLevels }: { bars?: number; color?: string; getLevels?: (bars: number) => number[] | null }) {
   const theme = useTheme();
   const tint = color ?? theme.colors.brand;
   const values = useRef(Array.from({ length: bars }, () => new Animated.Value(0.3))).current;
 
   useEffect(() => {
+    // LIVE mode: real amplitude from the same stream MediaRecorder is encoding. Never the canned
+    // loop below — faking responsiveness here would be exactly the kind of dead promise this app
+    // avoids elsewhere (a "live" waveform that isn't actually listening).
+    if (getLevels) {
+      let raf = 0;
+      let cancelled = false;
+      const loop = () => {
+        if (cancelled) return;
+        const levels = getLevels(bars);
+        if (levels) levels.forEach((lv, i) => values[i]?.setValue(Math.max(0.04, Math.min(1, lv))));
+        raf = requestAnimationFrame(loop);
+      };
+      raf = requestAnimationFrame(loop);
+      return () => {
+        cancelled = true;
+        cancelAnimationFrame(raf);
+      };
+    }
+
+    // No live stream to read (native, the sample clip, an unsupported browser, or the caller just
+    // didn't pass one) — the honest fallback is a calm ambient loop, never a fake "responsive" one.
     let cancelled = false;
-    // Retain the started loop handles so cleanup can .stop() them. `Animated.loop` drives its values
-    // independently of mount state, so flipping a flag isn't enough — the reduce-motion check resolves
-    // within a frame, so by unmount the loops are already running and must be explicitly stopped, or
-    // they orphan on the JS thread and accumulate across captures.
     let loops: Animated.CompositeAnimation[] = [];
     AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
       if (cancelled || reduced) return;
@@ -33,10 +58,13 @@ export function Waveform({ bars = 13, color }: { bars?: number; color?: string }
       cancelled = true;
       loops.forEach((l) => l.stop());
     };
-  }, [values]);
+  }, [getLevels, bars, values]);
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 44 }} accessibilityLabel="Recording waveform">
+    <View
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 4, height: 44 }}
+      accessibilityLabel={getLevels ? 'Live recording waveform' : 'Recording waveform'}
+    >
       {values.map((v, i) => (
         <Animated.View
           key={i}

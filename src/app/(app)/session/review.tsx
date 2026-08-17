@@ -1,8 +1,8 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowRight, CheckIcon, CopyIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
+import { ArrowRight, CheckIcon, CopyIcon, PauseIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
 import { BackLink, PageHeader, Screen } from '../../../components/Screen';
 import { ClientLink } from '../../../components/ClientLink';
 import { AppText, Badge, Button, Card, Divider, Eyebrow, Row, TrustPill } from '../../../components/ui';
@@ -11,17 +11,12 @@ import { hasGroq } from '../../../config/env';
 import { useClient, useClientNotes, useData, useDraftNote } from '../../../data/DataProvider';
 import { DraftNote, NoteSection, PrepItem } from '../../../data/types';
 import { authService } from '../../../services/auth';
+import { AudioSegment, getAudioSegments } from '../../../services/audioVault';
 import { useTheme } from '../../../theme/ThemeProvider';
+import { formatTimestamp } from '../../../utils/formatTimestamp';
 
 const TABS = ['Note', 'Transcript', 'Context', '+ Screening tools'] as const;
 type Tab = (typeof TABS)[number];
-
-/** "13 Aug 14:18" — the real moment the clinician signed (F8), not a hardcoded timestamp. */
-function formatSignedAt(d: Date): string {
-  const date = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
-  return `${date} ${time}`;
-}
 
 /**
  * Serialize the full note to plain text for the clipboard — the exact SOAP content the clinician
@@ -252,7 +247,7 @@ export default function ReviewNote() {
   const sign = () => {
     if (!clientId) return;
     pendingEdits.current.forEach((flush) => flush());
-    signNote(clientId, noteIndex, clinician, formatSignedAt(new Date()));
+    signNote(clientId, noteIndex, clinician, formatTimestamp(new Date()));
   };
   // Reopens a signed note for editing. The read-only rule stays enforced at the `updateNoteSection`
   // seam (it refuses a signed note) — this flips `status` back to 'draft' so that seam honestly
@@ -414,6 +409,7 @@ export default function ReviewNote() {
                 auxiliaryNotes={draft.auxiliaryNotes}
                 audioLeftDevice={draft.audioLeftDevice}
                 transcriptFromCloud={draft.transcriptFromCloud}
+                transcriptMixedProvenance={draft.transcriptMixedProvenance}
                 draftedInCloud={draft.draftedInCloud}
                 signed={signed}
               />
@@ -887,6 +883,7 @@ function TranscriptPane({
   auxiliaryNotes,
   audioLeftDevice,
   transcriptFromCloud,
+  transcriptMixedProvenance,
   draftedInCloud,
   signed,
 }: {
@@ -897,6 +894,11 @@ function TranscriptPane({
   auxiliaryNotes?: string;
   audioLeftDevice?: boolean;
   transcriptFromCloud?: boolean;
+  /** True once "Continue recording" spliced in a segment whose own cloud/typed origin disagrees with the
+   *  rest of the transcript (`appendRecording.ts`) — `transcriptFromCloud` alone can no longer describe
+   *  the WHOLE transcript truthfully, so this switches the caption to say so instead of picking one
+   *  claim that would misstate the other segment. The per-segment truth is in each divider line below. */
+  transcriptMixedProvenance?: boolean;
   draftedInCloud?: boolean;
   signed: boolean;
 }) {
@@ -920,7 +922,9 @@ function TranscriptPane({
   return (
     <View>
       <AppText variant="small" color="ink3" style={{ marginBottom: 10 }}>
-        {(transcriptFromCloud === true
+        {(transcriptMixedProvenance
+          ? 'This transcript combines more than one recording, added at different times, and they weren’t all produced the same way — each "Added recording" line below says whether that part was transcribed in the cloud or typed by hand.'
+          : transcriptFromCloud === true
           ? 'The transcript of this session, kept on this device. The audio was sent to the cloud (Groq) to transcribe, then deleted — only this text remains. There is no on-device de-identification hop in demo mode.'
           : transcriptFromCloud === false && audioLeftDevice === true
             ? 'This text was entered by the clinician, not produced by transcription — the audio was sent to the cloud (Groq) to transcribe, but no transcript came back. The recording has since been deleted, so this typed text is the only record of the session.' +
@@ -1001,9 +1005,14 @@ function ReviewRail({
       <Divider />
       <ReviewCodes draft={draft} />
       <Divider />
-      {signed ? <AudioTrust audioLeftDevice={draft.audioLeftDevice} /> : null}
+      {signed ? <AudioTrust audioLeftDevice={draft.audioLeftDevice} clientId={clientId} noteIndex={noteIndex} /> : null}
       <SignOff signed={signed} onSign={onSign} onUnlock={onUnlock} clinician={clinician} signedAt={signedAt} />
-      {clientId ? <ReRecordAction clientId={clientId} signed={signed} /> : null}
+      {clientId ? (
+        <Row gap={10} style={{ flexWrap: 'wrap' }}>
+          <ReRecordAction clientId={clientId} signed={signed} />
+          <ContinueRecordingAction clientId={clientId} noteIndex={noteIndex} signed={signed} />
+        </Row>
+      ) : null}
     </View>
   );
 }
@@ -1037,8 +1046,15 @@ function PrescriptionsRail({ draft, clientId, noteIndex }: { draft: DraftNote; c
   const generateFromNotes = async () => {
     if (alreadyGenerated || pending || !clientId) return;
     const plan = draft.sections.find((s) => s.marker === 'P');
-    const pulled: Rx[] = (plan?.bullets ?? []).map((b, i) => ({
-      id: `gen-${i}`,
+    // "Continue recording" re-enables this control because the TRANSCRIPT genuinely changed
+    // (`appendRecording.ts` clears `prescriptionsGenerated`), but the Plan bullets themselves only
+    // change when the clinician edits that section by hand — so a bullet identical to one already
+    // pulled isn't new, and a second click over the same Plan must not duplicate it.
+    const already = new Set(items.filter((x) => x.generated).map((x) => x.text.trim().toLowerCase()));
+    const bullets = (plan?.bullets ?? []).filter((b) => !already.has(b.trim().toLowerCase()));
+    const base = items.length;
+    const pulled: Rx[] = bullets.map((b, i) => ({
+      id: `gen-${base + i}`,
       text: b,
       source: 'from Plan',
       done: false,
@@ -1169,9 +1185,108 @@ function ReviewCodes({ draft }: { draft: DraftNote }) {
 /* ------------------------------------------------------------ audio trust --- */
 
 /**
+ * Sequential playback of every real audio segment kept for this note — the original recording, then
+ * each later "Continue recording" append, in order, as ONE continuous listen. Gated entirely on
+ * `segments` being non-empty (real `blob:` captures only, from `audioVault.ts` — never the sample
+ * clip or a failed capture), so this never offers to play audio that doesn't exist. Advances to the
+ * next segment on `ended`; a segment the browser refuses to play (autoplay policy, revoked blob after
+ * a reload) stops playback and says so rather than silently going quiet.
+ */
+function StitchedAudioPlayer({ segments, tint }: { segments: AudioSegment[]; tint: string }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const [state, setState] = useState<'idle' | 'playing' | 'blocked'>('idle');
+  const [index, setIndex] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(
+    () => () => {
+      audioRef.current?.pause();
+      audioRef.current = null;
+    },
+    [],
+  );
+
+  const playFrom = (i: number) => {
+    if (i >= segments.length) {
+      setState('idle');
+      setIndex(0);
+      return;
+    }
+    const AudioCtor = (globalThis as { window?: { Audio?: new (src?: string) => HTMLAudioElement } }).window?.Audio;
+    if (!AudioCtor) {
+      setState('blocked');
+      return;
+    }
+    const el = new AudioCtor(segments[i].uri);
+    audioRef.current = el;
+    setIndex(i);
+    el.onended = () => playFrom(i + 1);
+    el.onerror = () => setState('blocked');
+    el
+      .play()
+      .then(() => setState('playing'))
+      // Browsers can refuse an unprompted play() (autoplay policy) even from a real tap in some
+      // embeds — say so rather than leaving a "Playing" label over silence.
+      .catch(() => setState('blocked'));
+  };
+
+  const pause = () => {
+    audioRef.current?.pause();
+    setState('idle');
+  };
+
+  const playing = state === 'playing';
+  const multi = segments.length > 1;
+
+  return (
+    <View style={{ marginTop: 10 }}>
+      <Pressable
+        onPress={playing ? pause : () => playFrom(state === 'blocked' ? 0 : index)}
+        accessibilityRole="button"
+        accessibilityLabel={
+          playing
+            ? 'Pause playback'
+            : multi
+              ? `Play the stitched recording — ${segments.length} segments in order`
+              : 'Play the recording'
+        }
+        style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
+      >
+        <Row gap={7} style={{ alignItems: 'flex-start' }}>
+          <View style={{ marginTop: 1 }}>
+            {playing ? <PauseIcon size={13} color={tint} /> : <PlayIcon size={13} color={tint} />}
+          </View>
+          <AppText variant="small" tint={tint} style={{ flex: 1, fontSize: 11.5, lineHeight: 16 }}>
+            {playing
+              ? 'Pause'
+              : multi
+                ? `Play the stitched recording — the original plus ${segments.length - 1} added segment${segments.length - 1 === 1 ? '' : 's'}, in order`
+                : 'Play the recording'}
+          </AppText>
+        </Row>
+      </Pressable>
+      {playing ? (
+        <AppText variant="small" color="ink3" style={{ marginTop: 4, fontSize: 11, marginLeft: 20 }}>
+          Playing {index + 1} of {segments.length} — {segments[index].label}
+        </AppText>
+      ) : null}
+      {state === 'blocked' ? (
+        <AppText variant="small" tint={c.caution} style={{ marginTop: 4, fontSize: 11, marginLeft: 20, lineHeight: 15 }}>
+          Couldn’t play — your browser blocked it, or this audio was only kept for the tab that recorded it and
+          this is a different one.
+        </AppText>
+      ) : null}
+    </View>
+  );
+}
+
+/**
  * Audio-trust moment (round-2 change #7). Deletion is the DEFAULT — the honest copy says the
  * recording is already gone. A visible "Keep the audio" toggle lets the clinician retain it;
- * kept, the copy is equally honest and notes that replay-with-notes becomes available.
+ * kept, a real `StitchedAudioPlayer` plays back whatever was actually captured for this note THIS
+ * SESSION (`audioVault.ts` — in-memory only, so a reload genuinely loses it, matching "for this
+ * session" in the copy below rather than quietly under-delivering on it).
  *
  * This card speaks about the AUDIO, so it reads the note's recorded upload disclosure — not whether
  * the transcription actually returned anything, which is a separate fact the Transcript tab reports.
@@ -1179,11 +1294,14 @@ function ReviewCodes({ draft }: { draft: DraftNote }) {
  * Legacy signed notes drafted before provenance was recorded carry no value; those fall back to the
  * build's configuration.
  */
-function AudioTrust({ audioLeftDevice }: { audioLeftDevice?: boolean }) {
+function AudioTrust({ audioLeftDevice, clientId, noteIndex }: { audioLeftDevice?: boolean; clientId?: string; noteIndex: number }) {
   const theme = useTheme();
   const c = theme.colors;
   const [kept, setKept] = useState(false);
   const audioWentToCloud = audioLeftDevice ?? hasGroq;
+  // Read once — nothing can add a segment to an already-SIGNED note (Continue recording is gated off
+  // the moment a note is signed), so the list is final by the time this card can render at all.
+  const segments = useMemo(() => (clientId ? getAudioSegments(clientId, noteIndex) : []), [clientId, noteIndex]);
 
   const tint = kept ? c.brand : c.positive;
   const bg = kept ? c.brandBg : c.positiveBg;
@@ -1239,14 +1357,19 @@ function AudioTrust({ audioLeftDevice }: { audioLeftDevice?: boolean }) {
       </Pressable>
 
       {kept ? (
-        <Row gap={7} style={{ marginTop: 10, alignItems: 'flex-start' }}>
-          <View style={{ marginTop: 1 }}>
-            <PlayIcon size={13} color={c.brand} />
-          </View>
-          <AppText variant="small" tint={c.brand} style={{ flex: 1, fontSize: 11.5, lineHeight: 16 }}>
-            Replay-with-notes is now available — your timestamped notes highlight as it plays.
-          </AppText>
-        </Row>
+        segments.length ? (
+          <StitchedAudioPlayer segments={segments} tint={c.brand} />
+        ) : (
+          <Row gap={7} style={{ marginTop: 10, alignItems: 'flex-start' }}>
+            <View style={{ marginTop: 1 }}>
+              <PlayIcon size={13} color={c.ink3} />
+            </View>
+            <AppText variant="small" color="ink3" style={{ flex: 1, fontSize: 11.5, lineHeight: 16 }}>
+              Nothing to play back — either this session used the demo sample, or this browser tab has
+              reloaded since it was recorded (kept audio only lasts the tab that captured it).
+            </AppText>
+          </Row>
+        )
       ) : null}
     </Card>
   );
@@ -1365,6 +1488,35 @@ function ReRecordAction({ clientId, signed }: { clientId: string; signed: boolea
         />
       </Row>
     </View>
+  );
+}
+
+/**
+ * "Continue recording" (captain, 2026-08-17) — next to Re-record, but the opposite shape: Re-record starts a
+ * FRESH note (the old draft rotates in the C4 retention list); Continue recording appends the new capture's
+ * transcript onto THIS SAME note (`DataProvider.appendRecording`, threaded through as `mode=append` +
+ * `note=<noteIndex>` — mirroring how Re-record threads `clientId`) so nothing is discarded and no
+ * duplicate note is minted.
+ *
+ * Never available on a signed note (`signed` hides it entirely, no confirm dialog to bypass) — a
+ * signed note is read-only, the same rule `updateNoteSection` and `appendRecording` both enforce at
+ * their own seam, so this is belt-and-suspenders with those, not the only guard. No two-step confirm:
+ * appending is additive and nothing on the note is discarded, unlike Re-record's fresh-note risk to the
+ * C4 retention cap.
+ */
+function ContinueRecordingAction({ clientId, noteIndex, signed }: { clientId: string; noteIndex: number; signed: boolean }) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const router = useRouter();
+  if (signed) return null;
+  return (
+    <Button
+      title="Continue recording"
+      variant="secondary"
+      leftIcon={<PlusIcon size={15} color={c.ink} />}
+      accessibilityLabel="Continue recording — record more and append it to this note"
+      onPress={() => router.replace(`/(app)/session?clientId=${encodeURIComponent(clientId)}&mode=append&note=${noteIndex}`)}
+    />
   );
 }
 
