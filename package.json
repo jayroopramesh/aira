@@ -47,7 +47,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "node scripts/provenance-harness.mjs && node --experimental-strip-types scripts/persist-race-harness.mjs && node --experimental-strip-types scripts/risk-floor-harness.mjs && node --experimental-strip-types scripts/escalate-targets-harness.mjs && node --experimental-strip-types scripts/duplicate-identity-harness.mjs && node --experimental-strip-types scripts/chart-axis-harness.mjs && node --experimental-strip-types scripts/chart-range-harness.mjs && node --experimental-strip-types scripts/trajectory-harness.mjs && node --experimental-strip-types scripts/sample-undo-harness.mjs && node --experimental-strip-types scripts/append-recording-harness.mjs && node --experimental-strip-types scripts/audio-vault-harness.mjs && node scripts/groq-proxy-harness.mjs && jest --ci"
+    "test": "node scripts/provenance-harness.mjs && node --experimental-strip-types scripts/persist-race-harness.mjs && node --experimental-strip-types scripts/risk-floor-harness.mjs && node --experimental-strip-types scripts/risk-scan-harness.mjs && node --experimental-strip-types scripts/escalate-targets-harness.mjs && node --experimental-strip-types scripts/duplicate-identity-harness.mjs && node --experimental-strip-types scripts/chart-axis-harness.mjs && node --experimental-strip-types scripts/chart-range-harness.mjs && node --experimental-strip-types scripts/trajectory-harness.mjs && node --experimental-strip-types scripts/sample-undo-harness.mjs && node --experimental-strip-types scripts/append-recording-harness.mjs && node --experimental-strip-types scripts/audio-vault-harness.mjs && node scripts/groq-proxy-harness.mjs && jest --ci"
   },
   "private": true
 }
