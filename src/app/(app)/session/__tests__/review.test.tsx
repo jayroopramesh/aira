@@ -301,3 +301,24 @@ it('"Keep the audio" with no real segments says so honestly instead of offering 
   expect(screen.getByText(/Nothing to play back/)).toBeTruthy();
   expect(screen.queryByText(/Play the stitched recording/)).toBeNull();
 });
+
+it('recording comments persisted on the note render on the Transcript tab, stamped with their clock', () => {
+  mockDraft = {
+    ...DRAFT,
+    transcript: 'Client reflected on cutting back drinking to weekends only.',
+    recordingComments: [{ ts: '03:12', text: 'Change talk here — client named the weekend plan himself' }],
+  };
+  renderScreen();
+  fireEvent.press(screen.getByText('Transcript'));
+  expect(screen.getByText('03:12')).toBeTruthy();
+  expect(screen.getByText('Change talk here — client named the weekend plan himself')).toBeTruthy();
+});
+
+it('recording comments still render when no transcript is stored (typed-recovery edge)', () => {
+  mockDraft = { ...DRAFT, recordingComments: [{ ts: '00:41', text: 'Ask about sleep next time' }] };
+  renderScreen();
+  fireEvent.press(screen.getByText('Transcript'));
+  expect(screen.getByText(/No transcript is stored/)).toBeTruthy();
+  expect(screen.getByText('00:41')).toBeTruthy();
+  expect(screen.getByText('Ask about sleep next time')).toBeTruthy();
+});

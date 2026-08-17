@@ -17,10 +17,15 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ clientId: undefined }),
 }));
 
+// Shared across renders so the comments-survive-stop test below can assert on the exact note the
+// screen handed to the save path (name prefixed "mock" — required by babel-plugin-jest-hoist for a
+// jest.mock() factory to reference an out-of-scope variable).
+const mockSaveSessionNote = jest.fn(async (_note: unknown, _identity?: unknown) => ({ clientId: 'c-1' }));
+
 jest.mock('../../../../data/DataProvider', () => ({
   useClient: () => undefined,
   useClientNotes: () => [],
-  useData: () => ({ saveSessionNote: jest.fn(), appendRecording: jest.fn(), hydrated: true }),
+  useData: () => ({ saveSessionNote: mockSaveSessionNote, appendRecording: jest.fn(), hydrated: true }),
 }));
 
 jest.mock('../../../../services/cloudSession', () => ({
@@ -95,7 +100,25 @@ beforeEach(() => {
   mockResume.mockClear();
   mockGetLevels.mockClear();
   mockStop.mockClear();
+  mockSaveSessionNote.mockClear();
 });
+
+// An AnnoMI-style dictated recap — ≥12 varied words so the F11 quality guard lets it draft.
+const MI_TRANSCRIPT =
+  'Client reflected on cutting back drinking to weekends only. We explored what a typical evening ' +
+  'looks like and he named stress after work as the main trigger. Agreed to track urges this week ' +
+  'and revisit the plan at the next session.';
+
+/** Drive the type/paste recovery (this mock build refuses to transcribe a real capture) to a saved
+ *  note, so tests can assert on exactly what reached the persistence seam. */
+async function stopTypeAndDraft() {
+  fireEvent.press(screen.getByText('Stop & transcribe'));
+  await waitFor(() => expect(screen.getByPlaceholderText('Transcript will appear here.')).toBeTruthy());
+  fireEvent.changeText(screen.getByPlaceholderText('Transcript will appear here.'), MI_TRANSCRIPT);
+  fireEvent.press(screen.getByText('Next → draft the note'));
+  await waitFor(() => expect(mockSaveSessionNote).toHaveBeenCalledTimes(1));
+  return mockSaveSessionNote.mock.calls[0][0] as { recordingComments?: { ts: string; text: string }[] };
+}
 
 it('the live waveform is driven by the real ActiveRecording, not the ambient fallback', async () => {
   await goToRecording();
@@ -184,4 +207,31 @@ it('surfaces a distinct banner when the recorder ends on its own rather than fro
   await waitFor(() => expect(screen.getByText(/stopped on its own/)).toBeTruthy());
   // Pause no longer makes sense once the recorder itself has already stopped.
   expect(screen.queryByText('Pause')).toBeNull();
+});
+
+// ---- "Comment on your recording" — the strip promises comments are KEPT with the note, so they must
+// survive the recording phase and reach the note handed to the save path (they used to die in the
+// strip's local state the moment recording stopped, silently discarding what the clinician typed).
+
+it('a comment added during recording survives stop and lands on the drafted note', async () => {
+  await goToRecording();
+  fireEvent.changeText(screen.getByPlaceholderText('Type a comment…'), 'Change talk here — client named the weekend plan himself');
+  fireEvent.press(screen.getByLabelText('Add comment at this moment'));
+  const note = await stopTypeAndDraft();
+  expect(note.recordingComments).toEqual([
+    { ts: expect.any(String), text: 'Change talk here — client named the weekend plan himself' },
+  ]);
+});
+
+it('a comment still sitting un-submitted in the add card survives stop too', async () => {
+  await goToRecording();
+  fireEvent.changeText(screen.getByPlaceholderText('Type a comment…'), 'Ask about sleep next time');
+  const note = await stopTypeAndDraft();
+  expect(note.recordingComments).toEqual([{ ts: expect.any(String), text: 'Ask about sleep next time' }]);
+});
+
+it('a capture with no comments stamps none onto the note', async () => {
+  await goToRecording();
+  const note = await stopTypeAndDraft();
+  expect(note.recordingComments).toBeUndefined();
 });

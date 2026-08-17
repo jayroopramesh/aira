@@ -10,7 +10,7 @@ import { ZeroState } from '../../../components/ZeroState';
 import { hasGroq } from '../../../config/env';
 import { useClient, useClientNotes, useData, useDraftNote } from '../../../data/DataProvider';
 import { MAX_NOTES_PER_CLIENT } from '../../../data/repository';
-import { DraftNote, NoteSection, PrepItem } from '../../../data/types';
+import { DraftNote, NoteSection, PrepItem, RecordingComment } from '../../../data/types';
 import { authService } from '../../../services/auth';
 import { AudioSegment, getAudioSegments } from '../../../services/audioVault';
 import { useTheme } from '../../../theme/ThemeProvider';
@@ -408,6 +408,7 @@ export default function ReviewNote() {
               <TranscriptPane
                 transcript={draft.transcript}
                 auxiliaryNotes={draft.auxiliaryNotes}
+                recordingComments={draft.recordingComments}
                 audioLeftDevice={draft.audioLeftDevice}
                 transcriptFromCloud={draft.transcriptFromCloud}
                 transcriptMixedProvenance={draft.transcriptMixedProvenance}
@@ -882,6 +883,7 @@ function MeasureTable({ measures }: { measures: DraftNote['measures'] }) {
 function TranscriptPane({
   transcript,
   auxiliaryNotes,
+  recordingComments,
   audioLeftDevice,
   transcriptFromCloud,
   transcriptMixedProvenance,
@@ -893,6 +895,11 @@ function TranscriptPane({
    *  separation (round-2 item 1). Shown as its own distinct card, never blended into the transcript
    *  above it — it was deliberately excluded from what the note was drafted from. */
   auxiliaryNotes?: string;
+  /** Comments the clinician typed on the recording screen while the capture ran, each stamped with
+   *  the recording clock. The comment strip PROMISES they're kept with the note, so this card is
+   *  where that promise is honoured — their own card, clinician-authored, never blended into the
+   *  transcript above and never sent to the summarizer. */
+  recordingComments?: RecordingComment[];
   audioLeftDevice?: boolean;
   transcriptFromCloud?: boolean;
   /** True once "Continue recording" spliced in a segment whose own cloud/typed origin disagrees with the
@@ -907,16 +914,44 @@ function TranscriptPane({
   const c = theme.colors;
   const text = transcript?.trim();
   const aux = auxiliaryNotes?.trim();
+  const comments = recordingComments?.filter((x) => x.text.trim()) ?? [];
+
+  // Rendered whether or not a transcript is stored — a typed-recovery capture can carry comments
+  // even when transcription produced nothing, and losing them here would re-break the promise.
+  const commentsCard = comments.length ? (
+    <View style={{ marginTop: theme.spacing.lg }}>
+      <AppText variant="small" color="ink3" style={{ marginBottom: 10, lineHeight: 17 }}>
+        Comments you typed while the recording ran, each stamped with the recording clock at that
+        moment. They’re kept with the note on this device — never merged into the transcript, never
+        sent to drafting.
+      </AppText>
+      <Card tone="sunken" elevation="none" radius="md">
+        {comments.map((x, i) => (
+          <Row key={i} gap={10} style={{ alignItems: 'flex-start', marginTop: i === 0 ? 0 : 10 }}>
+            <AppText variant="small" tint={c.brand} style={{ fontFamily: theme.type.numeric.fontFamily, marginTop: 2 }}>
+              {x.ts}
+            </AppText>
+            <AppText variant="body" color="ink2" selectable style={{ flex: 1, lineHeight: 22 }}>
+              {x.text}
+            </AppText>
+          </Row>
+        ))}
+      </Card>
+    </View>
+  ) : null;
 
   if (!text) {
     return (
-      <Card tone="sunken" elevation="none" radius="md">
-        <AppText variant="body" color="ink2">
-          No transcript is stored for this note. Sample data and notes captured before transcripts were
-          saved don’t include the session text. Nothing is shown here rather than standing in a placeholder
-          for the real session.
-        </AppText>
-      </Card>
+      <View>
+        <Card tone="sunken" elevation="none" radius="md">
+          <AppText variant="body" color="ink2">
+            No transcript is stored for this note. Sample data and notes captured before transcripts were
+            saved don’t include the session text. Nothing is shown here rather than standing in a placeholder
+            for the real session.
+          </AppText>
+        </Card>
+        {commentsCard}
+      </View>
     );
   }
 
@@ -958,6 +993,8 @@ function TranscriptPane({
           </Card>
         </View>
       ) : null}
+
+      {commentsCard}
     </View>
   );
 }

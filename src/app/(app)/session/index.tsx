@@ -9,7 +9,7 @@ import { AlertTriangleIcon, FileUpIcon, MicIcon, PauseIcon, PencilIcon, PlayIcon
 import { AppText, Button, Card, Row, TrustPill } from '../../../components/ui';
 import { useClient, useClientNotes, useData } from '../../../data/DataProvider';
 import { isValidEmiratesId } from '../../../data/sessionClient';
-import { DraftNote } from '../../../data/types';
+import { DraftNote, RecordingComment } from '../../../data/types';
 import { RecordingAddition } from '../../../data/appendRecording';
 import { formatTimestamp } from '../../../utils/formatTimestamp';
 import { addAudioSegment, setOriginalAudioSegment } from '../../../services/audioVault';
@@ -113,6 +113,12 @@ export default function SessionCapture() {
   // from an explicit Stop tap — lets the Recording screen say plainly why it stopped short instead of
   // silently finalising whatever partial audio exists like an ordinary Stop.
   const [streamInterrupted, setStreamInterrupted] = useState(false);
+  // Comments typed on the recording screen (RecordingNotes reports every change up here, in
+  // chronological order, including a still-unsubmitted draft). They outlive the recording phase so
+  // the "kept with the note" promise holds: `onDrafted` stamps them onto the freshly drafted note
+  // and `onAppended` threads them into the append merge — they must never die with the recording
+  // UI's local state.
+  const recordingComments = useRef<RecordingComment[]>([]);
   // Asked once for the whole screen so the pre-capture notice, the in-flight recording copy and the
   // analysing label all promise the same thing. `null` while the check is in flight.
   const [cloudReady, setCloudReady] = useState<boolean | null>(null);
@@ -193,6 +199,11 @@ export default function SessionCapture() {
   };
 
   const onDrafted = async (note: DraftNote) => {
+    // Recording-screen comments ride on the note here — the capture UI is their ONLY source (they
+    // never pass through the summarizer, whose input text is what goes to the cloud), so the one
+    // call site that has them is the honest place to attach them.
+    const comments = recordingComments.current;
+    if (comments.length) note = { ...note, recordingComments: comments };
     const { clientId: id, isDuplicate, adoptedEmiratesId, nameConflict, idNameConflict } = await saveSessionNote(note, {
       clientId: client?.id,
       name: client ? undefined : name,
@@ -227,6 +238,8 @@ export default function SessionCapture() {
   const onAppended = async (addition: RecordingAddition) => {
     if (!client || appendNoteIndex === undefined) return;
     const timestampLabel = formatTimestamp(new Date());
+    const comments = recordingComments.current;
+    if (comments.length) addition = { ...addition, recordingComments: comments };
     await appendRecording(client.id, appendNoteIndex, addition, timestampLabel);
     const cap = capture.current;
     if (cap) addAudioSegment(client.id, appendNoteIndex, { uri: cap.uri, durationMs: cap.durationMs, kind: 'added', label: `Added · ${timestampLabel}` });
@@ -266,6 +279,9 @@ export default function SessionCapture() {
           onCancel={cancelRecording}
           streamInterrupted={streamInterrupted}
           onUpload={onUpload}
+          onComments={(xs) => {
+            recordingComments.current = xs;
+          }}
           cloudReady={cloudReady}
           appendTarget={appendMode ? appendTarget : undefined}
         />
@@ -621,6 +637,7 @@ function Recording({
   onCancel,
   streamInterrupted,
   onUpload,
+  onComments,
   cloudReady,
   appendTarget,
 }: {
@@ -639,6 +656,9 @@ function Recording({
   /** The recorder ended on its own (stream loss) rather than from a Stop tap (fix-these #13). */
   streamInterrupted: boolean;
   onUpload: () => void;
+  /** Reports the comment strip's current comments (chronological) up to the screen on every change,
+   *  so stopping the recording never discards what the clinician typed mid-session. */
+  onComments: (comments: RecordingComment[]) => void;
   cloudReady: boolean | null;
   appendTarget?: DraftNote;
 }) {
@@ -768,7 +788,7 @@ function Recording({
         </View>
       )}
 
-      <RecordingNotes liveTs={`${mm}:${ss}`} />
+      <RecordingNotes liveTs={`${mm}:${ss}`} onComments={onComments} />
 
       <View style={{ height: 22 }} />
       {confirmingCancel ? (
@@ -818,14 +838,35 @@ function Recording({
 
 type Comment = { id: string; ts: string; text: string };
 
-/** "Comment on your recording" strip — the dotted add card is first; comments are editable. */
-function RecordingNotes({ liveTs }: { liveTs: string }) {
+/**
+ * "Comment on your recording" strip — the dotted add card is first; comments are editable.
+ *
+ * The strip's own copy promises the comments are KEPT, so they must never exist only in this
+ * component's local state (that is how they used to be silently discarded the moment recording
+ * stopped): every change — including a comment still sitting un-submitted in the dotted card —
+ * is reported up through `onComments` in chronological order, for the screen to stamp onto the
+ * note it drafts or appends.
+ */
+function RecordingNotes({ liveTs, onComments }: { liveTs: string; onComments: (comments: RecordingComment[]) => void }) {
   const theme = useTheme();
   const c = theme.colors;
   const [comments, setComments] = useState<Comment[]>([]);
   const [draft, setDraft] = useState('');
   const nextId = useRef(0);
   const scroller = useRef<ScrollView>(null);
+
+  // Newest-first is the strip's display order; the note keeps them chronological. The un-submitted
+  // draft rides along (stamped with the clock as it stands now) so pressing Stop mid-sentence still
+  // keeps the words — blur usually commits it first, but that must not be load-bearing.
+  useEffect(() => {
+    const chronological = comments
+      .slice()
+      .reverse()
+      .map(({ ts, text }) => ({ ts, text: text.trim() }))
+      .filter((x) => x.text.length > 0);
+    const pending = draft.trim();
+    onComments(pending ? [...chronological, { ts: liveTs, text: pending }] : chronological);
+  }, [comments, draft, liveTs, onComments]);
 
   const add = () => {
     const text = draft.trim();
@@ -844,7 +885,8 @@ function RecordingNotes({ liveTs }: { liveTs: string }) {
           Comment on your recording
         </AppText>
         <AppText variant="small" color="ink3" style={{ marginTop: 2, lineHeight: 16 }}>
-          Each comment syncs to the recording timestamp · on replay it jumps back to that moment
+          Each comment is stamped with the recording clock and kept with the note — you’ll find them on
+          the review screen’s Transcript tab
         </AppText>
       </View>
       <ScrollView
@@ -867,12 +909,20 @@ function RecordingNotes({ liveTs }: { liveTs: string }) {
         >
           <Row gap={8} style={{ alignItems: 'center' }}>
             <TimePill label={liveTs} live />
-            <Row gap={5} style={{ alignItems: 'center' }}>
-              <PlusIcon size={13} color={c.brand} />
-              <AppText variant="small" tint={c.brand} style={{ fontSize: 11.5 }}>
-                Add at this moment
-              </AppText>
-            </Row>
+            <Pressable
+              onPress={add}
+              accessibilityRole="button"
+              accessibilityLabel="Add comment at this moment"
+              hitSlop={8}
+              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+            >
+              <Row gap={5} style={{ alignItems: 'center' }}>
+                <PlusIcon size={13} color={c.brand} />
+                <AppText variant="small" tint={c.brand} style={{ fontSize: 11.5 }}>
+                  Add at this moment
+                </AppText>
+              </Row>
+            </Pressable>
           </Row>
           <TextInput
             value={draft}
