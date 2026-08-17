@@ -38,6 +38,14 @@ export type SummaryInput = {
    */
   transcriptFromCloud?: boolean;
   /**
+   * Did an ON-DEVICE transcriber actually produce the `transcript` text (today, only the `mock://`
+   * sample's canned replay; a future whisper.rn build would set it too)? False for anything the
+   * clinician typed or pasted — which, with `transcriptFromCloud` also false, used to be rendered as
+   * "transcribed on this device": a claim about a machine process that never ran, on the one path
+   * where the text is wholly the clinician's own. Absent → treated as hand-entered, the safe reading.
+   */
+  transcribedOnDevice?: boolean;
+  /**
    * Is this the built-in `mock://` demo clip rather than a session with a real person in it? Only the
    * sample may receive the on-device stub's canned walkthrough content; see `MockSummarizationService`.
    * Absent → treated as a real session, so the safe mode is the default.
@@ -470,18 +478,28 @@ function buildDraft(
   // what ACTUALLY ran for this note, never from the build-time config.
   const cloudTranscript = input.transcriptFromCloud === true;
   const audioLeft = input.audioLeftDevice === true || cloudTranscript;
+  // "Transcribed" may only be claimed when a transcriber actually ran. With no cloud transcript and no
+  // upload, the text is machine-produced only if an on-device transcriber said so — otherwise it is
+  // the clinician's own typing, and the note must say that instead of asserting a hop that never
+  // happened ("Transcribed on this device" over hand-typed text is the false claim this replaces).
+  const deviceTranscript = !cloudTranscript && !audioLeft && input.transcribedOnDevice === true;
   const where = (cloud: boolean) => (cloud ? 'in demo mode (cloud)' : 'on this device');
 
   const transcriptHop = cloudTranscript
     ? 'transcribed in demo mode (cloud)'
     : audioLeft
       ? 'audio sent to the cloud to transcribe but no transcript came back, so the text was entered by hand'
-      : 'transcribed on this device';
+      : deviceTranscript
+        ? 'transcribed on this device'
+        : 'transcript entered by hand';
   const draftHop = keywordStub
     ? 'drafted on this device by a keyword stub, not a clinical model — assessment, plan and codes are left for you'
     : `drafted ${where(draftedInCloud)}`;
   const hops =
-    !keywordStub && audioLeft === cloudTranscript && cloudTranscript === draftedInCloud
+    !keywordStub &&
+    audioLeft === cloudTranscript &&
+    cloudTranscript === draftedInCloud &&
+    (cloudTranscript || deviceTranscript)
       ? `transcribed and drafted ${where(draftedInCloud)}`
       : `${transcriptHop}, ${draftHop}`;
   const tail = !audioLeft && !draftedInCloud ? 'nothing was sent anywhere' : 'for your review';

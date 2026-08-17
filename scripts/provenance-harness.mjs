@@ -247,6 +247,39 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
   );
   check('and stamps all three facts false', !nothingSent.audioLeftDevice && !nothingSent.transcriptFromCloud && !nothingSent.draftedInCloud);
 
+  // Round 4 (James): with nothing sent and no on-device transcriber having run, the text is the
+  // clinician's own typing — the note must say so, never claim a transcription that never happened.
+  // "Transcribed on this device" over hand-typed text was a false machine-process claim an auditor
+  // could demand evidence for (which transcriber? from what audio?) and get none.
+  check(
+    'typed/pasted text is never claimed as transcribed',
+    !/transcribed/i.test(nothingSent.sourceLine),
+    nothingSent.sourceLine,
+  );
+  check('typed/pasted text says it was entered by hand', /entered by hand/i.test(nothingSent.sourceLine), nothingSent.sourceLine);
+
+  // The one all-local path where "transcribed on this device" IS true: an on-device transcriber
+  // (the sample clip's mock replay) actually produced the text and says so.
+  const deviceTranscribed = await offline.summarize({
+    transcript: REAL_TRANSCRIPT,
+    sampleCapture: true,
+    transcribedOnDevice: true,
+  });
+  check(
+    'an on-device transcription still collapses to one honest local clause',
+    /transcribed and drafted on this device/i.test(deviceTranscribed.sourceLine),
+    deviceTranscribed.sourceLine,
+  );
+
+  // `transcribedOnDevice` is a claim about the LOCAL transcriber only — it must never survive next to
+  // an upload (the text there was typed after the cloud returned nothing, whatever a caller passes).
+  const contradictory = await draft({ audioLeftDevice: true, transcriptFromCloud: false, transcribedOnDevice: true });
+  check(
+    'a stray transcribedOnDevice flag cannot overwrite the upload-then-typed truth',
+    /entered by hand/.test(contradictory.sourceLine) && !/transcribed on this device/i.test(contradictory.sourceLine),
+    contradictory.sourceLine,
+  );
+
   // The case rounds 3-5 kept getting wrong: the upload happened, the transcription did not.
   const uploadedThenFailed = await draft({ audioLeftDevice: true, transcriptFromCloud: false });
   check(
@@ -312,10 +345,21 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
     /transcribed and drafted in demo mode \(cloud\)/i.test(cloud.sourceLine), cloud.sourceLine);
   check('a cloud draft is never labelled a keyword stub', !/keyword stub/.test(cloud.sourceLine), cloud.sourceLine);
 
-  const localAudioCloudDraft = await live.summarize({ transcript: REAL_TRANSCRIPT, audioLeftDevice: false, transcriptFromCloud: false });
+  const localAudioCloudDraft = await live.summarize({
+    transcript: REAL_TRANSCRIPT,
+    audioLeftDevice: false,
+    transcriptFromCloud: false,
+    transcribedOnDevice: true,
+  });
   check('sample audio + cloud draft reads as two separate hops',
     /transcribed on this device, drafted in demo mode \(cloud\)/i.test(localAudioCloudDraft.sourceLine),
     localAudioCloudDraft.sourceLine);
+
+  // The same cloud draft over TYPED text names the typing, not a transcription that never ran.
+  const typedCloudDraft = await live.summarize({ transcript: REAL_TRANSCRIPT, audioLeftDevice: false, transcriptFromCloud: false });
+  check('typed text + cloud draft names the hand-entry and the cloud hop',
+    /transcript entered by hand, drafted in demo mode \(cloud\)/i.test(typedCloudDraft.sourceLine),
+    typedCloudDraft.sourceLine);
 
   globalThis.fetch = originalFetch;
 }
