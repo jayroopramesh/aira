@@ -53,11 +53,32 @@ const DRAFT: DraftNote = {
   prescriptions: [],
 };
 
+const SIGNED_DRAFT: DraftNote = {
+  ...DRAFT,
+  status: 'signed',
+  signedBy: 'Test Clinician',
+  signedAt: '17 Aug 09:00',
+};
+
+const REOPENED_DRAFT: DraftNote = {
+  ...DRAFT,
+  status: 'draft',
+  signedBy: 'Test Clinician',
+  signedAt: '17 Aug 09:00',
+};
+
+// A mutable module-scope fixture the mock reads on every render, so individual tests can swap in a
+// signed/reopened draft without re-mocking the module (name prefixed "mock" — required by
+// babel-plugin-jest-hoist for a jest.mock() factory to reference an out-of-scope variable).
+let mockDraft: DraftNote = DRAFT;
+const mockSignNote = jest.fn();
+const mockUnlockNote = jest.fn();
+
 jest.mock('../../../../data/DataProvider', () => ({
   useClient: () => CLIENT,
-  useClientNotes: () => [DRAFT],
-  useDraftNote: () => DRAFT,
-  useData: () => ({ signNote: jest.fn(), updateNoteSection: jest.fn() }),
+  useClientNotes: () => [mockDraft],
+  useDraftNote: () => mockDraft,
+  useData: () => ({ signNote: mockSignNote, unlockNote: mockUnlockNote, updateNoteSection: jest.fn() }),
 }));
 
 const METRICS = { frame: { x: 0, y: 0, width: 1200, height: 900 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } };
@@ -75,6 +96,12 @@ function renderScreen() {
 beforeEach(() => {
   mockPush.mockClear();
   mockReplace.mockClear();
+  mockSignNote.mockClear();
+  mockUnlockNote.mockClear();
+});
+
+afterEach(() => {
+  mockDraft = DRAFT;
 });
 
 it('links the header client chip to the patient page', () => {
@@ -82,4 +109,39 @@ it('links the header client chip to the patient page', () => {
   const link = screen.getByRole('link', { name: `Open ${CLIENT.name}’s page` });
   fireEvent.press(link);
   expect(mockPush).toHaveBeenCalledWith(`/(app)/today/${CLIENT.id}`);
+});
+
+it('shows the ordinary draft trust pill for a note that was never signed', () => {
+  renderScreen();
+  expect(screen.getByText('Draft stays on this device')).toBeTruthy();
+});
+
+it('shows a signed & locked trust pill once the note is signed', () => {
+  mockDraft = SIGNED_DRAFT;
+  renderScreen();
+  expect(screen.getByText('Signed & locked · stays on this device')).toBeTruthy();
+});
+
+it('shows an unlocked-for-edits trust pill for a draft reopened after being signed', () => {
+  mockDraft = REOPENED_DRAFT;
+  renderScreen();
+  expect(screen.getByText('Unlocked for edits · stays on this device')).toBeTruthy();
+});
+
+it('requires an explicit confirm before unlocking a signed note', () => {
+  mockDraft = SIGNED_DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByText('Unlock note'));
+  expect(mockUnlockNote).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByText('Confirm unlock'));
+  expect(mockUnlockNote).toHaveBeenCalledWith(CLIENT.id, 0);
+});
+
+it('cancel disarms the unlock confirm without unlocking', () => {
+  mockDraft = SIGNED_DRAFT;
+  renderScreen();
+  fireEvent.press(screen.getByText('Unlock note'));
+  fireEvent.press(screen.getByText('Cancel'));
+  expect(mockUnlockNote).not.toHaveBeenCalled();
+  expect(screen.queryByText('Confirm unlock')).toBeNull();
 });

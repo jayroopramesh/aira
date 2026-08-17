@@ -220,7 +220,7 @@ export default function ReviewNote() {
   const noteIndex = Number.isInteger(parsedIndex) && parsedIndex >= 0 && parsedIndex < notes.length ? parsedIndex : 0;
   const draft = useDraftNote(clientId, noteIndex);
   const client = useClient(clientId);
-  const { signNote } = useData();
+  const { signNote, unlockNote } = useData();
 
   // The C4 rail switches notes via router.replace(...&note=i) without remounting, and notes rotate
   // newest-first, so index alone can't identify the reviewed note. Per-note UI state (the tab here,
@@ -239,6 +239,10 @@ export default function ReviewNote() {
   const signed = draft?.status === 'signed';
   const signedAt = (signed ? draft?.signedAt : null) ?? null;
   const signedByName = (signed ? draft?.signedBy : null) ?? clinician;
+  // A draft-status note that still carries a `signedAt` was signed once, then unlocked for edits —
+  // distinct from a note that was never signed, so the trust pill (and the rail) can say plainly that
+  // it needs re-review and re-signing rather than reading as an ordinary first-pass draft.
+  const reopenedFromSigned = !signed && !!draft?.signedAt;
   // Sections register a flush here while they hold an uncommitted edit. Signing runs them FIRST, so a
   // correction typed but not "Done"-ed still lands in the note that gets signed instead of being
   // silently dropped — the clinician pressed Sign off, not Discard. Each flush persists through the
@@ -249,6 +253,13 @@ export default function ReviewNote() {
     if (!clientId) return;
     pendingEdits.current.forEach((flush) => flush());
     signNote(clientId, noteIndex, clinician, formatSignedAt(new Date()));
+  };
+  // Reopens a signed note for editing. The read-only rule stays enforced at the `updateNoteSection`
+  // seam (it refuses a signed note) — this flips `status` back to 'draft' so that seam honestly
+  // permits edits again, rather than any caller bypassing the check.
+  const unlock = () => {
+    if (!clientId) return;
+    unlockNote(clientId, noteIndex);
   };
 
   if (!draft) {
@@ -268,7 +279,9 @@ export default function ReviewNote() {
   // Show the session sidebar when there is more than one retained note to switch between (C4).
   const showSessions = notes.length > 1;
 
-  const rail = <ReviewRail key={noteKey} draft={draft} signed={signed} onSign={sign} clinician={signedByName} signedAt={signedAt} />;
+  const rail = (
+    <ReviewRail key={noteKey} draft={draft} signed={signed} onSign={sign} onUnlock={unlock} clinician={signedByName} signedAt={signedAt} />
+  );
   const sessions =
     client && showSessions ? (
       <SessionList clientId={client.id} clientName={client.name} notes={notes} activeIndex={noteIndex} clinician={clinician} />
@@ -309,8 +322,26 @@ export default function ReviewNote() {
               </Row>
               {/* Honest scope (F9): the DRAFT is device-local; there is no de-identification hop in demo
                   mode, so this must not claim "de-identified". The cloud transcription hop is disclosed
-                  by the demo banner and the audio-trust note below. */}
-              <TrustPill label="Draft stays on this device" icon={<ShieldIcon size={13} color={c.brand} />} />
+                  by the demo banner and the audio-trust note below. The label reflects the note's REAL
+                  state — signed & locked, unlocked for re-review after being signed, or an ordinary
+                  never-signed draft — never the stale "Draft stays on this device" copy once it's
+                  actually signed. */}
+              <TrustPill
+                label={
+                  signed
+                    ? 'Signed & locked · stays on this device'
+                    : reopenedFromSigned
+                      ? 'Unlocked for edits · stays on this device'
+                      : 'Draft stays on this device'
+                }
+                icon={
+                  signed ? (
+                    <CheckIcon size={13} color={c.brand} />
+                  ) : (
+                    <ShieldIcon size={13} color={c.brand} />
+                  )
+                }
+              />
             </Row>
             <AppText variant="small" color="ink3" style={{ marginTop: 8 }}>
               {draft.sourceLine}
@@ -914,12 +945,14 @@ function ReviewRail({
   draft,
   signed,
   onSign,
+  onUnlock,
   clinician,
   signedAt,
 }: {
   draft: DraftNote;
   signed: boolean;
   onSign: () => void;
+  onUnlock: () => void;
   clinician: string;
   signedAt: string | null;
 }) {
@@ -931,7 +964,7 @@ function ReviewRail({
       <ReviewCodes draft={draft} />
       <Divider />
       {signed ? <AudioTrust audioLeftDevice={draft.audioLeftDevice} /> : null}
-      <SignOff signed={signed} onSign={onSign} clinician={clinician} signedAt={signedAt} />
+      <SignOff signed={signed} onSign={onSign} onUnlock={onUnlock} clinician={clinician} signedAt={signedAt} />
     </View>
   );
 }
@@ -1168,7 +1201,49 @@ function AudioTrust({ audioLeftDevice }: { audioLeftDevice?: boolean }) {
   );
 }
 
-function SignOff({ signed, onSign, clinician, signedAt }: { signed: boolean; onSign: () => void; clinician: string; signedAt: string | null }) {
+/**
+ * Unlock is a one-way-door reversal in the other direction: it reopens a signed, read-only note for
+ * editing, so a single stray tap must never do it — the same reasoning that keeps sign-off itself a
+ * two-step confirm (arm, then an explicit confirm; Cancel is the only way back, and the armed state
+ * never times out). The note becomes an unsigned draft on confirm and needs a fresh sign-off before it
+ * is authoritative again.
+ */
+function UnlockNoteButton({ onUnlock }: { onUnlock: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  if (!confirming) {
+    return <Button title="Unlock note" variant="secondary" onPress={() => setConfirming(true)} />;
+  }
+  return (
+    <View>
+      <AppText variant="small" color="ink2">
+        Unlock this note for editing? It will need to be signed again before it’s authoritative.
+      </AppText>
+      <Row gap={10} style={{ marginTop: 10 }}>
+        <Button title="Cancel" variant="secondary" onPress={() => setConfirming(false)} />
+        <Button
+          title="Confirm unlock"
+          variant="secondary"
+          accessibilityLabel="Confirm unlock — the note returns to an unsigned draft"
+          onPress={onUnlock}
+        />
+      </Row>
+    </View>
+  );
+}
+
+function SignOff({
+  signed,
+  onSign,
+  onUnlock,
+  clinician,
+  signedAt,
+}: {
+  signed: boolean;
+  onSign: () => void;
+  onUnlock: () => void;
+  clinician: string;
+  signedAt: string | null;
+}) {
   const theme = useTheme();
   const c = theme.colors;
   if (signed) {
@@ -1181,6 +1256,8 @@ function SignOff({ signed, onSign, clinician, signedAt }: { signed: boolean; onS
             Signed by {clinician}{signedAt ? ` · ${signedAt}` : ''} · read-only
           </AppText>
         </Row>
+        <View style={{ height: 14 }} />
+        <UnlockNoteButton onUnlock={onUnlock} />
       </Card>
     );
   }

@@ -84,20 +84,31 @@ export function AuthField({
   label,
   error,
   hint,
+  required,
   children,
   ...input
-}: TextInputProps & { label: string; error?: boolean; hint?: string; children?: React.ReactNode }) {
+}: TextInputProps & { label: string; error?: boolean; hint?: string; required?: boolean; children?: React.ReactNode }) {
   const [focused, setFocused] = useState(false);
   return (
     <View style={{ width: '100%', gap: 6 }}>
-      <AppText variant="label" tint={INK2} uppercase>
-        {label}
-      </AppText>
+      <Row gap={4}>
+        <AppText variant="label" tint={INK2} uppercase>
+          {label}
+        </AppText>
+        {/* Visual-only cue — the real "required" semantics ride on the input's accessibilityLabel
+            below, since a bare "*" glyph isn't announced meaningfully by screen readers. */}
+        {required ? (
+          <AppText variant="label" tint={INK3} aria-hidden>
+            *
+          </AppText>
+        ) : null}
+      </Row>
       <TextInput
         // Tie the visible label to the field so screen readers announce a name (WCAG 3.3.2/4.1.2) —
         // RN doesn't infer one from the sibling AppText. Placed before the spread so a caller can still
-        // override with its own accessibilityLabel.
-        accessibilityLabel={label}
+        // override with its own accessibilityLabel. Required fields get ", required" appended rather
+        // than relying on the visual star alone (F: accessible semantics, not just a glyph).
+        accessibilityLabel={required ? `${label}, required` : label}
         placeholderTextColor="rgba(234,247,243,0.5)"
         {...input}
         onFocus={(e) => {

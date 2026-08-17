@@ -28,12 +28,12 @@ import { recoveryStrings as R } from '../../strings/recovery';
  */
 export default function WelcomeCreate() {
   const router = useRouter();
-  const [emiratesId, setEmiratesId] = useState('784-1988-1234567-1');
-  const [phone, setPhone] = useState('+971 50 123 4567');
-  const [fullName, setFullName] = useState('Dr. Amina Okafor');
-  const [email, setEmail] = useState('a.okafor@clinic.ae');
-  const [password, setPassword] = useState('seafoam-harbor-42');
-  const [confirm, setConfirm] = useState('seafoam-harbor-42');
+  const [emiratesId, setEmiratesId] = useState('');
+  const [phone, setPhone] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [whyOpen, setWhyOpen] = useState(false);
   const [consent, setConsent] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -69,8 +69,10 @@ export default function WelcomeCreate() {
       <View style={{ width: '100%', gap: 14, marginTop: 26 }}>
         <AuthField
           label={R.emiratesIdLabel}
+          required
           value={emiratesId}
           onChangeText={setEmiratesId}
+          placeholder="784-XXXX-XXXXXXX-X"
           keyboardType="numbers-and-punctuation"
           autoCapitalize="none"
         >
@@ -105,12 +107,27 @@ export default function WelcomeCreate() {
           ) : null}
         </AuthField>
 
-        <AuthField label={R.phoneLabel} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-        <AuthField label={R.fullNameLabel} value={fullName} onChangeText={setFullName} autoCapitalize="words" />
+        <AuthField
+          label={R.phoneLabel}
+          required
+          value={phone}
+          onChangeText={setPhone}
+          placeholder="+971 50 000 0000"
+          keyboardType="phone-pad"
+        />
+        <AuthField
+          label={R.fullNameLabel}
+          required
+          value={fullName}
+          onChangeText={setFullName}
+          placeholder="Enter your full name…"
+          autoCapitalize="words"
+        />
         <AuthField
           label={R.emailLabel}
           value={email}
           onChangeText={setEmail}
+          placeholder="you@clinic.ae"
           keyboardType="email-address"
           autoCapitalize="none"
         />
@@ -169,8 +186,8 @@ export default function WelcomeCreate() {
       <View style={{ height: 4 }} />
       <AppText variant="small" tint={INK2} center style={{ fontSize: 11, opacity: 0.7 }}>
         {hasSupabase
-          ? 'Details are pre-filled for this demo · your account is created in Supabase; clinical data stays on this device.'
-          : 'Details are pre-filled for this demo · demo services aren’t configured, so nothing is sent anywhere.'}
+          ? 'Your account is created in Supabase; clinical data stays on this device.'
+          : 'Demo services aren’t configured, so nothing is sent anywhere.'}
       </AppText>
     </AuthScaffold>
   );

@@ -149,6 +149,7 @@ export default function UnlockScreen() {
           label={R.usernameLabel}
           value={username}
           onChangeText={setUsername}
+          placeholder="you@clinic.ae"
           autoCapitalize="none"
           autoComplete="username"
         />
