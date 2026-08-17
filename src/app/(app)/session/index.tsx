@@ -141,13 +141,30 @@ export default function SessionCapture() {
   // anonymous capture may fall back to the demo clip.
   const hasRealIdentity = !!client || name.trim().length > 0 || emiratesId.trim().length > 0;
 
+  // Double-tap guards for the two async capture transitions. Both hold an `await` open while their
+  // trigger button is still on screen, so a second tap used to re-enter mid-transition: on Record it
+  // opened a SECOND mic stream (the first leaked, never stopped); on Stop it found `recording.current`
+  // already nulled and fell into the no-recorder branch — answering a session someone REALLY recorded
+  // with the demo sample's canned transcript (anonymous) or discarding it into the failed-capture
+  // path (named). Refs, not state: they must flip synchronously, before the second tap's handler runs.
+  // `stopping` stays latched until a new recording phase begins (`beginRecording` resets it) because
+  // the Stop button remains pressable until React unmounts the Recording screen — a reset any earlier
+  // reopens the same no-recorder branch to a third rapid tap.
+  const starting = useRef(false);
+  const stopping = useRef(false);
+
   const beginRecording = async () => {
+    if (starting.current) return;
+    starting.current = true;
     setStreamInterrupted(false);
     try {
       recording.current = await startRecording(() => setStreamInterrupted(true));
     } catch {
       recording.current = null; // mic denied/unsupported — the recording screen offers fallbacks
+    } finally {
+      starting.current = false;
     }
+    stopping.current = false;
     setPhase('recording');
   };
 
@@ -169,6 +186,8 @@ export default function SessionCapture() {
   };
 
   const stopAndAnalyse = async () => {
+    if (stopping.current) return;
+    stopping.current = true;
     if (recording.current) {
       const active = recording.current;
       recording.current = null;
@@ -194,6 +213,9 @@ export default function SessionCapture() {
         await recording.current.stop().catch(() => {});
         recording.current = null;
       }
+      // A picked file is the capture now — latch the stop guard so a straggling Stop tap can't
+      // find the recorder gone and overwrite this capture with the demo sample.
+      stopping.current = true;
       goAnalyse(ref);
     }
   };

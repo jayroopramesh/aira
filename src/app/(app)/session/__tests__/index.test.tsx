@@ -39,29 +39,42 @@ jest.mock('../../../../services/cloudSession', () => ({
 const mockPause = jest.fn();
 const mockResume = jest.fn();
 const mockGetLevels = jest.fn((bars: number) => new Array(bars).fill(0.6));
-const mockStop = jest.fn(() => Promise.resolve({ uri: 'blob:https://app.example/test', durationMs: 1000 }));
 let mockSupportsPause = true;
 // Captured so a test can simulate the recorder ending on its own (stream loss), the same callback
 // `audioCapture.ts`'s real `startRecording` invokes from its `onstop` handler.
 let capturedOnInterrupted: (() => void) | undefined;
+// `stop()` resolves immediately by default; a test that needs the real double-tap window (a stop
+// still in flight when the second tap lands) flips `mockStopDeferred` and resolves by hand.
+let mockStopDeferred = false;
+let mockStopResolve: ((ref: { uri: string; durationMs: number }) => void) | undefined;
+const mockStop = jest.fn(() =>
+  mockStopDeferred
+    ? new Promise<{ uri: string; durationMs: number }>((resolve) => {
+        mockStopResolve = resolve;
+      })
+    : Promise.resolve({ uri: 'blob:https://app.example/test', durationMs: 1000 }),
+);
+const mockStartRecording = jest.fn((onInterrupted?: () => void) => {
+  capturedOnInterrupted = onInterrupted;
+  return Promise.resolve({
+    stop: mockStop,
+    pause: mockPause,
+    resume: mockResume,
+    get supportsPause() {
+      return mockSupportsPause;
+    },
+    getLevels: mockGetLevels,
+  });
+});
 
 jest.mock('../../../../services/audioCapture', () => ({
   isRecordingSupported: () => true,
   isUploadSupported: () => false,
   pickAudioFile: () => Promise.resolve(null),
   failedCaptureRef: (durationMs = 0) => ({ uri: 'capture://unavailable', durationMs }),
-  startRecording: (onInterrupted?: () => void) => {
-    capturedOnInterrupted = onInterrupted;
-    return Promise.resolve({
-      stop: mockStop,
-      pause: mockPause,
-      resume: mockResume,
-      get supportsPause() {
-        return mockSupportsPause;
-      },
-      getLevels: mockGetLevels,
-    });
-  },
+  // Lazy indirection on purpose: the hoisted factory runs before the const above initialises, so a
+  // direct `startRecording: mockStartRecording` captures undefined.
+  startRecording: (onInterrupted?: () => void) => mockStartRecording(onInterrupted),
 }));
 
 // The live-mode branch of Waveform (real levels vs the ambient fallback) is proved directly by its
@@ -96,11 +109,14 @@ async function goToRecording() {
 
 beforeEach(() => {
   mockSupportsPause = true;
+  mockStopDeferred = false;
+  mockStopResolve = undefined;
   mockPause.mockClear();
   mockResume.mockClear();
   mockGetLevels.mockClear();
   mockStop.mockClear();
   mockSaveSessionNote.mockClear();
+  mockStartRecording.mockClear();
 });
 
 // An AnnoMI-style dictated recap — ≥12 varied words so the F11 quality guard lets it draft.
@@ -234,4 +250,36 @@ it('a capture with no comments stamps none onto the note', async () => {
   await goToRecording();
   const note = await stopTypeAndDraft();
   expect(note.recordingComments).toBeUndefined();
+});
+
+// ---- Double-tap guards (2026-08-18) — both capture transitions hold an `await` open while their
+// button is still on screen, so an impatient second tap used to re-enter mid-transition. On Stop
+// that meant the no-recorder branch answered a REALLY-recorded anonymous session with the demo
+// sample's canned transcript ("Denies passive ideation on screening today" is a safety finding
+// nobody made); on Record it opened a second mic stream and leaked the first.
+
+it('a double-tap on Stop & transcribe never swaps the real recording for the demo sample', async () => {
+  mockStopDeferred = true;
+  await goToRecording();
+  fireEvent.press(screen.getByText('Stop & transcribe'));
+  fireEvent.press(screen.getByText('Stop & transcribe'));
+  // The recording phase must hold until the real stop() resolves — if the second tap had taken the
+  // no-recorder branch, the screen would already be analysing the mock:// sample clip.
+  expect(screen.getByText('Stop & transcribe')).toBeTruthy();
+  expect(mockStop).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    mockStopResolve!({ uri: 'blob:https://app.example/test', durationMs: 1000 });
+  });
+  // The REAL capture finalised: this build refuses to transcribe it (typed recovery), and the
+  // canned sample transcript is nowhere on screen.
+  await waitFor(() => expect(screen.getByPlaceholderText('Transcript will appear here.')).toBeTruthy());
+  expect(screen.queryByDisplayValue(/steadier fortnight/)).toBeNull();
+});
+
+it('a double-tap on Tap to start capture opens one recorder, not two', async () => {
+  renderScreen();
+  fireEvent.press(screen.getByLabelText('Tap to start capture'));
+  fireEvent.press(screen.getByLabelText('Tap to start capture'));
+  await waitFor(() => expect(screen.getByText('Pause')).toBeTruthy());
+  expect(mockStartRecording).toHaveBeenCalledTimes(1);
 });
