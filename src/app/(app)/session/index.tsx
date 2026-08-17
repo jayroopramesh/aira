@@ -124,6 +124,13 @@ export default function SessionCapture() {
 
   const displayName = client?.name ?? (name.trim() || 'this session');
 
+  // WHOSE session is this? A linked client, a typed name, or a typed Emirates ID makes it a real
+  // person's session — and the fabrication line says the canned sample may never analyse under a
+  // real identity, because its invented transcript, working code and "47-min voice note" provenance
+  // would be saved into that person's record as an ordinary (non-sample) note. Only a fully
+  // anonymous capture may fall back to the demo clip.
+  const hasRealIdentity = !!client || name.trim().length > 0 || emiratesId.trim().length > 0;
+
   const beginRecording = async () => {
     try {
       recording.current = await startRecording();
@@ -147,9 +154,13 @@ export default function SessionCapture() {
       const ref = await active.stop().catch(() => failedCaptureRef());
       goAnalyse(ref);
     } else {
-      // No recorder ever started — the Recording screen said so, and nothing of the session exists
-      // to misrepresent, so the demo sample is the honest thing to analyse here.
-      goAnalyse(mockCaptureRef());
+      // No recorder ever started — the Recording screen said so. With no identity attached there is
+      // nobody to misattribute the demo clip to, so the sample is the honest thing to analyse. But a
+      // capture that names a real client must NEVER be answered with the sample's canned words
+      // ("Denies passive ideation on screening today" is a safety finding nobody made about them) —
+      // it takes the failed-capture path instead, which lands in the type/paste recovery the
+      // pre-capture screen promised.
+      goAnalyse(hasRealIdentity ? failedCaptureRef() : mockCaptureRef());
     }
   };
 
@@ -221,6 +232,7 @@ export default function SessionCapture() {
           onRecord={beginRecording}
           onUpload={onUpload}
           onUseSample={() => goAnalyse(mockCaptureRef())}
+          sampleBlocked={hasRealIdentity}
           returnTo={returnTo}
           cloudReady={cloudReady}
           appendTarget={appendMode ? appendTarget : undefined}
@@ -232,6 +244,7 @@ export default function SessionCapture() {
           sessionNumber={client?.sessionNumber ?? 1}
           live={!!recording.current}
           activeRecording={recording.current ?? undefined}
+          sampleOnStop={!hasRealIdentity}
           onStop={stopAndAnalyse}
           onUpload={onUpload}
           cloudReady={cloudReady}
@@ -302,6 +315,7 @@ function PreCapture({
   onRecord,
   onUpload,
   onUseSample,
+  sampleBlocked,
   returnTo,
   cloudReady,
   appendTarget,
@@ -316,6 +330,9 @@ function PreCapture({
   onRecord: () => void;
   onUpload: () => void;
   onUseSample: () => void;
+  /** A real identity (linked client or typed name/ID) is attached, so the fictional sample must not
+   *  run — tapping it explains instead of filing invented content under that person. */
+  sampleBlocked: boolean;
   returnTo: string;
   cloudReady: boolean | null;
   /** Set only in "Continue recording" mode — the note this capture will be appended to, not saved fresh. */
@@ -325,6 +342,7 @@ function PreCapture({
   const c = theme.colors;
   const canRecord = isRecordingSupported();
   const canUpload = isUploadSupported();
+  const [sampleRefused, setSampleRefused] = useState(false);
   // Say BEFORE the mic opens that the cloud isn't reachable, so the choice is informed rather than
   // discovered after a session has been recorded. Never a gate — recording stays available either way.
   const cloudSignedOut = hasGroq && cloudReady === false;
@@ -501,12 +519,24 @@ function PreCapture({
             </Row>
           </Pressable>
         ) : null}
-        <Pressable onPress={onUseSample} accessibilityRole="button" style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+        <Pressable
+          onPress={() => (sampleBlocked ? setSampleRefused(true) : onUseSample())}
+          accessibilityRole="button"
+          style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+        >
           <AppText variant="bodyStrong" color="ink3" style={{ fontSize: 13 }}>
             Use sample audio
           </AppText>
         </Pressable>
       </Row>
+      {sampleRefused && sampleBlocked ? (
+        <AppText variant="small" tint={c.caution} center style={{ marginTop: 10, maxWidth: 420, fontSize: 11.5, lineHeight: 16 }}>
+          The sample is a fictional walkthrough, so it can’t be filed under a real client’s record.{' '}
+          {client
+            ? `Start a new session without ${client.name} attached to see it — or capture their real session here.`
+            : 'Clear the client name and Emirates ID above to see it — or capture their real session here.'}
+        </AppText>
+      ) : null}
 
       <View style={{ height: 16 }} />
       <TrustPill label={hasGroq ? 'Draft & transcript stay on this device' : 'On-device · nothing uploaded'} icon={<ShieldIcon size={13} color={c.brand} />} />
@@ -567,6 +597,7 @@ function Recording({
   sessionNumber,
   live,
   activeRecording,
+  sampleOnStop,
   onStop,
   onUpload,
   cloudReady,
@@ -578,6 +609,9 @@ function Recording({
   /** The recorder itself — read for pause/resume + real waveform levels only; `live` alone still
    *  decides whether a recorder exists at all. */
   activeRecording?: ActiveRecording;
+  /** With no live recorder, whether Stop analyses the demo sample (anonymous capture) or lands in
+   *  the type/paste recovery (a real client is attached, so the sample must not run under them). */
+  sampleOnStop: boolean;
   onStop: () => void;
   onUpload: () => void;
   cloudReady: boolean | null;
@@ -588,8 +622,9 @@ function Recording({
   // What can this build actually do when Stop is pressed? Promising automatic transcription that
   // will then refuse is a broken promise made at the worst moment — while the counselor is still
   // deciding whether to keep recording. Without a live recorder the sample clip is what gets
-  // analysed, and the on-device stub really does transcribe that.
-  const willTranscribe = !live || (hasGroq && cloudReady !== false);
+  // analysed (and the on-device stub really does transcribe that) — but only for an anonymous
+  // capture; with a real client attached, stopping goes to the type/paste recovery instead.
+  const willTranscribe = live ? hasGroq && cloudReady !== false : sampleOnStop;
   const [seconds, setSeconds] = useState(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   // A paused-then-resumed recording is still ONE segment (MediaRecorder keeps writing into the same
@@ -664,8 +699,9 @@ function Recording({
               <AlertTriangleIcon size={15} color={c.caution} />
             </View>
             <AppText variant="small" tint={c.caution} style={{ flex: 1, lineHeight: 17 }}>
-              Live microphone capture isn’t available here. Upload an audio clip, or stop to transcribe a sample
-              session so you can see the draft.
+              {sampleOnStop
+                ? 'Live microphone capture isn’t available here. Upload an audio clip, or stop to transcribe a sample session so you can see the draft.'
+                : `Live microphone capture isn’t available here, and the fictional sample won’t run under ${displayName}’s record. Upload an audio clip, or stop and type or paste the session transcript.`}
             </AppText>
           </Row>
         </Card>
