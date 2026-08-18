@@ -363,6 +363,24 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   a `stopRequested` flag) — i.e. the mic stream ended on its own (unplugged, permission revoked, device
   switch). The Recording screen surfaces a distinct caution banner for this case rather than silently
   finalising the partial clip like an ordinary Stop tap.
+- **Recording lifecycle is announced to screen readers** (round 5, 2026-08-18): the capture screen's
+  phase swaps are silent DOM replacements and the waveform/timer are visual-only, so every lifecycle
+  transition additionally speaks through ONE `SrStatus` live region
+  (`src/components/SrStatus.tsx` — visually-hidden, `aria-live="polite"` on web/Android,
+  `announceForAccessibility` on iOS only, never both) kept MOUNTED for the whole screen in
+  `session/index.tsx`: started, mic-couldn't-open, stream-interrupted, stopped→analysing, discarded,
+  clip-selected. A live region that mounts together with the state it describes announces nothing —
+  that's why the region is persistent and message-driven, not per-phase. The Recording status pill
+  (`recording-state-pill`) is itself `aria-live="polite"` so pause/resume announce via its text
+  change (the coloured dot alone is a colour-only signal). Reuse `SrStatus` for any future silent
+  state swap a screen-reader user must know about; keep announcement wording distinct from visible
+  banner copy so `getByText` queries stay unambiguous. Proved by the "screen-reader recording
+  announcements" block in `session/__tests__/index.test.tsx` and re-verified in the compiled export
+  (state-driven text, so React Compiler-safe). KNOWN FOLLOW-UPS (James-class): `AuthLink`
+  (`components/auth.tsx`) and several row Pressables (today's appointment rows, review's
+  Note/Transcript tab strip, unlock's reveal-recovery control) render as focusable role-less DIVs —
+  operable by keyboard but invisible to screen-reader button/link navigation; and activating a
+  control that unmounts (e.g. start capture) drops focus to `<body>`.
 - **Name vs. slug**: the user-visible product name is **Airava** (`app.json` `name`, the TopBar
   wordmark, onboarding/login lockups, the web `<title>`, and `public/manifest.json`). The shorthand
   **aira** stays for everything non-user-facing — repo, npm package, the `aira` `slug`/`scheme`, the

@@ -283,3 +283,57 @@ it('a double-tap on Tap to start capture opens one recorder, not two', async () 
   await waitFor(() => expect(screen.getByText('Pause')).toBeTruthy());
   expect(mockStartRecording).toHaveBeenCalledTimes(1);
 });
+
+// ---- Screen-reader recording announcements (round 5, 2026-08-18) — the capture phases swap content
+// silently and the waveform/timer are visual-only, so without a live region a blind clinician has no
+// way to know whether the microphone is live in a real therapy session. One SrStatus live region
+// stays mounted for the whole screen and every lifecycle transition speaks through it.
+
+describe('screen-reader recording announcements', () => {
+  it('mounts a polite live region before any transition (a region mounted with its content announces nothing)', () => {
+    renderScreen();
+    expect(screen.getByTestId('sr-status').props['aria-live']).toBe('polite');
+  });
+
+  it('announces that recording started once the recorder is actually live', async () => {
+    await goToRecording();
+    expect(screen.getByText(/Recording started/)).toBeTruthy();
+  });
+
+  it('announces when the microphone cannot be opened instead of silently showing the fallback screen', async () => {
+    mockStartRecording.mockImplementationOnce(() => Promise.reject(new Error('denied')));
+    renderScreen();
+    fireEvent.press(screen.getByLabelText('Tap to start capture'));
+    await waitFor(() => expect(screen.getByText(/microphone couldn’t be opened/)).toBeTruthy());
+  });
+
+  it('announces stop → analysing', async () => {
+    await goToRecording();
+    fireEvent.press(screen.getByText('Stop & transcribe'));
+    await waitFor(() => expect(screen.getByText('Recording stopped. Analysing the audio now.')).toBeTruthy());
+  });
+
+  it('announces a discarded recording', async () => {
+    await goToRecording();
+    fireEvent.press(screen.getByLabelText('Cancel recording and discard it'));
+    await waitFor(() => {
+      fireEvent.press(screen.getByText('Yes, discard'));
+    });
+    await waitFor(() => expect(screen.getByText(/Recording discarded/)).toBeTruthy());
+  });
+
+  it('announces a stream interruption through the live region, not just the visual banner', async () => {
+    await goToRecording();
+    act(() => {
+      capturedOnInterrupted?.();
+    });
+    await waitFor(() => expect(screen.getByText(/microphone stopped by itself/)).toBeTruthy());
+  });
+
+  it('the recording state pill is itself a live region, so pause/resume announce through its text change', async () => {
+    await goToRecording();
+    expect(screen.getByTestId('recording-state-pill').props['aria-live']).toBe('polite');
+    fireEvent.press(screen.getByText('Pause'));
+    await waitFor(() => expect(screen.getAllByText(/Paused · Session/).length).toBeGreaterThan(0));
+  });
+});
