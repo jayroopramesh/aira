@@ -14,6 +14,7 @@ import { ThemeProvider } from '../../../theme/ThemeProvider';
 import AppLayout from '../_layout';
 
 const mockNavigate = jest.fn();
+const mockRedirects: unknown[] = [];
 
 jest.mock('expo-router', () => {
   const ReactActual = require('react');
@@ -38,9 +39,12 @@ jest.mock('expo-router', () => {
   };
   Tabs.Screen = () => null;
   return {
-    Redirect: () => null,
+    Redirect: (props: { href: unknown }) => {
+      mockRedirects.push(props.href);
+      return null;
+    },
     Tabs,
-    usePathname: () => '/today',
+    usePathname: () => '/today/amara',
     useRouter: () => ({ navigate: mockNavigate, push: jest.fn() }),
     useGlobalSearchParams: () => ({}),
   };
@@ -50,8 +54,9 @@ jest.mock('react-native-safe-area-context', () =>
   require('react-native-safe-area-context/jest/mock').default,
 );
 
+let mockUnlocked = true;
 jest.mock('../../../services/storage', () => ({
-  vaultStorage: { isUnlocked: () => true },
+  vaultStorage: { isUnlocked: () => mockUnlocked },
 }));
 
 jest.mock('../../../data/DataProvider', () => {
@@ -68,6 +73,8 @@ jest.mock('../../../components/Escalate', () => ({
 
 beforeEach(() => {
   mockNavigate.mockClear();
+  mockRedirects.length = 0;
+  mockUnlocked = true;
 });
 
 it('keeps the bottom bar, same items, and navigates on tap', () => {
@@ -85,4 +92,24 @@ it('keeps the bottom bar, same items, and navigates on tap', () => {
 
   fireEvent.press(screen.getByText('Session'));
   expect(mockNavigate).toHaveBeenCalledWith('session');
+});
+
+it('a locked vault bounces to unlock CARRYING the interrupted location as next (round 5, Yuki)', () => {
+  mockUnlocked = false;
+  render(
+    <SafeAreaProvider initialMetrics={{ frame: { x: 0, y: 0, width: 390, height: 844 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } }}>
+      <ThemeProvider>
+        <AppLayout />
+      </ThemeProvider>
+    </SafeAreaProvider>,
+  );
+
+  // The caseload chrome must not render while locked.
+  expect(screen.queryByText('Get ready')).toBeNull();
+  expect(mockRedirects).toHaveLength(1);
+  const href = mockRedirects[0] as { pathname: string; params: { next: string } };
+  expect(href.pathname).toBe('/unlock');
+  // safeNext only honours /(app)/-prefixed routes; the guard must hand it one, preserving the page
+  // the clinician was interrupted on rather than discarding it.
+  expect(href.params.next).toBe('/(app)/today/amara');
 });
