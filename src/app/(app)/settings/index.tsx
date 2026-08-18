@@ -169,11 +169,11 @@ export default function Settings() {
             <CloudIcon size={17} color={c.brand} />
           </View>
           <View style={{ flex: 1 }}>
-            <AppText variant="bodyStrong">Demo services</AppText>
+            <AppText variant="bodyStrong">Pilot services</AppText>
             <AppText variant="small" color="ink3" style={{ marginTop: 2, lineHeight: 17 }}>
               {demoServicesConfigured
-                ? 'Cloud services are configured for this build. Transcription and summarization send session text to the cloud; accounts run against Supabase.'
-                : 'No keys configured. Accounts, transcription and summarization run on on-device mocks.'}
+                ? 'Off-device services are configured for this build. Transcription and summarization send session text off this device; accounts are created off this device too.'
+                : 'Not configured. Accounts, transcription and summarization run on this device only.'}
             </AppText>
           </View>
         </Row>

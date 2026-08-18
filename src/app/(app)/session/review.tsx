@@ -980,14 +980,14 @@ function TranscriptPane({
         {(transcriptMixedProvenance
           ? 'This transcript combines more than one recording, added at different times, and they weren’t all produced the same way. Each "Added recording" line below says whether that part was transcribed in the cloud or typed by hand.'
           : transcriptFromCloud === true
-          ? 'The transcript of this session, kept on this device. The audio was sent to the cloud (Groq) to transcribe, then deleted. Only this text remains. There is no on-device de-identification hop in demo mode.'
+          ? 'The transcript of this session, kept on this device. The audio was sent off this device to transcribe, then deleted. Only this text remains. There is no on-device de-identification step in pilot mode.'
           : transcriptFromCloud === false && audioLeftDevice === true
-            ? 'This text was entered by the clinician, not produced by transcription. The audio was sent to the cloud (Groq) to transcribe, but no transcript came back. The recording has since been deleted, so this typed text is the only record of the session.' +
+            ? 'This text was entered by the clinician, not produced by transcription. The audio was sent off this device to transcribe, but no transcript came back. The recording has since been deleted, so this typed text is the only record of the session.' +
               (draftedInCloud === true
-                ? ' The note was drafted in the cloud, so this text was sent to Groq to draft from (see the demo banner).'
+                ? ' The note was drafted off this device, so this text was sent off this device to draft from (see the pilot notice).'
                 : '')
             : transcriptFromCloud === false && draftedInCloud === true
-              ? 'The transcript of this session, produced and kept on this device. The audio was never sent for transcription. The note was drafted in the cloud, so this text was sent to Groq to draft from (see the demo banner). There is no on-device de-identification hop in demo mode.'
+              ? 'The transcript of this session, produced and kept on this device. The audio was never sent for transcription. The note was drafted off this device, so this text was sent off this device to draft from (see the pilot notice). There is no on-device de-identification step in pilot mode.'
               : transcriptFromCloud === false && draftedInCloud === false
                 ? 'The transcript of this session, produced and kept on this device. Nothing was sent anywhere, and no de-identification step runs.'
                 : 'The transcript of this session, kept on this device. This note doesn’t record where it was transcribed or drafted, so nothing is claimed either way.') +
@@ -1401,10 +1401,10 @@ function AudioTrust({ audioLeftDevice, clientId, noteIndex }: { audioLeftDevice?
             not claim it "never left this device". */}
         {kept
           ? audioWentToCloud
-            ? 'You chose to keep this recording. A copy was sent to the cloud (Groq) to transcribe; the copy you kept stays on this device and makes replay-with-notes possible for this session.'
+            ? 'You chose to keep this recording. A copy was sent off this device to transcribe; the copy you kept stays on this device and makes replay-with-notes possible for this session.'
             : 'You chose to keep this recording. It stays on this device and never leaves it. Keeping the audio is what makes replay-with-notes possible for this session.'
           : audioWentToCloud
-            ? 'This recording was sent to the cloud (Groq) to transcribe, then deleted. Deletion is the default after every session. Only the draft you reviewed remains.'
+            ? 'This recording was sent off this device to transcribe, then deleted. Deletion is the default after every session. Only the draft you reviewed remains.'
             : 'The recording never left this device, and it’s now gone. Deletion is the default after every session. Only the draft you reviewed remains.'}
       </AppText>
 

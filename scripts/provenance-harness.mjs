@@ -219,7 +219,7 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
   check('plan is left for the clinician', /review required/i.test(body('plan')), body('plan'));
   check('subjective IS derived from the clinician\'s own words', body('subjective').includes('steadier fortnight'), body('subjective'));
   check('the transcript risk scan still runs', !!real.riskLevel, String(real.riskLevel));
-  check('the note says a keyword stub wrote it', /keyword stub/.test(real.sourceLine), real.sourceLine);
+  check('the note says simple keyword matching wrote it', /keyword matching/.test(real.sourceLine), real.sourceLine);
 
   // A caller that forgets the flag must get the safe mode, not the canned one.
   const unflagged = await mock.summarize({ transcript: REAL_TRANSCRIPT });
@@ -228,7 +228,7 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
   const sample = await mock.summarize({ transcript: REAL_TRANSCRIPT, sampleCapture: true });
   check('the sample walkthrough still fills a complete note', sample.reviewCodes.length === 1, JSON.stringify(sample.reviewCodes));
   check('the sample walkthrough still fills the prescriptions rail', sample.prescriptions.length === 3, String(sample.prescriptions.length));
-  check('the sample walkthrough is not labelled a keyword stub', !/keyword stub/.test(sample.sourceLine), sample.sourceLine);
+  check('the sample walkthrough is not labelled keyword matching', !/keyword matching/.test(sample.sourceLine), sample.sourceLine);
 }
 
 // --- 3. sourceLine across every reachable combination of the three facts --------------------------
@@ -284,12 +284,12 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
   const uploadedThenFailed = await draft({ audioLeftDevice: true, transcriptFromCloud: false });
   check(
     'upload-then-failure still discloses the audio hop',
-    /audio sent to the cloud/i.test(uploadedThenFailed.sourceLine),
+    /audio sent off this device/i.test(uploadedThenFailed.sourceLine),
     uploadedThenFailed.sourceLine,
   );
   check(
     'upload-then-failure does NOT claim machine transcription',
-    !/transcribed in demo mode \(cloud\)/i.test(uploadedThenFailed.sourceLine),
+    !/transcribed off this device/i.test(uploadedThenFailed.sourceLine),
     uploadedThenFailed.sourceLine,
   );
   check(
@@ -342,8 +342,8 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
   const cloud = await live.summarize({ transcript: REAL_TRANSCRIPT, audioLeftDevice: true, transcriptFromCloud: true });
   check('a token-backed draft is stamped drafted-in-cloud', cloud.draftedInCloud === true);
   check('cloud transcription + cloud draft collapses to one clause',
-    /transcribed and drafted in demo mode \(cloud\)/i.test(cloud.sourceLine), cloud.sourceLine);
-  check('a cloud draft is never labelled a keyword stub', !/keyword stub/.test(cloud.sourceLine), cloud.sourceLine);
+    /transcribed and drafted off this device/i.test(cloud.sourceLine), cloud.sourceLine);
+  check('a cloud draft is never labelled keyword matching', !/keyword matching/.test(cloud.sourceLine), cloud.sourceLine);
 
   const localAudioCloudDraft = await live.summarize({
     transcript: REAL_TRANSCRIPT,
@@ -352,13 +352,13 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
     transcribedOnDevice: true,
   });
   check('sample audio + cloud draft reads as two separate hops',
-    /transcribed on this device, drafted in demo mode \(cloud\)/i.test(localAudioCloudDraft.sourceLine),
+    /transcribed on this device, drafted off this device/i.test(localAudioCloudDraft.sourceLine),
     localAudioCloudDraft.sourceLine);
 
   // The same cloud draft over TYPED text names the typing, not a transcription that never ran.
   const typedCloudDraft = await live.summarize({ transcript: REAL_TRANSCRIPT, audioLeftDevice: false, transcriptFromCloud: false });
   check('typed text + cloud draft names the hand-entry and the cloud hop',
-    /transcript entered by hand, drafted in demo mode \(cloud\)/i.test(typedCloudDraft.sourceLine),
+    /transcript entered by hand, drafted off this device/i.test(typedCloudDraft.sourceLine),
     typedCloudDraft.sourceLine);
 
   globalThis.fetch = originalFetch;

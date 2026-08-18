@@ -231,8 +231,8 @@ export default function WelcomeCreate() {
       <View style={{ height: 4 }} />
       <AppText variant="small" tint={INK2} center style={{ fontSize: 11, opacity: 0.7 }}>
         {hasSupabase
-          ? 'Your account is created in Supabase; clinical data stays on this device.'
-          : 'Demo services aren’t configured, so nothing is sent anywhere.'}
+          ? 'Your account is created securely off this device; clinical data stays on this device.'
+          : 'Off-device services aren’t configured, so nothing is sent anywhere.'}
       </AppText>
     </AuthScaffold>
   );
