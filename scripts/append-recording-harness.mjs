@@ -89,7 +89,7 @@ const BASE_NOTE = {
   check('transcriptFromCloud never OVERCLAIMS the whole transcript once mixed', mixed.transcriptFromCloud === false, String(mixed.transcriptFromCloud));
   check(
     "the addition's own true provenance is still disclosed inline, in the divider",
-    mixed.transcript.includes('typed by the clinician'),
+    mixed.transcript.includes('typed by you'),
     mixed.transcript,
   );
 
@@ -99,7 +99,7 @@ const BASE_NOTE = {
   check('and does not claim the whole thing is cloud-transcribed', alsoMixed.transcriptFromCloud === false, String(alsoMixed.transcriptFromCloud));
   check(
     "the cloud addition's own provenance is disclosed inline",
-    alsoMixed.transcript.includes('transcribed in the cloud'),
+    alsoMixed.transcript.includes('transcribed off this device'),
     alsoMixed.transcript,
   );
 
@@ -108,6 +108,39 @@ const BASE_NOTE = {
   const agreeing = applyRecordingAppend(cloudOriginal, { transcript: 'Also cloud-transcribed.', audioLeftDevice: true, transcriptFromCloud: true }, '17 Aug 14:32');
   check('agreeing provenance sets no mixed flag', !agreeing.transcriptMixedProvenance, String(agreeing.transcriptMixedProvenance));
   check('and keeps the simple true claim', agreeing.transcriptFromCloud === true, String(agreeing.transcriptFromCloud));
+}
+
+// --- 4b. An edited machine-transcribed segment says so in its own divider (round 5, Marcus Chen):
+//         "transcribed off this device" alone must not stand over text the clinician changed ---------
+{
+  const cloudOriginal = { ...BASE_NOTE, transcriptFromCloud: true };
+  const edited = applyRecordingAppend(
+    cloudOriginal,
+    { transcript: 'Cloud text the clinician then corrected.', audioLeftDevice: true, transcriptFromCloud: true, transcriptEdited: true },
+    '17 Aug 14:32',
+  );
+  check(
+    "the edited segment's divider names the edit",
+    edited.transcript.includes('transcribed off this device, then edited by you'),
+    edited.transcript,
+  );
+  check('the note-level machine claim is qualified once any segment was edited', edited.transcriptEdited === true, String(edited.transcriptEdited));
+  check('agreement on cloud origin still avoids the mixed flag', !edited.transcriptMixedProvenance, String(edited.transcriptMixedProvenance));
+
+  const uneditedAfter = applyRecordingAppend(
+    { ...cloudOriginal, transcriptEdited: true },
+    { transcript: 'A later untouched cloud segment.', audioLeftDevice: true, transcriptFromCloud: true },
+    '17 Aug 14:32',
+  );
+  check('the qualifier is up-only — a later unedited segment never clears it', uneditedAfter.transcriptEdited === true, String(uneditedAfter.transcriptEdited));
+
+  const typedEdited = applyRecordingAppend(
+    cloudOriginal,
+    { transcript: 'Typed by hand; the flag is meaningless here.', audioLeftDevice: false, transcriptFromCloud: false, transcriptEdited: true },
+    '17 Aug 14:32',
+  );
+  check('a typed segment ignores a stray edited flag (nothing machine-made to have edited)', typedEdited.transcriptEdited === undefined, String(typedEdited.transcriptEdited));
+  check('…and its divider still says typed by you', typedEdited.transcript.includes('typed by you'), typedEdited.transcript);
 }
 
 // --- 5. Auxiliary notes concatenate — an earlier speaker-2 removal is never silently undone ---------

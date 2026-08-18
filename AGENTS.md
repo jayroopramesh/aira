@@ -166,7 +166,16 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   text typed after a failed upload is never presented as machine-transcribed), and `draftedInCloud`
   (stamped by `buildDraft` from the summarizer that actually ran). Collapsing the first two back into
   one boolean is how a note came to claim whisper produced the clinician's own typing. A 200 carrying
-  `{text: ""}` is not a transcript either, so `transcriptFromCloud` needs non-empty text. None derive
+  `{text: ""}` is not a transcript either, so `transcriptFromCloud` needs non-empty text. The machine
+  claims carry a qualifier, `transcriptEdited` (round 5, 2026-08-18): the capture screen compares the
+  drafted text against the transcriber's EXACT output (`machineTranscript` ref), and any divergence —
+  one fixed mishear, the speaker-removal rewrite, or a wholesale replacement typed into the editable
+  transcript box — makes the source line say "then edited by you" and the Transcript tab caption stop
+  presenting the text as verbatim machine output. Without it, the editable box let 1,100 characters of
+  hand-typed replacement ship as "transcribed and drafted off this device". Up-only across
+  Continue-recording appends (an edited segment's divider says so; a later clean segment never clears
+  the note-level qualifier), and ignored over hand-typed text, where there is no machine output to
+  have edited. None derive
   from `hasGroq`, so a note can never claim — or deny — a hop that did not match reality. `buildDraft`
   owns all three; the `sourceLine` expression they feed is proved by `scripts/provenance-harness.mjs`,
   which exists because it was re-derived wrongly in three successive fix rounds. `buildDraft` also

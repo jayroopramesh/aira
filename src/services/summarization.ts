@@ -46,6 +46,16 @@ export type SummaryInput = {
    */
   transcribedOnDevice?: boolean;
   /**
+   * Did the clinician CHANGE the machine transcriber's output before drafting? Any divergence counts —
+   * one fixed mishear or a wholesale replacement typed over it. Only meaningful alongside
+   * `transcriptFromCloud`/`transcribedOnDevice`; over hand-typed text there is no machine output to
+   * have edited, and `buildDraft` ignores the flag rather than inventing an edit claim. Absent →
+   * treated as unedited, which is only safe because the capture screen computes it by comparing the
+   * drafted text against the transcriber's exact output — a caller that forgets it keeps the plain
+   * machine-transcription claim, which is the pre-existing behaviour, not a new fabrication.
+   */
+  transcriptEdited?: boolean;
+  /**
    * Is this the built-in `mock://` demo clip rather than a session with a real person in it? Only the
    * sample may receive the on-device stub's canned walkthrough content; see `MockSummarizationService`.
    * Absent → treated as a real session, so the safe mode is the default.
@@ -483,20 +493,26 @@ function buildDraft(
   // the clinician's own typing, and the note must say that instead of asserting a hop that never
   // happened ("Transcribed on this device" over hand-typed text is the false claim this replaces).
   const deviceTranscript = !cloudTranscript && !audioLeft && input.transcribedOnDevice === true;
+  // A machine transcript the clinician then CHANGED must say so — "transcribed off this device" alone
+  // over edited text presents the clinician's own words as machine output. Only a real machine
+  // transcript can have been edited; the flag is ignored for hand-typed text.
+  const edited = (cloudTranscript || deviceTranscript) && input.transcriptEdited === true;
+  const editedSuffix = edited ? ', then edited by you' : '';
   const where = (cloud: boolean) => (cloud ? 'off this device' : 'on this device');
 
   const transcriptHop = cloudTranscript
-    ? 'transcribed off this device'
+    ? `transcribed off this device${editedSuffix}`
     : audioLeft
       ? 'audio sent off this device to transcribe but no transcript came back, so the text was entered by hand'
       : deviceTranscript
-        ? 'transcribed on this device'
+        ? `transcribed on this device${editedSuffix}`
         : 'transcript entered by hand';
   const draftHop = keywordStub
     ? 'drafted on this device using simple keyword matching, not full clinical drafting — assessment, plan and codes are left for you'
     : `drafted ${where(draftedInCloud)}`;
   const hops =
     !keywordStub &&
+    !edited &&
     audioLeft === cloudTranscript &&
     cloudTranscript === draftedInCloud &&
     (cloudTranscript || deviceTranscript)
@@ -518,6 +534,7 @@ function buildDraft(
     auxiliaryNotes: input.auxiliaryNotes?.trim() || undefined,
     audioLeftDevice: audioLeft,
     transcriptFromCloud: cloudTranscript,
+    transcriptEdited: edited || undefined,
     draftedInCloud,
     riskLevel: toRiskLevel(d.riskSafety?.level),
     sections,

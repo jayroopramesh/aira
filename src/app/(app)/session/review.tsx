@@ -411,6 +411,7 @@ export default function ReviewNote() {
                 recordingComments={draft.recordingComments}
                 audioLeftDevice={draft.audioLeftDevice}
                 transcriptFromCloud={draft.transcriptFromCloud}
+                transcriptEdited={draft.transcriptEdited}
                 transcriptMixedProvenance={draft.transcriptMixedProvenance}
                 draftedInCloud={draft.draftedInCloud}
                 signed={signed}
@@ -905,6 +906,7 @@ function TranscriptPane({
   recordingComments,
   audioLeftDevice,
   transcriptFromCloud,
+  transcriptEdited,
   transcriptMixedProvenance,
   draftedInCloud,
   signed,
@@ -921,6 +923,10 @@ function TranscriptPane({
   recordingComments?: RecordingComment[];
   audioLeftDevice?: boolean;
   transcriptFromCloud?: boolean;
+  /** True when the clinician changed the machine transcriber's output before drafting (`types.ts`) —
+   *  the caption must then stop presenting this text as verbatim machine output, because "could the
+   *  model have misheard this?" is the wrong audit question for words the clinician wrote. */
+  transcriptEdited?: boolean;
   /** True once "Continue recording" spliced in a segment whose own cloud/typed origin disagrees with the
    *  rest of the transcript (`appendRecording.ts`) — `transcriptFromCloud` alone can no longer describe
    *  the WHOLE transcript truthfully, so this switches the caption to say so instead of picking one
@@ -978,7 +984,7 @@ function TranscriptPane({
     <View>
       <AppText variant="small" color="ink3" style={{ marginBottom: 10 }}>
         {(transcriptMixedProvenance
-          ? 'This transcript combines more than one recording, added at different times, and they weren’t all produced the same way. Each "Added recording" line below says whether that part was transcribed in the cloud or typed by hand.'
+          ? 'This transcript combines more than one recording, added at different times, and they weren’t all produced the same way. Each "Added recording" line below says whether that part was transcribed off this device or typed by hand.'
           : transcriptFromCloud === true
           ? 'The transcript of this session, kept on this device. The audio was sent off this device to transcribe, then deleted. Only this text remains. There is no on-device de-identification step in pilot mode.'
           : transcriptFromCloud === false && audioLeftDevice === true
@@ -991,6 +997,9 @@ function TranscriptPane({
               : transcriptFromCloud === false && draftedInCloud === false
                 ? 'The transcript of this session, produced and kept on this device. Nothing was sent anywhere, and no de-identification step runs.'
                 : 'The transcript of this session, kept on this device. This note doesn’t record where it was transcribed or drafted, so nothing is claimed either way.') +
+          (transcriptEdited === true && !transcriptMixedProvenance
+            ? ' The clinician edited this text after transcription, so it is not word for word what the transcriber returned.'
+            : '') +
           (signed ? '' : ' Check the note against it before signing.')}
       </AppText>
       <Card tone="sunken" elevation="none" radius="md">

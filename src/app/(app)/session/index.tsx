@@ -1119,6 +1119,12 @@ function Analysing({
   // transcript themselves — the note then says "entered by hand" rather than claiming an on-device
   // transcription that never ran.
   const [transcribedOnDevice, setTranscribedOnDevice] = useState(false);
+  // The transcriber's EXACT output, kept so drafting can tell whether the text it sends still is that
+  // output. The editable transcript box invites fixes, and any change — one mishear or a wholesale
+  // replacement — means the stored text is no longer verbatim machine transcription; the note must
+  // then say "then edited by you" instead of letting the plain machine claim stand over the
+  // clinician's own words. Null when no machine transcript exists (failed/refused transcription).
+  const machineTranscript = useRef<string | null>(null);
 
   // Speaker separation (round-2 item 1) — a POST-transcription LLM pass, "patient session" mode only.
   // `speakerState` degrades honestly: 'unavailable' when there's no live cloud session to run it,
@@ -1142,6 +1148,7 @@ function Analysing({
       setAudioLeftDevice(false);
       setTranscriptFromCloud(false);
       setTranscribedOnDevice(false);
+      machineTranscript.current = null;
       setNeedsSignIn(false);
       try {
         const result = await service.transcribe(capture, {
@@ -1160,6 +1167,7 @@ function Analysing({
         setAudioLeftDevice(wentToCloud);
         setTranscriptFromCloud(wentToCloud && cloudText.length > 0);
         setTranscribedOnDevice(!wentToCloud && cloudText.length > 0);
+        machineTranscript.current = cloudText.length > 0 ? cloudText : null;
         setStage('ready');
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
@@ -1254,6 +1262,10 @@ function Analysing({
       audioLeftDevice,
       transcriptFromCloud,
       transcribedOnDevice,
+      // Observed, not asked: the text being drafted is compared against the transcriber's exact
+      // output. Any divergence — an edit in the box above, or the speaker-removal rewrite — and the
+      // note's machine-transcription claim carries "then edited by you".
+      transcriptEdited: machineTranscript.current !== null && trimmed !== machineTranscript.current,
       sampleCapture: isMockCapture,
       auxiliaryNotes,
     };
@@ -1292,7 +1304,15 @@ function Analysing({
     setNeedsSignIn(false);
     setAppending(true);
     try {
-      await onAppend({ transcript: trimmed, audioLeftDevice, transcriptFromCloud, auxiliaryNotes });
+      await onAppend({
+        transcript: trimmed,
+        audioLeftDevice,
+        transcriptFromCloud,
+        // Same observed comparison as `draftAndContinue` — the appended segment's divider line must
+        // not claim pure machine transcription over text the clinician changed.
+        transcriptEdited: machineTranscript.current !== null && trimmed !== machineTranscript.current,
+        auxiliaryNotes,
+      });
     } finally {
       setAppending(false);
     }
