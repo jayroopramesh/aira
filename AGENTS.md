@@ -166,13 +166,32 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   text typed after a failed upload is never presented as machine-transcribed), and `draftedInCloud`
   (stamped by `buildDraft` from the summarizer that actually ran). Collapsing the first two back into
   one boolean is how a note came to claim whisper produced the clinician's own typing. A 200 carrying
-  `{text: ""}` is not a transcript either, so `transcriptFromCloud` needs non-empty text. None derive
+  `{text: ""}` is not a transcript either, so `transcriptFromCloud` needs non-empty text. The machine
+  claims carry a qualifier, `transcriptEdited` (round 5, 2026-08-18): the capture screen compares the
+  drafted text against the transcriber's EXACT output (`machineTranscript` ref), and any divergence —
+  one fixed mishear, the speaker-removal rewrite, or a wholesale replacement typed into the editable
+  transcript box — makes the source line say "then edited by you" and the Transcript tab caption stop
+  presenting the text as verbatim machine output. Without it, the editable box let 1,100 characters of
+  hand-typed replacement ship as "transcribed and drafted off this device". Up-only across
+  Continue-recording appends (an edited segment's divider says so; a later clean segment never clears
+  the note-level qualifier), and ignored over hand-typed text, where there is no machine output to
+  have edited. None derive
   from `hasGroq`, so a note can never claim — or deny — a hop that did not match reality. `buildDraft`
   owns all three; the `sourceLine` expression they feed is proved by `scripts/provenance-harness.mjs`,
   which exists because it was re-derived wrongly in three successive fix rounds. `buildDraft` also
   stamps the note's `transcript` (trimmed; blank = absent) from the input it drafted, so the review
   screen's Transcript tab is fed by every `summarize()` path instead of by one UI call site
-  re-attaching it — never reintroduce that graft.
+  re-attaching it — never reintroduce that graft. **A quotation the transcript cannot back never
+  enters the note** (round 5, 2026-08-18): the review screen wraps `subjective.quote` in quotation
+  marks — the record's strongest verbatim claim — and the live model, asked over a retrospective
+  dictation containing no client speech, converted the clinician's indirect report into a
+  first-person client utterance that no one spoke. `buildDraft` keeps the quote only when
+  `quoteIsVerbatim` (`summarization.ts`) finds it in the stored transcript — tolerant of
+  case/whitespace/punctuation/curly quotes and `…`-marked omissions (each fragment verbatim, in
+  order), intolerant of changed words — and sheds wrapping quote marks so the UI never
+  double-quotes. Proved in `scripts/provenance-harness.mjs` section 4c. The SYSTEM_PROMPT asks for
+  an exact word-for-word excerpt (empty when there is no quotable client speech), but the gate, not
+  the prompt, is the guarantee.
 - **Cloud reachability is a runtime question**: `cloudSessionReady()` (`cloudSession.ts`) = proxy
   configured AND a live token. The capture screen asks it before the mic opens and says plainly when
   the cloud is unreachable; it never gates recording. Signing in cannot rescue a capture already
@@ -296,20 +315,36 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   (the transcript genuinely changed, so "Generate from notes" honestly re-enables) — `PrescriptionsRail`
   now dedupes by bullet text before pulling, since the Plan section itself isn't auto-redrafted on
   append and a second pull over an unchanged Plan must not duplicate prescriptions.
-- **Stitched audio playback** (`StitchedAudioPlayer` in `review.tsx`, captain 2026-08-17): "Keep the
-  audio" (`AudioTrust`) now backs its own promise with a real `<Audio>`-driven sequential player — the
-  original capture, then each later Continue-recording segment, in order, via a single audio element
-  advancing on `ended`. The segment list lives in `src/services/audioVault.ts`, an IN-MEMORY
-  (module-scope, never vault-persisted) registry keyed by `clientId::noteIndex`, written only by
-  `session/index.tsx`'s `onDrafted`/`onAppended` and only for a REAL `blob:` capture
-  (`isRealAudioUri` — the sample clip and a failed recording never register, so a demo session can
-  never be offered a fabricated "kept audio" replay). In-memory is a deliberate, honestly-scoped
-  choice, not a shortcut: a `blob:` object URL is only valid for the page load that created it, and
-  the existing "Keep the audio" copy already promises persistence only "for this session" — a reload
-  genuinely loses it, matching that copy rather than quietly under-delivering on it. Proved by
-  `scripts/audio-vault-harness.mjs` (registry ordering/isolation) and a `review.test.tsx` wiring test
-  (toggling Keep with mocked segments drives a real `window.Audio` construction; with none, an honest
-  "Nothing to play back" message, never a dead button).
+- **Stitched audio playback + REAL recording deletion** (`StitchedAudioPlayer`/`AudioTrust` in
+  `review.tsx`, captain 2026-08-17; deletion made real round 5, 2026-08-18): "Keep the audio"
+  (`AudioTrust`) backs its promise with a real `<Audio>`-driven sequential player — the original
+  capture, then each later Continue-recording segment, in order, via a single audio element advancing
+  on `ended`. The segment list lives in `src/services/audioVault.ts`, an IN-MEMORY (module-scope,
+  never vault-persisted) registry keyed by `clientId::noteIndex`, written only by `session/index.tsx`'s
+  `onDrafted`/`onAppended` and only for a REAL `blob:` capture (`isRealAudioUri` — the sample clip and
+  a failed recording never register, so a demo session can never be offered a fabricated "kept audio"
+  replay). In-memory is a deliberate, honestly-scoped choice: a `blob:` object URL is only valid for
+  the page load that created it, and the copy promises persistence only "for this session" — a reload
+  genuinely loses it. **"Recording deleted" must be an OBSERVED event, never a UI state**: for a whole
+  round the card claimed deletion while the blob URL stayed alive and fetchable all tab long, with a
+  toggle that resurrected and replayed the "deleted" audio. Now each note's audio carries a
+  disposition (`held`/`kept`/`discarded`); the deletion moment is SIGN-OFF (`sign` in `review.tsx`
+  calls `discardAudioUnlessKept`, which REVOKES every segment's object URL), a re-record's
+  `setOriginalAudioSegment` revokes the clip it replaces, un-keeping a signed note deletes
+  immediately (the copy warns first), and a deleted recording gets no resurrect toggle. The draft
+  review renders the card too ("Recording held on this device") because the keep decision must
+  precede the deletion moment — and no copy anywhere claims the CLOUD copy was deleted, since the
+  app cannot observe that. **`AudioTrust` reads the vault via
+  `useSyncExternalStore(subscribeAudioVault, …getAudioVaultSnapshot…)` — never a bare render-time
+  read.** This build runs the React Compiler (`app.json` → `experiments.reactCompiler`), which
+  memoizes render expressions on the props they mention, so a bare `getAudioSegments(clientId,
+  noteIndex)` in render gets cached forever and froze the card on pre-sign state in the exported
+  bundle while jest (no compiler) stayed green — any future module-scope store read in render needs
+  the same subscribe/snapshot seam, and needs verifying in the compiled export, not just jest.
+  Proved by `scripts/audio-vault-harness.mjs` (registry ordering/isolation, disposition transitions,
+  revocation observed via a stubbed `URL.revokeObjectURL`, subscription notify/stable-snapshot) and
+  `review.test.tsx` wiring tests (sign-off calls the discard, the switch drives the vault ops, a
+  note with no held recording gets no switch and a real `window.Audio` construction backs Play).
 - **Pause/resume + a real waveform** (captain 2026-08-17, `audioCapture.ts`'s `ActiveRecording`): a
   paused-then-resumed recording is ONE segment (MediaRecorder's native `pause()`/`resume()` keep
   writing into the same clip) — the opposite of Continue-recording's brand-new segment. `stop()`'s
@@ -338,6 +373,24 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   a `stopRequested` flag) — i.e. the mic stream ended on its own (unplugged, permission revoked, device
   switch). The Recording screen surfaces a distinct caution banner for this case rather than silently
   finalising the partial clip like an ordinary Stop tap.
+- **Recording lifecycle is announced to screen readers** (round 5, 2026-08-18): the capture screen's
+  phase swaps are silent DOM replacements and the waveform/timer are visual-only, so every lifecycle
+  transition additionally speaks through ONE `SrStatus` live region
+  (`src/components/SrStatus.tsx` — visually-hidden, `aria-live="polite"` on web/Android,
+  `announceForAccessibility` on iOS only, never both) kept MOUNTED for the whole screen in
+  `session/index.tsx`: started, mic-couldn't-open, stream-interrupted, stopped→analysing, discarded,
+  clip-selected. A live region that mounts together with the state it describes announces nothing —
+  that's why the region is persistent and message-driven, not per-phase. The Recording status pill
+  (`recording-state-pill`) is itself `aria-live="polite"` so pause/resume announce via its text
+  change (the coloured dot alone is a colour-only signal). Reuse `SrStatus` for any future silent
+  state swap a screen-reader user must know about; keep announcement wording distinct from visible
+  banner copy so `getByText` queries stay unambiguous. Proved by the "screen-reader recording
+  announcements" block in `session/__tests__/index.test.tsx` and re-verified in the compiled export
+  (state-driven text, so React Compiler-safe). KNOWN FOLLOW-UPS (James-class): `AuthLink`
+  (`components/auth.tsx`) and several row Pressables (today's appointment rows, review's
+  Note/Transcript tab strip, unlock's reveal-recovery control) render as focusable role-less DIVs —
+  operable by keyboard but invisible to screen-reader button/link navigation; and activating a
+  control that unmounts (e.g. start capture) drops focus to `<body>`.
 - **Name vs. slug**: the user-visible product name is **Airava** (`app.json` `name`, the TopBar
   wordmark, onboarding/login lockups, the web `<title>`, and `public/manifest.json`). The shorthand
   **aira** stays for everything non-user-facing — repo, npm package, the `aira` `slug`/`scheme`, the
@@ -543,6 +596,20 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   tell "never signed" apart from "unlocked after being signed" — `!!draft.signedAt` on a
   draft-status note — and say so in the trust pill rather than reading as an ordinary first draft.
 - Sparse series (≤ 2 readings) render as a dot-strip with no trend line.
+- **Re-entry recognises the returning clinician** (round 5, 2026-08-18): boot routing at `/`
+  (`src/app/index.tsx`) is decided from the device's own evidence, never a hardcoded "everyone is
+  new" — vault already open → `/(app)/today`; persisted account evidence (known email or clinician
+  name, via `authService.whenHydrated()`) → `/unlock`; genuinely fresh device → `/welcome`
+  onboarding. The `(app)` guard's locked-vault bounce carries the interrupted location as
+  `next=/(app)<path><search>` (web reads `window.location` — `usePathname()` can still be `/` on the
+  first render of a reloaded deep link — native falls back to the router pathname), so sign-in
+  returns the clinician to the page they were on, query params included; `safeNext` in
+  `unlock/index.tsx` still validates every `next`. The unlock greeting name goes through STATE
+  hydrated in an effect — a bare `authService.getClinicianName()` render read is frozen by the React
+  Compiler in the compiled bundle (stuck on "Doctor" while jest passed; same trap as the audio-vault
+  card). Proved by `src/app/__tests__/index.test.tsx`, the locked-vault case in
+  `(app)/__tests__/_layout.test.tsx`, and the greeting/prefill case in
+  `unlock/__tests__/index.test.tsx`; compiler-sensitive parts re-verified in the compiled export.
 - Login + recovery copy is isolated in `src/strings/recovery.ts`; the recovery-key policy is
   captain-resolved (`decision-recovery-key-policy`): account creation + one-time recovery code,
   shown once. The account/session lifecycle lives in the `AuthService` seam (`src/services/auth.ts`,

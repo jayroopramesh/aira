@@ -4,6 +4,7 @@ import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { ClientLink } from '../../../components/ClientLink';
 import { Highlights } from '../../../components/Highlights';
 import { Screen } from '../../../components/Screen';
+import { SrStatus } from '../../../components/SrStatus';
 import { Waveform } from '../../../components/Waveform';
 import { AlertTriangleIcon, FileUpIcon, MicIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon, StopIcon } from '../../../components/icons';
 import { AppText, Button, Card, Row, TrustPill } from '../../../components/ui';
@@ -113,6 +114,12 @@ export default function SessionCapture() {
   // from an explicit Stop tap — lets the Recording screen say plainly why it stopped short instead of
   // silently finalising whatever partial audio exists like an ordinary Stop.
   const [streamInterrupted, setStreamInterrupted] = useState(false);
+  // Screen-reader announcement for each capture-lifecycle transition (recording started, mic failed,
+  // paused stream died, stopped → analysing, cancelled). The phases swap content silently, and the
+  // waveform/timer are visual-only — without a live region a blind clinician has no way to know
+  // whether the microphone is live in a real therapy session. One SrStatus stays mounted for the
+  // whole screen (a region that mounts alongside the state it describes announces nothing).
+  const [srStatus, setSrStatus] = useState('');
   // Comments typed on the recording screen (RecordingNotes reports every change up here, in
   // chronological order, including a still-unsubmitted draft). They outlive the recording phase so
   // the "kept with the note" promise holds: `onDrafted` stamps them onto the freshly drafted note
@@ -158,7 +165,12 @@ export default function SessionCapture() {
     starting.current = true;
     setStreamInterrupted(false);
     try {
-      recording.current = await startRecording(() => setStreamInterrupted(true));
+      recording.current = await startRecording(() => {
+        setStreamInterrupted(true);
+        setSrStatus(
+          'Recording interrupted — the microphone stopped by itself. Everything captured so far is kept; stop to transcribe it.',
+        );
+      });
     } catch {
       recording.current = null; // mic denied/unsupported — the recording screen offers fallbacks
     } finally {
@@ -166,6 +178,11 @@ export default function SessionCapture() {
     }
     stopping.current = false;
     setPhase('recording');
+    setSrStatus(
+      recording.current
+        ? 'Recording started. Airava is capturing audio on this device.'
+        : 'The microphone couldn’t be opened, so nothing is recording. Upload an audio clip, or stop to continue without one.',
+    );
   };
 
   // Explicit Cancel on the recording screen (fix-these #12): stops any live tracks (no mic leak) and
@@ -178,6 +195,7 @@ export default function SessionCapture() {
     }
     setStreamInterrupted(false);
     setPhase('precapture');
+    setSrStatus('Recording discarded. Back to the capture screen — nothing was saved.');
   };
 
   const goAnalyse = (ref: CaptureRef) => {
@@ -194,6 +212,7 @@ export default function SessionCapture() {
       // A real session was just recorded. If it cannot be finalised the capture stays REAL, so it
       // takes the real path and is refused rather than answered with the sample's canned words.
       const ref = await active.stop().catch(() => failedCaptureRef());
+      setSrStatus('Recording stopped. Analysing the audio now.');
       goAnalyse(ref);
     } else {
       // No recorder ever started — the Recording screen said so. With no identity attached there is
@@ -202,6 +221,11 @@ export default function SessionCapture() {
       // ("Denies passive ideation on screening today" is a safety finding nobody made about them) —
       // it takes the failed-capture path instead, which lands in the type/paste recovery the
       // pre-capture screen promised.
+      setSrStatus(
+        hasRealIdentity
+          ? 'Nothing was recorded. On the next screen you can type or paste the session transcript.'
+          : 'Analysing the fictional sample session now.',
+      );
       goAnalyse(hasRealIdentity ? failedCaptureRef() : mockCaptureRef());
     }
   };
@@ -216,6 +240,7 @@ export default function SessionCapture() {
       // A picked file is the capture now — latch the stop guard so a straggling Stop tap can't
       // find the recorder gone and overwrite this capture with the demo sample.
       stopping.current = true;
+      setSrStatus('Audio clip selected. Analysing it now.');
       goAnalyse(ref);
     }
   };
@@ -272,6 +297,7 @@ export default function SessionCapture() {
 
   return (
     <Screen maxWidth={720}>
+      <SrStatus message={srStatus} />
       {phase === 'precapture' && (
         <PreCapture
           client={client}
@@ -753,7 +779,10 @@ function Recording({
         }}
       >
         <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: paused ? c.ink3 : c.riskFill }} />
-        <AppText variant="bodyStrong" tint={paused ? c.ink2 : c.risk}>
+        {/* Live region on purpose: the coloured dot is the only other pause/resume signal, and colour
+            alone is no signal at all for a screen reader — announcing the pill's text change is what
+            tells a blind clinician the mic actually paused or resumed. */}
+        <AppText variant="bodyStrong" tint={paused ? c.ink2 : c.risk} aria-live="polite" testID="recording-state-pill">
           {paused ? 'Paused' : streamInterrupted ? 'Stopped' : live ? 'Recording' : 'Ready'} · Session {sessionNumber}{' '}
           with {displayName}
         </AppText>
@@ -851,8 +880,8 @@ function Recording({
           Nothing is authoritative yet. This is a draft you’ll review and sign.
         </AppText>{' '}
         {willTranscribe
-          ? 'When you stop, Airava transcribes, drafts the note, then deletes the recording (unless you keep it).'
-          : 'When you stop, you’ll type or paste the transcript and Airava drafts the note on this device, then deletes the recording (unless you keep it).'}
+          ? 'When you stop, Airava transcribes and drafts the note. The recording is deleted when you sign the note, unless you choose to keep it.'
+          : 'When you stop, you’ll type or paste the transcript and Airava drafts the note on this device. The recording is deleted when you sign the note, unless you choose to keep it.'}
       </AppText>
     </View>
   );
@@ -1119,6 +1148,12 @@ function Analysing({
   // transcript themselves — the note then says "entered by hand" rather than claiming an on-device
   // transcription that never ran.
   const [transcribedOnDevice, setTranscribedOnDevice] = useState(false);
+  // The transcriber's EXACT output, kept so drafting can tell whether the text it sends still is that
+  // output. The editable transcript box invites fixes, and any change — one mishear or a wholesale
+  // replacement — means the stored text is no longer verbatim machine transcription; the note must
+  // then say "then edited by you" instead of letting the plain machine claim stand over the
+  // clinician's own words. Null when no machine transcript exists (failed/refused transcription).
+  const machineTranscript = useRef<string | null>(null);
 
   // Speaker separation (round-2 item 1) — a POST-transcription LLM pass, "patient session" mode only.
   // `speakerState` degrades honestly: 'unavailable' when there's no live cloud session to run it,
@@ -1142,6 +1177,7 @@ function Analysing({
       setAudioLeftDevice(false);
       setTranscriptFromCloud(false);
       setTranscribedOnDevice(false);
+      machineTranscript.current = null;
       setNeedsSignIn(false);
       try {
         const result = await service.transcribe(capture, {
@@ -1160,6 +1196,7 @@ function Analysing({
         setAudioLeftDevice(wentToCloud);
         setTranscriptFromCloud(wentToCloud && cloudText.length > 0);
         setTranscribedOnDevice(!wentToCloud && cloudText.length > 0);
+        machineTranscript.current = cloudText.length > 0 ? cloudText : null;
         setStage('ready');
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
@@ -1254,6 +1291,10 @@ function Analysing({
       audioLeftDevice,
       transcriptFromCloud,
       transcribedOnDevice,
+      // Observed, not asked: the text being drafted is compared against the transcriber's exact
+      // output. Any divergence — an edit in the box above, or the speaker-removal rewrite — and the
+      // note's machine-transcription claim carries "then edited by you".
+      transcriptEdited: machineTranscript.current !== null && trimmed !== machineTranscript.current,
       sampleCapture: isMockCapture,
       auxiliaryNotes,
     };
@@ -1292,7 +1333,15 @@ function Analysing({
     setNeedsSignIn(false);
     setAppending(true);
     try {
-      await onAppend({ transcript: trimmed, audioLeftDevice, transcriptFromCloud, auxiliaryNotes });
+      await onAppend({
+        transcript: trimmed,
+        audioLeftDevice,
+        transcriptFromCloud,
+        // Same observed comparison as `draftAndContinue` — the appended segment's divider line must
+        // not claim pure machine transcription over text the clinician changed.
+        transcriptEdited: machineTranscript.current !== null && trimmed !== machineTranscript.current,
+        auxiliaryNotes,
+      });
     } finally {
       setAppending(false);
     }

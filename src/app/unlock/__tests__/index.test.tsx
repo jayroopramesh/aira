@@ -19,12 +19,14 @@ jest.mock('expo-router', () => ({
 // this screen — stub it so the test stays scoped to the unlock form (matches welcome/create's test).
 jest.mock('../../../components/TopBar', () => ({ TopBar: () => null }));
 
+const mockAuthState = { knownEmail: null as string | null, clinicianName: null as string | null };
+
 jest.mock('../../../services/auth', () => ({
   authService: {
     signIn: jest.fn(),
     signInWithRecoveryCode: jest.fn(),
-    getKnownEmail: () => null,
-    getClinicianName: () => null,
+    getKnownEmail: () => mockAuthState.knownEmail,
+    getClinicianName: () => mockAuthState.clinicianName,
     whenHydrated: () => Promise.resolve(),
   },
 }));
@@ -47,6 +49,20 @@ const { authService } = jest.requireMock('../../../services/auth');
 
 beforeEach(() => {
   authService.signIn.mockReset();
+  mockAuthState.knownEmail = null;
+  mockAuthState.clinicianName = null;
+});
+
+it('greets the returning clinician by their hydrated name, and prefills their email (round 5, Yuki)', async () => {
+  mockAuthState.knownEmail = 'yuki.tanaka@clinic.ae';
+  mockAuthState.clinicianName = 'Yuki Tanaka';
+  renderScreen();
+
+  // The name arrives via async device-store hydration and must land in state — a bare render-time
+  // service read gets frozen by the React Compiler in the compiled bundle (greeting stuck on
+  // "Doctor" while jest passed), so this asserts the state-driven path.
+  await waitFor(() => expect(screen.getByText('Good morning, Yuki Tanaka')).toBeTruthy());
+  expect(screen.getByDisplayValue('yuki.tanaka@clinic.ae')).toBeTruthy();
 });
 
 it('a failed sign-in has a way back to the clean login view', async () => {

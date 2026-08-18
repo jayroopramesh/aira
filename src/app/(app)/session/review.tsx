@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowRight, CheckIcon, CopyIcon, PauseIcon, PlayIcon, PlusIcon, ShieldIcon, SparklesIcon } from '../../../components/icons';
@@ -12,7 +12,15 @@ import { useClient, useClientNotes, useData, useDraftNote } from '../../../data/
 import { MAX_NOTES_PER_CLIENT } from '../../../data/repository';
 import { DraftNote, NoteSection, PrepItem, RecordingComment } from '../../../data/types';
 import { authService } from '../../../services/auth';
-import { AudioSegment, getAudioSegments } from '../../../services/audioVault';
+import {
+  AudioSegment,
+  discardAudio,
+  discardAudioUnlessKept,
+  EMPTY_AUDIO_VAULT_SNAPSHOT,
+  getAudioVaultSnapshot,
+  setAudioKept,
+  subscribeAudioVault,
+} from '../../../services/audioVault';
 import { useTheme } from '../../../theme/ThemeProvider';
 import { formatTimestamp } from '../../../utils/formatTimestamp';
 
@@ -249,6 +257,11 @@ export default function ReviewNote() {
     if (!clientId) return;
     pendingEdits.current.forEach((flush) => flush());
     signNote(clientId, noteIndex, clinician, formatTimestamp(new Date()));
+    // Deletion is the default at sign-off, and it is REAL: unless the clinician chose "Keep the
+    // audio", every blob URL this note's recording lives behind is revoked right here, so the
+    // AudioTrust card's "Recording deleted" reports an event that actually ran — not a UI state
+    // sitting on top of a still-fetchable recording.
+    discardAudioUnlessKept(clientId, noteIndex);
   };
   // Reopens a signed note for editing. The read-only rule stays enforced at the `updateNoteSection`
   // seam (it refuses a signed note) — this flips `status` back to 'draft' so that seam honestly
@@ -411,6 +424,7 @@ export default function ReviewNote() {
                 recordingComments={draft.recordingComments}
                 audioLeftDevice={draft.audioLeftDevice}
                 transcriptFromCloud={draft.transcriptFromCloud}
+                transcriptEdited={draft.transcriptEdited}
                 transcriptMixedProvenance={draft.transcriptMixedProvenance}
                 draftedInCloud={draft.draftedInCloud}
                 signed={signed}
@@ -905,6 +919,7 @@ function TranscriptPane({
   recordingComments,
   audioLeftDevice,
   transcriptFromCloud,
+  transcriptEdited,
   transcriptMixedProvenance,
   draftedInCloud,
   signed,
@@ -921,6 +936,10 @@ function TranscriptPane({
   recordingComments?: RecordingComment[];
   audioLeftDevice?: boolean;
   transcriptFromCloud?: boolean;
+  /** True when the clinician changed the machine transcriber's output before drafting (`types.ts`) —
+   *  the caption must then stop presenting this text as verbatim machine output, because "could the
+   *  model have misheard this?" is the wrong audit question for words the clinician wrote. */
+  transcriptEdited?: boolean;
   /** True once "Continue recording" spliced in a segment whose own cloud/typed origin disagrees with the
    *  rest of the transcript (`appendRecording.ts`) — `transcriptFromCloud` alone can no longer describe
    *  the WHOLE transcript truthfully, so this switches the caption to say so instead of picking one
@@ -978,11 +997,11 @@ function TranscriptPane({
     <View>
       <AppText variant="small" color="ink3" style={{ marginBottom: 10 }}>
         {(transcriptMixedProvenance
-          ? 'This transcript combines more than one recording, added at different times, and they weren’t all produced the same way. Each "Added recording" line below says whether that part was transcribed in the cloud or typed by hand.'
+          ? 'This transcript combines more than one recording, added at different times, and they weren’t all produced the same way. Each "Added recording" line below says whether that part was transcribed off this device or typed by hand.'
           : transcriptFromCloud === true
-          ? 'The transcript of this session, kept on this device. The audio was sent off this device to transcribe, then deleted. Only this text remains. There is no on-device de-identification step in pilot mode.'
+          ? 'The transcript of this session, kept on this device. The audio was sent off this device to transcribe; only this text is stored with the note — the recording card in the rail shows whether a copy of the audio is still held on this device. There is no on-device de-identification step in pilot mode.'
           : transcriptFromCloud === false && audioLeftDevice === true
-            ? 'This text was entered by the clinician, not produced by transcription. The audio was sent off this device to transcribe, but no transcript came back. The recording has since been deleted, so this typed text is the only record of the session.' +
+            ? 'This text was entered by the clinician, not produced by transcription. The audio was sent off this device to transcribe, but no transcript came back. The recording is not stored with the note, so this typed text is the only saved record of the session.' +
               (draftedInCloud === true
                 ? ' The note was drafted off this device, so this text was sent off this device to draft from (see the pilot notice).'
                 : '')
@@ -991,6 +1010,9 @@ function TranscriptPane({
               : transcriptFromCloud === false && draftedInCloud === false
                 ? 'The transcript of this session, produced and kept on this device. Nothing was sent anywhere, and no de-identification step runs.'
                 : 'The transcript of this session, kept on this device. This note doesn’t record where it was transcribed or drafted, so nothing is claimed either way.') +
+          (transcriptEdited === true && !transcriptMixedProvenance
+            ? ' The clinician edited this text after transcription, so it is not word for word what the transcriber returned.'
+            : '') +
           (signed ? '' : ' Check the note against it before signing.')}
       </AppText>
       <Card tone="sunken" elevation="none" radius="md">
@@ -1062,7 +1084,10 @@ function ReviewRail({
       <Divider />
       <ReviewCodes draft={draft} />
       <Divider />
-      {signed ? <AudioTrust audioLeftDevice={draft.audioLeftDevice} clientId={clientId} noteIndex={noteIndex} /> : null}
+      {/* Rendered on the DRAFT too, not just after signing: the keep-or-delete decision has to be
+          available BEFORE sign-off, because sign-off is the moment the recording is actually
+          deleted (see `sign`). On a draft with no held audio it renders nothing. */}
+      <AudioTrust audioLeftDevice={draft.audioLeftDevice} clientId={clientId} noteIndex={noteIndex} signed={signed} />
       <SignOff signed={signed} onSign={onSign} onUnlock={onUnlock} clinician={clinician} signedAt={signedAt} />
       {clientId ? (
         <Row gap={10} style={{ flexWrap: 'wrap' }}>
@@ -1362,29 +1387,70 @@ function StitchedAudioPlayer({ segments, tint }: { segments: AudioSegment[]; tin
 }
 
 /**
- * Audio-trust moment (round-2 change #7). Deletion is the DEFAULT — the honest copy says the
- * recording is already gone. A visible "Keep the audio" toggle lets the clinician retain it;
- * kept, a real `StitchedAudioPlayer` plays back whatever was actually captured for this note THIS
- * SESSION (`audioVault.ts` — in-memory only, so a reload genuinely loses it, matching "for this
- * session" in the copy below rather than quietly under-delivering on it).
+ * Audio-trust decision + status card (round-2 change #7; deletion made REAL in round 5, 2026-08-18).
+ * The deletion moment is SIGN-OFF: until then a real capture is HELD in this tab's memory awaiting
+ * the clinician's decision, and this card says so plainly instead of claiming a deletion that hasn't
+ * happened yet — for a whole round "Recording deleted" was a UI state sitting on top of a
+ * still-fetchable blob URL, with a toggle that could resurrect and replay the "deleted" audio.
+ * Now "Keep the audio" marks the recording kept (`setAudioKept`); signing without keeping actually
+ * revokes every blob URL (`discardAudioUnlessKept` in `sign`), so the "Recording deleted" state
+ * reports an OBSERVED event and offers no resurrect toggle, because the recording genuinely no
+ * longer exists. Un-keeping AFTER sign-off deletes immediately (the copy warns first) — the same
+ * one-way door in the other direction.
  *
  * This card speaks about the AUDIO, so it reads the note's recorded upload disclosure — not whether
  * the transcription actually returned anything, which is a separate fact the Transcript tab reports.
  * A recording that was uploaded and then 429'd still left this device, and this card must say so.
  * Legacy signed notes drafted before provenance was recorded carry no value; those fall back to the
- * build's configuration.
+ * build's configuration. Nothing here claims what the cloud did with the copy it received — the app
+ * cannot observe that, so it only ever speaks for the copy this device holds.
  */
-function AudioTrust({ audioLeftDevice, clientId, noteIndex }: { audioLeftDevice?: boolean; clientId?: string; noteIndex: number }) {
+function AudioTrust({
+  audioLeftDevice,
+  clientId,
+  noteIndex,
+  signed,
+}: {
+  audioLeftDevice?: boolean;
+  clientId?: string;
+  noteIndex: number;
+  signed: boolean;
+}) {
   const theme = useTheme();
   const c = theme.colors;
-  const [kept, setKept] = useState(false);
   const audioWentToCloud = audioLeftDevice ?? hasGroq;
-  // Read once — nothing can add a segment to an already-SIGNED note (Continue recording is gated off
-  // the moment a note is signed), so the list is final by the time this card can render at all.
-  const segments = useMemo(() => (clientId ? getAudioSegments(clientId, noteIndex) : []), [clientId, noteIndex]);
+  // The vault is module-scope state OUTSIDE React, and this build runs the React Compiler — a bare
+  // render-time read here gets memoized on (clientId, noteIndex) and freezes on the pre-sign state
+  // forever (that shipped: "Recording held" over an already-revoked blob). `useSyncExternalStore` is
+  // the one correct seam: sign-off's discard (and the toggle below) notify, and this re-renders.
+  const { segments, disposition } = useSyncExternalStore(subscribeAudioVault, () =>
+    clientId ? getAudioVaultSnapshot(clientId, noteIndex) : EMPTY_AUDIO_VAULT_SNAPSHOT,
+  );
+  const kept = disposition === 'kept' && segments.length > 0;
+  const held = !kept && segments.length > 0;
 
-  const tint = kept ? c.brand : c.positive;
-  const bg = kept ? c.brandBg : c.positiveBg;
+  // A draft with no held audio (typed transcript, the demo sample, a reloaded tab): there is no
+  // decision to offer and no recording to report on, so render nothing rather than a status card
+  // about audio that never existed here. Signed notes always render their audio status.
+  if (!signed && !held && !kept) return null;
+
+  const toggle = (next: boolean) => {
+    if (!clientId) return;
+    // On a SIGNED note the deletion default has already run its moment, so un-keeping is itself the
+    // deletion: it revokes the blob URLs right now (the caption below the switch says so first).
+    if (!next && signed) discardAudio(clientId, noteIndex);
+    else setAudioKept(clientId, noteIndex, next);
+  };
+
+  const tint = kept ? c.brand : held ? c.caution : c.positive;
+  const bg = kept ? c.brandBg : held ? c.cautionBg : c.positiveBg;
+  const title = kept
+    ? 'Audio kept for this session'
+    : held
+      ? 'Recording held on this device'
+      : disposition === 'discarded'
+        ? 'Recording deleted'
+        : 'No recording is kept';
 
   return (
     <Card tone="elevated" elevation="none" radius="md" style={{ backgroundColor: bg, borderColor: bg }}>
@@ -1393,64 +1459,70 @@ function AudioTrust({ audioLeftDevice, clientId, noteIndex }: { audioLeftDevice?
           <CheckIcon size={12} color={c.surface} />
         </View>
         <AppText variant="bodyStrong" tint={tint}>
-          {kept ? 'Audio kept for this session' : 'Recording deleted'}
+          {title}
         </AppText>
       </Row>
       <AppText variant="small" color="ink2" style={{ marginTop: 8, lineHeight: 18 }}>
         {/* Honest audio provenance (F9): when the audio was sent to the cloud to transcribe, we must
-            not claim it "never left this device". */}
+            not claim it "never left this device" — and we never claim the cloud copy was deleted,
+            because this device cannot observe that. */}
         {kept
           ? audioWentToCloud
-            ? 'You chose to keep this recording. A copy was sent off this device to transcribe; the copy you kept stays on this device and makes replay-with-notes possible for this session.'
-            : 'You chose to keep this recording. It stays on this device and never leaves it. Keeping the audio is what makes replay-with-notes possible for this session.'
-          : audioWentToCloud
-            ? 'This recording was sent off this device to transcribe, then deleted. Deletion is the default after every session. Only the draft you reviewed remains.'
-            : 'The recording never left this device, and it’s now gone. Deletion is the default after every session. Only the draft you reviewed remains.'}
+            ? 'You chose to keep this recording. A copy was sent off this device to transcribe; the copy you kept stays on this device, lasts only as long as this browser tab, and makes replay-with-notes possible for this session.'
+            : 'You chose to keep this recording. It stays on this device and never leaves it, kept only as long as this browser tab. Keeping the audio is what makes replay-with-notes possible for this session.'
+          : held
+            ? audioWentToCloud
+              ? 'A copy of this recording was sent off this device to transcribe. The recording itself is still held in this browser tab while you review — it is deleted when you sign this note, unless you keep it.'
+              : 'This recording never left this device. It is still held in this browser tab while you review — it is deleted when you sign this note, unless you keep it.'
+            : disposition === 'discarded'
+              ? audioWentToCloud
+                ? 'This recording was sent off this device to transcribe. The copy held on this device has been deleted — deletion is the default at sign-off. Only the draft you reviewed remains.'
+                : 'The recording never left this device, and the copy held here has been deleted — deletion is the default at sign-off. Only the draft you reviewed remains.'
+              : audioWentToCloud
+                ? 'A recording was sent off this device to transcribe. No copy of it is held on this device now. Only the draft you reviewed remains.'
+                : 'No copy of a recording is held on this device. Only the draft you reviewed remains.'}
       </AppText>
 
-      <Pressable
-        onPress={() => setKept((v) => !v)}
-        accessibilityRole="switch"
-        accessibilityState={{ checked: kept }}
-        style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1, marginTop: 12 })}
-      >
-        <Row gap={9}>
-          <View
-            style={{
-              width: 34,
-              height: 19,
-              borderRadius: 999,
-              padding: 1,
-              backgroundColor: kept ? c.brand : c.sunken,
-              borderWidth: 1,
-              borderColor: kept ? c.brand : c.line,
-              alignItems: kept ? 'flex-end' : 'flex-start',
-              justifyContent: 'center',
-            }}
+      {/* The keep switch only exists while there is a real recording to keep. A deleted recording
+          gets no resurrect toggle — offering one was the old card's false claim in reverse. */}
+      {held || kept ? (
+        <>
+          <Pressable
+            onPress={() => toggle(!kept)}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: kept }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1, marginTop: 12 })}
           >
-            <View style={{ width: 15, height: 15, borderRadius: 8, backgroundColor: c.elevated }} />
-          </View>
-          <AppText variant="small" tint={c.ink2} style={{ fontSize: 12 }}>
-            Keep the audio for this session instead
-          </AppText>
-        </Row>
-      </Pressable>
-
-      {kept ? (
-        segments.length ? (
-          <StitchedAudioPlayer segments={segments} tint={c.brand} />
-        ) : (
-          <Row gap={7} style={{ marginTop: 10, alignItems: 'flex-start' }}>
-            <View style={{ marginTop: 1 }}>
-              <PlayIcon size={13} color={c.ink3} />
-            </View>
-            <AppText variant="small" color="ink3" style={{ flex: 1, fontSize: 11.5, lineHeight: 16 }}>
-              Nothing to play back. Either this session used the demo sample, or this browser tab has
-              reloaded since it was recorded (kept audio only lasts the tab that captured it).
+            <Row gap={9}>
+              <View
+                style={{
+                  width: 34,
+                  height: 19,
+                  borderRadius: 999,
+                  padding: 1,
+                  backgroundColor: kept ? c.brand : c.sunken,
+                  borderWidth: 1,
+                  borderColor: kept ? c.brand : c.line,
+                  alignItems: kept ? 'flex-end' : 'flex-start',
+                  justifyContent: 'center',
+                }}
+              >
+                <View style={{ width: 15, height: 15, borderRadius: 8, backgroundColor: c.elevated }} />
+              </View>
+              <AppText variant="small" tint={c.ink2} style={{ fontSize: 12 }}>
+                Keep the audio for this session instead
+              </AppText>
+            </Row>
+          </Pressable>
+          {kept && signed ? (
+            <AppText variant="small" color="ink3" style={{ marginTop: 6, fontSize: 11, lineHeight: 15 }}>
+              Turning this off deletes the recording from this device immediately.
             </AppText>
-          </Row>
-        )
+          ) : null}
+        </>
       ) : null}
+
+      {kept ? <StitchedAudioPlayer segments={segments} tint={c.brand} /> : null}
     </Card>
   );
 }

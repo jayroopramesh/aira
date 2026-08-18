@@ -62,13 +62,17 @@ export default function UnlockScreen() {
   const [username, setUsername] = useState(() => prefillEmail || authService.getKnownEmail() || '');
   const [password, setPassword] = useState('');
   // Hydration from the device store is async, so the first render can precede it; once it resolves,
-  // land the persisted email (only if the field is still empty) and re-render for the greeting name.
-  const [, setAuthHydrated] = useState(false);
+  // land the persisted email (only if the field is still empty) and the clinician's name. The name
+  // must live in STATE, not be read from the service during render — this build runs the React
+  // Compiler, which memoizes a bare `authService.getClinicianName()` render read on its (empty)
+  // deps forever, so the greeting stayed "Doctor" in the compiled bundle while jest passed (same
+  // trap as the audio-vault card; see CLAUDE.md).
+  const [clinicianName, setClinicianName] = useState(() => authService.getClinicianName());
   useEffect(() => {
     let alive = true;
     authService.whenHydrated().then(() => {
       if (!alive) return;
-      setAuthHydrated(true);
+      setClinicianName(authService.getClinicianName());
       const known = authService.getKnownEmail();
       if (known) setUsername((prev) => prev || known);
     });
@@ -116,7 +120,7 @@ export default function UnlockScreen() {
     <AuthScaffold>
       <MascotMood mood={wrong ? 'empathetic' : 'encouraging'} size={124} float />
       <View style={{ height: 16 }} />
-      <AuthHello>{wrong ? R.wrongEyebrow : R.loginEyebrow(authService.getClinicianName() ?? 'Doctor')}</AuthHello>
+      <AuthHello>{wrong ? R.wrongEyebrow : R.loginEyebrow(clinicianName ?? 'Doctor')}</AuthHello>
       <AuthTitle>{wrong ? R.wrongTitle : R.loginTitle}</AuthTitle>
       <AuthLede>{wrong ? R.wrongSubtitle : R.loginSubtitle}</AuthLede>
 

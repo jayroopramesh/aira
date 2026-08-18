@@ -46,6 +46,16 @@ export type SummaryInput = {
    */
   transcribedOnDevice?: boolean;
   /**
+   * Did the clinician CHANGE the machine transcriber's output before drafting? Any divergence counts —
+   * one fixed mishear or a wholesale replacement typed over it. Only meaningful alongside
+   * `transcriptFromCloud`/`transcribedOnDevice`; over hand-typed text there is no machine output to
+   * have edited, and `buildDraft` ignores the flag rather than inventing an edit claim. Absent →
+   * treated as unedited, which is only safe because the capture screen computes it by comparing the
+   * drafted text against the transcriber's exact output — a caller that forgets it keeps the plain
+   * machine-transcription claim, which is the pre-existing behaviour, not a new fabrication.
+   */
+  transcriptEdited?: boolean;
+  /**
    * Is this the built-in `mock://` demo clip rather than a session with a real person in it? Only the
    * sample may receive the on-device stub's canned walkthrough content; see `MockSummarizationService`.
    * Absent → treated as a real session, so the safe mode is the default.
@@ -82,6 +92,43 @@ function toRiskLevel(level?: string): RiskLevel | undefined {
   return v === 'clear' || v === 'watch' || v === 'elevated' || v === 'acute' ? v : undefined;
 }
 
+/**
+ * May the model's `subjective.quote` honestly wear quotation marks? Only if it is VERBATIM in the
+ * transcript the note stores — quotation marks are the record's strongest claim ("the client said
+ * exactly these words"), and an external auditor verifies a quote against the transcript, where a
+ * composed one appears nowhere. The live model, asked for a "verbatim-style" quote over a
+ * retrospective dictation containing no client speech at all, converted the clinician's indirect
+ * report ("she told me the worst part is the mornings, when she reaches for a routine…") into a
+ * first-person client utterance ("The worst part is the mornings, when I reach for a routine…") —
+ * a fabricated quotation in the permanent record (round 5, 2026-08-18, live walk).
+ *
+ * Matching is tolerant of what transcription itself does not fix (case, whitespace, punctuation,
+ * curly vs straight quotes) and of ellipsis-marked omissions — each `…`-separated fragment must
+ * appear in the transcript, in order. It is NOT tolerant of changed words: person shifts,
+ * paraphrase, or tense repair all fail, which is the point.
+ */
+export function quoteIsVerbatim(quote: string, transcript: string): boolean {
+  const normalize = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[‘’]/g, "'")
+      .replace(/[^a-z0-9']+/g, ' ')
+      .trim();
+  const haystack = ` ${normalize(transcript)} `;
+  const fragments = quote
+    .split(/\.{3}|…/)
+    .map(normalize)
+    .filter(Boolean);
+  if (!fragments.length) return false;
+  let from = 0;
+  for (const fragment of fragments) {
+    const at = haystack.indexOf(` ${fragment} `, from);
+    if (at === -1) return false;
+    from = at + fragment.length;
+  }
+  return true;
+}
+
 const SYSTEM_PROMPT = `You are a clinical documentation assistant for a licensed mental-health counselor.
 You turn a single-session, English, single-speaker-assumed therapy transcript into a DRAFT progress note.
 The note is NOT authoritative — the clinician reviews, edits, and signs it. Be faithful to the transcript;
@@ -100,7 +147,7 @@ Phrase a screened-and-not-present risk item's row value as "Not indicated" (neve
 
 Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY this shape:
 {
-  "subjective": { "body": ["1-3 short paragraphs, the client's reported experience"], "quote": "one short verbatim-style client quote or empty string" },
+  "subjective": { "body": ["1-3 short paragraphs, the client's reported experience"], "quote": "one short quote copied EXACTLY word-for-word from the transcript, or empty string. Never compose, paraphrase, or convert reported speech ('she said she felt…') into a first-person quote; if the transcript contains no directly quotable client speech (e.g. the clinician dictating a recap), return empty string" },
   "objective": { "body": ["1-2 short paragraphs: observed presentation, engagement, mental status observations"] },
   "riskSafety": { "summary": "one plain sentence on risk screened this session", "rows": [ { "label": "Suicidal ideation", "value": "Not indicated / Passive / ..." }, { "label": "Self-harm", "value": "..." }, { "label": "Safety plan", "value": "..." } ], "level": "clear | watch | elevated | acute" },
   "assessment": { "body": ["1-2 short paragraphs: clinical impression and progress toward goals"] },
@@ -415,12 +462,19 @@ function buildDraft(
   const { draftedInCloud, keywordStub = false } = origin;
   const sections: NoteSection[] = [];
 
+  // A quote the transcript cannot back is dropped, never rendered: the review screen wraps this
+  // field in quotation marks, and an unverifiable quotation is a fabricated one (see
+  // `quoteIsVerbatim`). Wrapping quote marks the model added are shed first so a kept quote isn't
+  // double-quoted by the UI.
+  const rawQuote = (d.subjective?.quote ?? '').trim().replace(/^["'“‘]+|["'”’]+$/g, '').trim();
+  const quote = rawQuote && quoteIsVerbatim(rawQuote, input.transcript) ? rawQuote : undefined;
+
   sections.push({
     id: 'subjective',
     marker: 'S',
     title: 'Subjective',
     body: nonEmpty(d.subjective?.body) ?? [NOT_CAPTURED],
-    quote: d.subjective?.quote || undefined,
+    quote,
   });
 
   sections.push({
@@ -483,20 +537,26 @@ function buildDraft(
   // the clinician's own typing, and the note must say that instead of asserting a hop that never
   // happened ("Transcribed on this device" over hand-typed text is the false claim this replaces).
   const deviceTranscript = !cloudTranscript && !audioLeft && input.transcribedOnDevice === true;
+  // A machine transcript the clinician then CHANGED must say so — "transcribed off this device" alone
+  // over edited text presents the clinician's own words as machine output. Only a real machine
+  // transcript can have been edited; the flag is ignored for hand-typed text.
+  const edited = (cloudTranscript || deviceTranscript) && input.transcriptEdited === true;
+  const editedSuffix = edited ? ', then edited by you' : '';
   const where = (cloud: boolean) => (cloud ? 'off this device' : 'on this device');
 
   const transcriptHop = cloudTranscript
-    ? 'transcribed off this device'
+    ? `transcribed off this device${editedSuffix}`
     : audioLeft
       ? 'audio sent off this device to transcribe but no transcript came back, so the text was entered by hand'
       : deviceTranscript
-        ? 'transcribed on this device'
+        ? `transcribed on this device${editedSuffix}`
         : 'transcript entered by hand';
   const draftHop = keywordStub
     ? 'drafted on this device using simple keyword matching, not full clinical drafting — assessment, plan and codes are left for you'
     : `drafted ${where(draftedInCloud)}`;
   const hops =
     !keywordStub &&
+    !edited &&
     audioLeft === cloudTranscript &&
     cloudTranscript === draftedInCloud &&
     (cloudTranscript || deviceTranscript)
@@ -518,6 +578,7 @@ function buildDraft(
     auxiliaryNotes: input.auxiliaryNotes?.trim() || undefined,
     audioLeftDevice: audioLeft,
     transcriptFromCloud: cloudTranscript,
+    transcriptEdited: edited || undefined,
     draftedInCloud,
     riskLevel: toRiskLevel(d.riskSafety?.level),
     sections,
