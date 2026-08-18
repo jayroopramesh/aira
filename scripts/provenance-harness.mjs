@@ -364,6 +364,72 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
   globalThis.fetch = originalFetch;
 }
 
+// --- 4b. An edited machine transcript must say so — "transcribed in the cloud" alone may not stand
+// over text the clinician changed. Found in round 5 (Marcus Chen walk): whisper returned "Thank you."
+// for a silent mic, the clinician replaced the whole transcript by hand in the editable box, and the
+// note still read "From a 1-min voice note · transcribed and drafted in demo mode (cloud)" — 1,100
+// characters of the clinician's own typing presented as whisper output.
+{
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ subjective: { body: ['Reported grief.'] }, riskSafety: { level: 'clear' } }) } }],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+
+  const live = new GroqSummarizationService('https://proxy.invalid', async () => 'session-token', 'openai/gpt-oss-120b');
+
+  const editedCloud = await live.summarize({
+    transcript: REAL_TRANSCRIPT,
+    audioLeftDevice: true,
+    transcriptFromCloud: true,
+    transcriptEdited: true,
+  });
+  check(
+    'an edited cloud transcript names the edit in the source line',
+    /transcribed in demo mode \(cloud\), then edited by you, drafted in demo mode \(cloud\)/i.test(editedCloud.sourceLine),
+    editedCloud.sourceLine,
+  );
+  check(
+    'an edited cloud transcript never collapses to the one-clause "transcribed and drafted" claim',
+    !/transcribed and drafted/i.test(editedCloud.sourceLine),
+    editedCloud.sourceLine,
+  );
+  check('the edited fact is stamped on the note for the Transcript tab', editedCloud.transcriptEdited === true);
+
+  const unedited = await live.summarize({ transcript: REAL_TRANSCRIPT, audioLeftDevice: true, transcriptFromCloud: true });
+  check('an unedited cloud transcript stays unqualified', unedited.transcriptEdited === undefined, String(unedited.transcriptEdited));
+  check('…and keeps the collapsed claim', /transcribed and drafted in demo mode \(cloud\)/i.test(unedited.sourceLine), unedited.sourceLine);
+
+  // Hand-typed text has no machine output to have edited — a stray flag must not invent the claim.
+  const typed = await live.summarize({
+    transcript: REAL_TRANSCRIPT,
+    audioLeftDevice: false,
+    transcriptFromCloud: false,
+    transcriptEdited: true,
+  });
+  check('the edited flag is ignored over hand-typed text', typed.transcriptEdited === undefined, String(typed.transcriptEdited));
+  check('…which still reads as entered by hand', /transcript entered by hand/i.test(typed.sourceLine), typed.sourceLine);
+
+  globalThis.fetch = originalFetch;
+
+  // The on-device (sample) transcriber's output is subject to the same rule via the offline delegate.
+  const offline = new GroqSummarizationService('https://proxy.invalid', async () => null, 'openai/gpt-oss-120b');
+  const editedDevice = await offline.summarize({
+    transcript: REAL_TRANSCRIPT,
+    transcribedOnDevice: true,
+    transcriptEdited: true,
+    sampleCapture: true,
+  });
+  check(
+    'an edited on-device transcript names the edit too',
+    /transcribed on this device, then edited by you/i.test(editedDevice.sourceLine),
+    editedDevice.sourceLine,
+  );
+}
+
 // --- 5. The Transcript tab's contract: the reviewed transcript rides on the note itself ------------
 // (decision item 3) `buildDraft` — not a caller re-attaching it after the fact — is the single source
 // of truth for `DraftNote.transcript`, so every summarize() path (mock, offline-delegate, live cloud)

@@ -121,6 +121,17 @@ export type DraftNote = {
    */
   transcriptFromCloud?: boolean;
   /**
+   * Qualifier on the machine-transcription claim above (and on `transcribedOnDevice`-produced text):
+   * true iff the clinician CHANGED the machine transcriber's output before the note was drafted — any
+   * divergence counts, from fixing one mishear to replacing the whole text, including the speaker-
+   * separation "Remove Speaker 2" rewrite. Without this, a wholesale replacement typed into the
+   * "Transcript · editable" box still read as "transcribed in demo mode (cloud)" — presenting the
+   * clinician's own words as whisper output, the exact misstatement `transcriptFromCloud` exists to
+   * prevent. Only ever stamped alongside a real machine-transcription claim; absent for hand-typed
+   * text (nothing machine-produced to have edited), sample fixtures, and older notes.
+   */
+  transcriptEdited?: boolean;
+  /**
    * True iff THIS note was drafted by the cloud summarizer (Groq) rather than the on-device mock — the
    * hop that sends the transcript TEXT away, independent of where the audio was transcribed. Recorded
    * at draft time so a note viewed later, under a build configured differently, still reports what

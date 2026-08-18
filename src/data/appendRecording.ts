@@ -15,6 +15,11 @@ export type RecordingAddition = {
   transcript: string;
   audioLeftDevice: boolean;
   transcriptFromCloud: boolean;
+  /** True when the clinician changed the machine transcriber's output for THIS segment before adding
+   *  it — the divider then says "then edited by the clinician" instead of letting a pure
+   *  machine-transcription claim stand over the clinician's own words. Meaningless (and ignored)
+   *  when `transcriptFromCloud` is false: typed text has no machine output to have edited. */
+  transcriptEdited?: boolean;
   auxiliaryNotes?: string;
   /** Comments typed on the recording screen during THIS added capture — clock values read within this
    *  segment's own recording, concatenated after the note's existing comments, never replacing them. */
@@ -24,7 +29,10 @@ export type RecordingAddition = {
 /** How THIS added segment's own text was produced — read at the point it's spliced in, so the divider
  *  discloses the truth for that segment specifically rather than borrowing the note's prior claim. */
 function segmentProvenance(addition: RecordingAddition): string {
-  if (addition.transcriptFromCloud) return 'transcribed in the cloud';
+  if (addition.transcriptFromCloud)
+    return addition.transcriptEdited === true
+      ? 'transcribed in the cloud, then edited by the clinician'
+      : 'transcribed in the cloud';
   if (addition.audioLeftDevice) return 'audio sent to the cloud but no transcript came back — typed by the clinician';
   return 'typed by the clinician';
 }
@@ -63,6 +71,10 @@ export function applyRecordingAppend(note: DraftNote, addition: RecordingAdditio
     transcript,
     audioLeftDevice: note.audioLeftDevice === true || addition.audioLeftDevice,
     transcriptFromCloud,
+    // Up-only, like `audioLeftDevice`: once any machine-transcribed segment has been edited, the
+    // note-level machine claim stays qualified. The segment-level truth lives in each divider.
+    transcriptEdited:
+      note.transcriptEdited === true || (addition.transcriptFromCloud && addition.transcriptEdited === true) || undefined,
     transcriptMixedProvenance: mixed || undefined,
     auxiliaryNotes: auxParts.length ? auxParts.join('\n\n') : undefined,
     recordingComments: comments.length ? comments : undefined,
