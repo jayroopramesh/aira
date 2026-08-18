@@ -23,11 +23,52 @@ jest.mock('../../../../services/auth', () => ({
 }));
 
 // A mutable module-scope fixture the mock reads on every render (same pattern as `mockDraft` below),
-// so individual tests can control what `audioVault` claims is kept for THIS note without touching
-// the real in-memory registry (which `session/index.tsx` alone writes to).
-let mockAudioSegments: { uri: string; durationMs: number; kind: 'original' | 'added'; label: string }[] = [];
+// so individual tests can control what `audioVault` claims is held for THIS note without touching
+// the real in-memory registry (which `session/index.tsx` alone writes to). The mutation functions
+// mirror the real module's state transitions (proved by `scripts/audio-vault-harness.mjs`) so these
+// tests stay wiring tests: they prove the screen CALLS the right vault operation at the right moment.
+type MockAudioSegment = { uri: string; durationMs: number; kind: 'original' | 'added'; label: string };
+type MockAudioDisposition = 'held' | 'kept' | 'discarded';
+let mockAudioSegments: MockAudioSegment[] = [];
+let mockAudioDisposition: MockAudioDisposition = 'held';
+// The component reads through `useSyncExternalStore` (module state + the React Compiler make a bare
+// render-time read freeze — see AudioTrust), so the mock implements the same subscribe/notify +
+// referentially-stable-snapshot contract as the real module (proved by scripts/audio-vault-harness.mjs).
+let mockVaultVersion = 0;
+const mockVaultListeners = new Set<() => void>();
+let mockVaultSnap: { version: number; snap: { segments: MockAudioSegment[]; disposition: MockAudioDisposition } } | null = null;
+const mockVaultNotify = () => {
+  mockVaultVersion++;
+  mockVaultListeners.forEach((l) => l());
+};
+const mockDiscardAudio = jest.fn(() => {
+  mockAudioSegments = [];
+  mockAudioDisposition = 'discarded';
+  mockVaultNotify();
+});
+const mockDiscardAudioUnlessKept = jest.fn(() => {
+  if (mockAudioDisposition === 'kept') return false;
+  mockDiscardAudio();
+  return true;
+});
 jest.mock('../../../../services/audioVault', () => ({
-  getAudioSegments: () => mockAudioSegments,
+  EMPTY_AUDIO_VAULT_SNAPSHOT: { segments: [], disposition: 'held' },
+  subscribeAudioVault: (l: () => void) => {
+    mockVaultListeners.add(l);
+    return () => mockVaultListeners.delete(l);
+  },
+  getAudioVaultSnapshot: () => {
+    if (!mockVaultSnap || mockVaultSnap.version !== mockVaultVersion) {
+      mockVaultSnap = { version: mockVaultVersion, snap: { segments: mockAudioSegments, disposition: mockAudioDisposition } };
+    }
+    return mockVaultSnap!.snap;
+  },
+  setAudioKept: (_c: string, _n: number, keep: boolean) => {
+    mockAudioDisposition = keep ? 'kept' : 'held';
+    mockVaultNotify();
+  },
+  discardAudio: (...args: unknown[]) => mockDiscardAudio(...(args as [])),
+  discardAudioUnlessKept: (...args: unknown[]) => mockDiscardAudioUnlessKept(...(args as [])),
 }));
 
 const CLIENT: Client = {
@@ -134,6 +175,11 @@ beforeEach(() => {
 afterEach(() => {
   mockDraft = DRAFT;
   mockAudioSegments = [];
+  mockAudioDisposition = 'held';
+  mockVaultVersion++; // direct fixture assignment above must invalidate the cached snapshot
+  mockVaultListeners.clear();
+  mockDiscardAudio.mockClear();
+  mockDiscardAudioUnlessKept.mockClear();
 });
 
 it('links the header client chip to the patient page', () => {
@@ -298,13 +344,48 @@ it('"Keep the audio" with real segments offers a real stitched play control', as
   await screen.findByText('Pause');
 });
 
-it('"Keep the audio" with no real segments says so honestly instead of offering a dead Play button', () => {
+// Deletion made real (round 5, 2026-08-18): a note with no held recording gets NO keep switch — the
+// old card offered a toggle that "resurrected" audio the app claimed was already deleted, which was
+// the false claim this whole surface exists to avoid.
+it('a signed note with no held recording offers no keep switch and claims no deletion it cannot show', () => {
   mockDraft = SIGNED_DRAFT;
   mockAudioSegments = [];
   renderScreen();
-  fireEvent.press(screen.getByRole('switch'));
-  expect(screen.getByText(/Nothing to play back/)).toBeTruthy();
+  expect(screen.queryByRole('switch')).toBeNull();
+  expect(screen.getByText('No recording is kept')).toBeTruthy();
   expect(screen.queryByText(/Play the stitched recording/)).toBeNull();
+});
+
+it('an unsigned draft with a held recording says it is held (not deleted) and offers the keep decision', () => {
+  mockDraft = DRAFT;
+  mockAudioSegments = SEGMENTS;
+  renderScreen();
+  expect(screen.getByText('Recording held on this device')).toBeTruthy();
+  expect(screen.getByText(/still held in this browser tab while you review/)).toBeTruthy();
+  expect(screen.getByRole('switch')).toBeTruthy();
+  expect(screen.queryByText(/Recording deleted/)).toBeNull();
+});
+
+it('signing off actually discards the recording unless it was kept', () => {
+  mockDraft = DRAFT;
+  mockAudioSegments = SEGMENTS;
+  renderScreen();
+  fireEvent.press(screen.getAllByText('Sign off')[0]);
+  expect(mockDiscardAudioUnlessKept).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByText('Confirm sign-off'));
+  expect(mockDiscardAudioUnlessKept).toHaveBeenCalledTimes(1);
+});
+
+it('un-keeping on a signed note deletes immediately and the card reports the observed deletion', () => {
+  mockDraft = SIGNED_DRAFT;
+  mockAudioSegments = SEGMENTS;
+  mockAudioDisposition = 'kept';
+  renderScreen();
+  expect(screen.getByText('Audio kept for this session')).toBeTruthy();
+  fireEvent.press(screen.getByRole('switch'));
+  expect(mockDiscardAudio).toHaveBeenCalledTimes(1);
+  expect(screen.getByText('Recording deleted')).toBeTruthy();
+  expect(screen.queryByRole('switch')).toBeNull();
 });
 
 it('recording comments persisted on the note render on the Transcript tab, stamped with their clock', () => {
