@@ -430,6 +430,110 @@ const RECORDING = { uri: 'blob:https://app.example/9f2c', durationMs: 47 * 60 * 
   );
 }
 
+// --- 4c. A quotation the transcript cannot back never enters the note ------------------------------
+// Found in round 5 (Dr. Williams audit walk): over a retrospective dictation containing no client
+// speech at all, the live model converted the clinician's indirect report ("She told me the worst
+// part is the mornings, when she reaches for a routine that is not there any more") into a
+// first-person client utterance ("The worst part is the mornings, when I reach for a routine that is
+// not there any more") and the note rendered it wrapped in quotation marks — a fabricated verbatim
+// quote in the permanent record. `buildDraft` now keeps `subjective.quote` only when it is verbatim
+// in the transcript (tolerant of case/punctuation/whitespace and `…`-marked omissions, intolerant of
+// changed words), so a quote an auditor cannot verify against the stored transcript never renders.
+{
+  const DICTATION =
+    'Session one, telehealth. She told me the worst part is the mornings, when she reaches for a ' +
+    'routine that is not there any more. She said her chest gets tight whenever a recruiter email ' +
+    "arrives. She has been walking her neighbour's dog daily and says that hour feels normal. " +
+    'She denied suicidal ideation when I asked directly.';
+
+  const originalFetch = globalThis.fetch;
+  const liveWithQuote = (quote) => {
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  subjective: { body: ['Reported job-loss anxiety.'], quote },
+                  riskSafety: { summary: 'Screened.', rows: [{ label: 'Suicidal ideation', value: 'Not indicated' }], level: 'clear' },
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    return new GroqSummarizationService('https://proxy.invalid', async () => 'session-token', 'openai/gpt-oss-120b');
+  };
+  const quoteOf = (note) => note.sections.find((s) => s.id === 'subjective')?.quote;
+
+  // The exact live fabrication: reported speech converted to first person. Every word is plausible;
+  // none of it is a sentence anyone spoke on the recording.
+  const fabricated = await liveWithQuote(
+    'The worst part is the mornings, when I reach for a routine that is not there any more.',
+  ).summarize({ transcript: DICTATION, audioLeftDevice: true, transcriptFromCloud: true });
+  check('a first-person conversion of reported speech is dropped, never quoted', quoteOf(fabricated) === undefined, quoteOf(fabricated));
+
+  // A genuinely verbatim excerpt survives, punctuation/case differences and all.
+  const verbatim = await liveWithQuote('her chest gets tight whenever a recruiter email arrives').summarize({
+    transcript: DICTATION,
+    audioLeftDevice: true,
+    transcriptFromCloud: true,
+  });
+  check('a verbatim excerpt is kept', quoteOf(verbatim) === 'her chest gets tight whenever a recruiter email arrives', quoteOf(verbatim));
+
+  const punctuated = await liveWithQuote('“Her chest gets tight, whenever a recruiter email arrives!”').summarize({
+    transcript: DICTATION,
+    audioLeftDevice: true,
+    transcriptFromCloud: true,
+  });
+  check(
+    'case/punctuation/wrapping-quote differences do not fail a real quote — and shed wrapping marks',
+    quoteOf(punctuated) === 'Her chest gets tight, whenever a recruiter email arrives!',
+    quoteOf(punctuated),
+  );
+
+  // An ellipsis marks an omission, not a licence: every fragment must be in the transcript, in order.
+  const ellipsis = await liveWithQuote('the worst part is the mornings… that hour feels normal').summarize({
+    transcript: DICTATION,
+    audioLeftDevice: true,
+    transcriptFromCloud: true,
+  });
+  check('an ellipsis-marked omission of verbatim fragments is kept', quoteOf(ellipsis) !== undefined, quoteOf(ellipsis));
+
+  const outOfOrder = await liveWithQuote('that hour feels normal… the worst part is the mornings').summarize({
+    transcript: DICTATION,
+    audioLeftDevice: true,
+    transcriptFromCloud: true,
+  });
+  check('out-of-order fragments are not a quote', quoteOf(outOfOrder) === undefined, quoteOf(outOfOrder));
+
+  const halfInvented = await liveWithQuote('the worst part is the mornings… I just feel invisible now').summarize({
+    transcript: DICTATION,
+    audioLeftDevice: true,
+    transcriptFromCloud: true,
+  });
+  check('one invented fragment poisons the whole quote', quoteOf(halfInvented) === undefined, quoteOf(halfInvented));
+
+  // Word boundaries: a fragment may not match inside other words ("he said" is not in "she said").
+  const boundary = await liveWithQuote('he said her chest gets tight').summarize({
+    transcript: DICTATION,
+    audioLeftDevice: true,
+    transcriptFromCloud: true,
+  });
+  check('a fragment only matches on whole words', quoteOf(boundary) === undefined, quoteOf(boundary));
+
+  const punctuationOnly = await liveWithQuote('“…”').summarize({
+    transcript: DICTATION,
+    audioLeftDevice: true,
+    transcriptFromCloud: true,
+  });
+  check('a punctuation-only quote is dropped', quoteOf(punctuationOnly) === undefined, quoteOf(punctuationOnly));
+
+  globalThis.fetch = originalFetch;
+}
+
 // --- 5. The Transcript tab's contract: the reviewed transcript rides on the note itself ------------
 // (decision item 3) `buildDraft` — not a caller re-attaching it after the fact — is the single source
 // of truth for `DraftNote.transcript`, so every summarize() path (mock, offline-delegate, live cloud)

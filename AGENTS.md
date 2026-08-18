@@ -181,7 +181,17 @@ The seams are wired to real cloud services for the demo, degrading to mocks when
   which exists because it was re-derived wrongly in three successive fix rounds. `buildDraft` also
   stamps the note's `transcript` (trimmed; blank = absent) from the input it drafted, so the review
   screen's Transcript tab is fed by every `summarize()` path instead of by one UI call site
-  re-attaching it — never reintroduce that graft.
+  re-attaching it — never reintroduce that graft. **A quotation the transcript cannot back never
+  enters the note** (round 5, 2026-08-18): the review screen wraps `subjective.quote` in quotation
+  marks — the record's strongest verbatim claim — and the live model, asked over a retrospective
+  dictation containing no client speech, converted the clinician's indirect report into a
+  first-person client utterance that no one spoke. `buildDraft` keeps the quote only when
+  `quoteIsVerbatim` (`summarization.ts`) finds it in the stored transcript — tolerant of
+  case/whitespace/punctuation/curly quotes and `…`-marked omissions (each fragment verbatim, in
+  order), intolerant of changed words — and sheds wrapping quote marks so the UI never
+  double-quotes. Proved in `scripts/provenance-harness.mjs` section 4c. The SYSTEM_PROMPT asks for
+  an exact word-for-word excerpt (empty when there is no quotable client speech), but the gate, not
+  the prompt, is the guarantee.
 - **Cloud reachability is a runtime question**: `cloudSessionReady()` (`cloudSession.ts`) = proxy
   configured AND a live token. The capture screen asks it before the mic opens and says plainly when
   the cloud is unreachable; it never gates recording. Signing in cannot rescue a capture already
