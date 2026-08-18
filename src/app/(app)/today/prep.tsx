@@ -6,11 +6,12 @@ import { ClientNotFound } from '../../../components/ClientNotFound';
 import { Highlights } from '../../../components/Highlights';
 import { ArrowRight } from '../../../components/icons';
 import { Button, Card, Eyebrow } from '../../../components/ui';
-import { useClient } from '../../../data/DataProvider';
+import { useClient, useClientNotes } from '../../../data/DataProvider';
+import { lastPlanProvenance } from '../../../data/sessionClient';
 import { useTheme } from '../../../theme/ThemeProvider';
 
 /**
- * Prep reminder (round-2 change #2). Read-only highlights drawn from the last signed plan —
+ * Prep reminder (round-2 change #2). Read-only highlights drawn from the last captured plan —
  * a gentle reminder of "what's worth carrying in", NOT a checklist. No checkboxes, no
  * counter, no "mark all done": prep is something the clinician reads, not ticks off.
  */
@@ -19,9 +20,19 @@ export default function PrepReminder() {
   const c = useTheme().colors;
   const { clientId } = useLocalSearchParams<{ clientId: string }>();
   const client = useClient(clientId);
+  const notes = useClientNotes(clientId);
 
   if (!client) return <ClientNotFound />;
-  const lastDate = client.lastPlan[0]?.source.match(/\d+ \w+/)?.[0] ?? 'the last session';
+  // Same honesty rule as the client drawer's plan caption: "signed" is read off the note behind the
+  // plan, never asserted — a freshly captured plan comes from a draft nobody has signed yet, and this
+  // subtitle used to call that "the last signed plan".
+  const plan = lastPlanProvenance(client, notes);
+  const planPhrase =
+    plan.status === 'signed'
+      ? `the last signed plan (${plan.dateLabel})`
+      : plan.status === 'draft'
+        ? `the plan in the latest note (${plan.dateLabel}), still an unsigned draft`
+        : `the last session’s plan${plan.dateLabel ? ` (${plan.dateLabel})` : ''}`;
 
   return (
     <Screen maxWidth={760}>
@@ -29,7 +40,7 @@ export default function PrepReminder() {
       <PageHeader
         eyebrow={`Prep · ${client.name} · 10:30`}
         title="Get ready for this session"
-        subtitle={`A gentle reminder drawn from the last signed plan (${lastDate}). Nothing to tick off, just what's worth carrying in.`}
+        subtitle={`A gentle reminder drawn from ${planPhrase}. Nothing to tick off, just what's worth carrying in.`}
       />
 
       <Card>

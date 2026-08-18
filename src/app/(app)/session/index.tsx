@@ -1114,6 +1114,11 @@ function Analysing({
   // so both stay false there.
   const [audioLeftDevice, setAudioLeftDevice] = useState(false);
   const [transcriptFromCloud, setTranscriptFromCloud] = useState(false);
+  // A THIRD observed fact: an on-device transcriber actually produced the text (today, only the
+  // sample clip's mock replay). Stays false when transcription failed and the clinician typed the
+  // transcript themselves — the note then says "entered by hand" rather than claiming an on-device
+  // transcription that never ran.
+  const [transcribedOnDevice, setTranscribedOnDevice] = useState(false);
 
   // Speaker separation (round-2 item 1) — a POST-transcription LLM pass, "patient session" mode only.
   // `speakerState` degrades honestly: 'unavailable' when there's no live cloud session to run it,
@@ -1136,6 +1141,7 @@ function Analysing({
     (async () => {
       setAudioLeftDevice(false);
       setTranscriptFromCloud(false);
+      setTranscribedOnDevice(false);
       setNeedsSignIn(false);
       try {
         const result = await service.transcribe(capture, {
@@ -1153,6 +1159,7 @@ function Analysing({
         setTranscript(cloudText);
         setAudioLeftDevice(wentToCloud);
         setTranscriptFromCloud(wentToCloud && cloudText.length > 0);
+        setTranscribedOnDevice(!wentToCloud && cloudText.length > 0);
         setStage('ready');
       } catch (e) {
         if ((e as Error).name === 'AbortError') return;
@@ -1246,6 +1253,7 @@ function Analysing({
       durationMs: capture.durationMs,
       audioLeftDevice,
       transcriptFromCloud,
+      transcribedOnDevice,
       sampleCapture: isMockCapture,
       auxiliaryNotes,
     };

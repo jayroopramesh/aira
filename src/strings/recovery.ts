@@ -88,11 +88,14 @@ export const recoveryStrings = {
   // Welcome · create account
   createEyebrow: 'Create your account',
   createTitle: 'A vault that’s yours alone',
-  createLede: 'We verify you’re a licensed clinician, then set up your vault on this device.',
+  // No auth path verifies licensure today (auth.ts: the registry check is a production-phase
+  // addition), so this copy may not claim verification in the present tense. The consent checkbox
+  // below is the real mechanism: self-attestation.
+  createLede: 'A few details set up your vault on this device. This preview takes your clinician status on trust.',
   emiratesIdLabel: 'Emirates ID number',
   emiratesIdWhyLink: 'Why do we need this?',
   emiratesIdWhy:
-    'Your Emirates ID lets us confirm you against the UAE licensed-practitioner registry, and it’s the identity we’d check for the manual, mutually-approved account-recovery path. It’s used for verification only — it isn’t stored in your notes vault.',
+    'Your Emirates ID is the identity we’d check in the manual, mutually-approved account-recovery path. At full launch it will also confirm you against the UAE licensed-practitioner registry; this preview doesn’t run that check yet. It’s never stored in your notes vault.',
   phoneLabel: 'Phone number',
   fullNameLabel: 'Full name',
   emailLabel: 'Email',

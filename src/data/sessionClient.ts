@@ -436,7 +436,7 @@ function scanNoteRisk(note: DraftNote): RiskLevel {
   // "Not raised / not addressed / deferred" are NEUTRAL: the topic simply didn't come up. They are
   // neither a disclosure nor a clinical denial, so they must land on "watch" — without them the
   // not-denied branch below would read a benign mock row ("Not raised this session", or the
-  // "Not explicitly addressed" the mock emits on its self-harm branch) as disclosed ideation.
+  // "Not explicitly addressed" that older mock drafts carried on the self-harm branch) as disclosed ideation.
   // These describe the STATUS OF THE SCREENING, not what a client did: 'not disclosed'/'not reported'
   // were dropped because they equally describe ordinary content ("not disclosed to family").
   // 'Not applicable' / 'N/A' are the same non-answer written two ways; both must land on the same
@@ -487,6 +487,33 @@ function planFromNote(note: DraftNote, dateLabel: string): PrepItem[] {
     source: `from Plan & Next Steps · ${dateLabel}`,
     done: false,
   }));
+}
+
+/**
+ * Whether the note behind `client.lastPlan` was actually signed — an OBSERVED fact, never asserted.
+ * `lastPlan` is refreshed at CAPTURE time (`clientFromSession` / `appendSessionToClient`), which is
+ * always before sign-off, so any surface that captions it "signed" unconditionally is claiming an
+ * attestation that may never have happened. This resolves the claim from the note itself: the plan's
+ * source line carries the capture-day date label, and every retained note's `sessionLabel` ends with
+ * the same label (`Session N — <date>`), so the backing note is findable and its real `status` read.
+ *
+ * Returns `status: null` when the backing note can't be identified (no dated plan source, or the note
+ * has rotated out of the per-client retention cap) — the caller then makes NO claim either way,
+ * which is the honest fallback. Notes are newest-first; the first label match is the note whose
+ * capture most recently refreshed the plan.
+ */
+export function lastPlanProvenance(
+  client: Pick<Client, 'lastPlan'>,
+  notes: DraftNote[],
+): { dateLabel: string | null; status: 'signed' | 'draft' | null } {
+  const source = client.lastPlan[0]?.source ?? '';
+  const segment = source.split('·').pop()?.trim() ?? '';
+  // A date label always carries a digit ("5 Apr" / "Aug 18"); a prose tail ("re-screen every
+  // session") never keys a note and must not render as a date.
+  const dateLabel = segment && /\d/.test(segment) ? segment : null;
+  if (!dateLabel) return { dateLabel: null, status: null };
+  const backing = notes.find((n) => n.sessionLabel.endsWith(`— ${dateLabel}`));
+  return { dateLabel, status: backing ? (backing.status === 'signed' ? 'signed' : 'draft') : null };
 }
 
 export function clientFromSession(
