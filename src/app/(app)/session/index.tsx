@@ -851,8 +851,8 @@ function Recording({
           Nothing is authoritative yet. This is a draft you’ll review and sign.
         </AppText>{' '}
         {willTranscribe
-          ? 'When you stop, Airava transcribes, drafts the note, then deletes the recording (unless you keep it).'
-          : 'When you stop, you’ll type or paste the transcript and Airava drafts the note on this device, then deletes the recording (unless you keep it).'}
+          ? 'When you stop, Airava transcribes and drafts the note. The recording is deleted when you sign the note, unless you choose to keep it.'
+          : 'When you stop, you’ll type or paste the transcript and Airava drafts the note on this device. The recording is deleted when you sign the note, unless you choose to keep it.'}
       </AppText>
     </View>
   );

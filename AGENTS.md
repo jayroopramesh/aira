@@ -305,20 +305,36 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   (the transcript genuinely changed, so "Generate from notes" honestly re-enables) — `PrescriptionsRail`
   now dedupes by bullet text before pulling, since the Plan section itself isn't auto-redrafted on
   append and a second pull over an unchanged Plan must not duplicate prescriptions.
-- **Stitched audio playback** (`StitchedAudioPlayer` in `review.tsx`, captain 2026-08-17): "Keep the
-  audio" (`AudioTrust`) now backs its own promise with a real `<Audio>`-driven sequential player — the
-  original capture, then each later Continue-recording segment, in order, via a single audio element
-  advancing on `ended`. The segment list lives in `src/services/audioVault.ts`, an IN-MEMORY
-  (module-scope, never vault-persisted) registry keyed by `clientId::noteIndex`, written only by
-  `session/index.tsx`'s `onDrafted`/`onAppended` and only for a REAL `blob:` capture
-  (`isRealAudioUri` — the sample clip and a failed recording never register, so a demo session can
-  never be offered a fabricated "kept audio" replay). In-memory is a deliberate, honestly-scoped
-  choice, not a shortcut: a `blob:` object URL is only valid for the page load that created it, and
-  the existing "Keep the audio" copy already promises persistence only "for this session" — a reload
-  genuinely loses it, matching that copy rather than quietly under-delivering on it. Proved by
-  `scripts/audio-vault-harness.mjs` (registry ordering/isolation) and a `review.test.tsx` wiring test
-  (toggling Keep with mocked segments drives a real `window.Audio` construction; with none, an honest
-  "Nothing to play back" message, never a dead button).
+- **Stitched audio playback + REAL recording deletion** (`StitchedAudioPlayer`/`AudioTrust` in
+  `review.tsx`, captain 2026-08-17; deletion made real round 5, 2026-08-18): "Keep the audio"
+  (`AudioTrust`) backs its promise with a real `<Audio>`-driven sequential player — the original
+  capture, then each later Continue-recording segment, in order, via a single audio element advancing
+  on `ended`. The segment list lives in `src/services/audioVault.ts`, an IN-MEMORY (module-scope,
+  never vault-persisted) registry keyed by `clientId::noteIndex`, written only by `session/index.tsx`'s
+  `onDrafted`/`onAppended` and only for a REAL `blob:` capture (`isRealAudioUri` — the sample clip and
+  a failed recording never register, so a demo session can never be offered a fabricated "kept audio"
+  replay). In-memory is a deliberate, honestly-scoped choice: a `blob:` object URL is only valid for
+  the page load that created it, and the copy promises persistence only "for this session" — a reload
+  genuinely loses it. **"Recording deleted" must be an OBSERVED event, never a UI state**: for a whole
+  round the card claimed deletion while the blob URL stayed alive and fetchable all tab long, with a
+  toggle that resurrected and replayed the "deleted" audio. Now each note's audio carries a
+  disposition (`held`/`kept`/`discarded`); the deletion moment is SIGN-OFF (`sign` in `review.tsx`
+  calls `discardAudioUnlessKept`, which REVOKES every segment's object URL), a re-record's
+  `setOriginalAudioSegment` revokes the clip it replaces, un-keeping a signed note deletes
+  immediately (the copy warns first), and a deleted recording gets no resurrect toggle. The draft
+  review renders the card too ("Recording held on this device") because the keep decision must
+  precede the deletion moment — and no copy anywhere claims the CLOUD copy was deleted, since the
+  app cannot observe that. **`AudioTrust` reads the vault via
+  `useSyncExternalStore(subscribeAudioVault, …getAudioVaultSnapshot…)` — never a bare render-time
+  read.** This build runs the React Compiler (`app.json` → `experiments.reactCompiler`), which
+  memoizes render expressions on the props they mention, so a bare `getAudioSegments(clientId,
+  noteIndex)` in render gets cached forever and froze the card on pre-sign state in the exported
+  bundle while jest (no compiler) stayed green — any future module-scope store read in render needs
+  the same subscribe/snapshot seam, and needs verifying in the compiled export, not just jest.
+  Proved by `scripts/audio-vault-harness.mjs` (registry ordering/isolation, disposition transitions,
+  revocation observed via a stubbed `URL.revokeObjectURL`, subscription notify/stable-snapshot) and
+  `review.test.tsx` wiring tests (sign-off calls the discard, the switch drives the vault ops, a
+  note with no held recording gets no switch and a real `window.Audio` construction backs Play).
 - **Pause/resume + a real waveform** (captain 2026-08-17, `audioCapture.ts`'s `ActiveRecording`): a
   paused-then-resumed recording is ONE segment (MediaRecorder's native `pause()`/`resume()` keep
   writing into the same clip) — the opposite of Continue-recording's brand-new segment. `stop()`'s
