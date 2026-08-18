@@ -371,6 +371,16 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   in UI copy were removed in a dedicated pass; the ones that remain are intentional — `'—'` no-value
   placeholders, the `Session N — date` label format (parsed by a regex), and the plaintext note-export
   section marker/attribution in `review.tsx`'s `noteToPlainText`.
+- **User-facing copy is vendor/tech-jargon-free** (2026-08-18 pass): no "Groq"/"Supabase"/"Whisper",
+  no "API"/"Edge Function"/"proxy"/model names, anywhere a clinician can see them — banners,
+  provenance lines, capture-screen notices, Settings' service list (`configuredServices` in
+  `src/config/env.ts`), onboarding. The pilot's written brief + consent form now own that technical
+  disclosure; app copy says "off this device" / "pilot mode" instead. The on-device-vs-off-device
+  FACT always stays (never claim a hop that didn't happen — same rule as the provenance lines below);
+  only the vendor/tech naming goes. Code comments, `README.md`, and `docs/` keep full technical
+  detail — this rule is copy-only. `scripts/provenance-harness.mjs`'s regexes assert the plain-language
+  wording (e.g. `/transcribed off this device/i`) while still proving the same three-fact guarantees;
+  keep the two in lockstep if either changes.
 - Risk is clay, never alarm-red; colour is never the only signal (always paired with a word).
 - Escalate is a standing, dismissible sheet — never modal, never alarm. No safety control may be a
   dead promise: the crisis line, warm handoff and safety plan each do a real thing or say plainly why

@@ -414,8 +414,8 @@ function PreCapture({
       </AppText>
       <AppText variant="body" color="ink2" center style={{ marginTop: 10, maxWidth: 460 }}>
         {hasGroq
-          ? 'In demo mode Airava transcribes and drafts in the cloud (Groq). You review and sign every note; the draft and transcript stay on this device.'
-          : 'Demo services aren’t configured, so this build has no automatic transcription. You can still record: type or paste the transcript afterwards and Airava drafts the note on this device, with nothing sent anywhere. “Use sample audio” runs the full walkthrough on a built-in demo clip.'}
+          ? 'In pilot mode Airava transcribes and drafts off this device. You review and sign every note; the draft and transcript stay on this device.'
+          : 'Off-device services aren’t configured, so this build has no automatic transcription. You can still record: type or paste the transcript afterwards and Airava drafts the note on this device, with nothing sent anywhere. “Use sample audio” runs the full walkthrough on a built-in demo clip.'}
       </AppText>
 
       {appendTarget ? <AppendBanner sessionLabel={appendTarget.sessionLabel} /> : null}
@@ -802,9 +802,9 @@ function Recording({
           </AppText>
           <AppText variant="small" color="ink3" center style={{ marginTop: 8, lineHeight: 17 }}>
             {willTranscribe
-              ? 'Audio is held on this device; in demo mode it’s sent to the cloud (Groq) to transcribe when you stop.'
+              ? 'Audio is held on this device; in pilot mode it’s sent off this device to transcribe when you stop.'
               : hasGroq
-                ? 'Audio is held on this device and won’t be sent anywhere. Cloud transcription needs a live sign-in, and there isn’t one, so you’ll type or paste the transcript after you stop.'
+                ? 'Audio is held on this device and won’t be sent anywhere. Off-device transcription needs a live sign-in, and there isn’t one, so you’ll type or paste the transcript after you stop.'
                 : 'Audio is held on this device and won’t be sent anywhere. This build has no automatic transcription, so you’ll type or paste the transcript after you stop.'}
           </AppText>
         </View>
@@ -1342,7 +1342,7 @@ function Analysing({
             <View style={{ flex: 1 }}>
               <AppText variant="bodyStrong">{stage === 'drafting' ? 'Drafting clinical sections…' : 'Analysing transcript…'}</AppText>
               <AppText variant="small" color="ink3" style={{ marginTop: 2 }}>
-                {label} · {cloudHop ? 'demo mode (cloud)' : 'on-device mock'}
+                {label} · {cloudHop ? 'pilot mode (off-device)' : 'on-device'}
               </AppText>
             </View>
           </Row>

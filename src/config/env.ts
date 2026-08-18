@@ -101,11 +101,14 @@ export const onCallEmail: { configured: boolean; address: string } = (() => {
   return { configured: false, address: 'on-call@clinic.example' };
 })();
 
-/** Which cloud services are live, for the demo banner / settings copy. */
+/**
+ * Which off-device services are live, for the settings copy. Labels are deliberately
+ * vendor/tech-free — the pilot's brief + consent form carry the technical disclosure now.
+ */
 export function configuredServices(): { label: string; on: boolean }[] {
   return [
-    { label: 'Accounts (Supabase)', on: hasSupabase },
-    { label: 'Transcription (Groq · whisper-large-v3)', on: hasGroq },
-    { label: 'Summarization (Groq · gpt-oss-120b)', on: hasGroq },
+    { label: 'Accounts', on: hasSupabase },
+    { label: 'Transcription', on: hasGroq },
+    { label: 'Summarization', on: hasGroq },
   ];
 }

@@ -483,17 +483,17 @@ function buildDraft(
   // the clinician's own typing, and the note must say that instead of asserting a hop that never
   // happened ("Transcribed on this device" over hand-typed text is the false claim this replaces).
   const deviceTranscript = !cloudTranscript && !audioLeft && input.transcribedOnDevice === true;
-  const where = (cloud: boolean) => (cloud ? 'in demo mode (cloud)' : 'on this device');
+  const where = (cloud: boolean) => (cloud ? 'off this device' : 'on this device');
 
   const transcriptHop = cloudTranscript
-    ? 'transcribed in demo mode (cloud)'
+    ? 'transcribed off this device'
     : audioLeft
-      ? 'audio sent to the cloud to transcribe but no transcript came back, so the text was entered by hand'
+      ? 'audio sent off this device to transcribe but no transcript came back, so the text was entered by hand'
       : deviceTranscript
         ? 'transcribed on this device'
         : 'transcript entered by hand';
   const draftHop = keywordStub
-    ? 'drafted on this device by a keyword stub, not a clinical model — assessment, plan and codes are left for you'
+    ? 'drafted on this device using simple keyword matching, not full clinical drafting — assessment, plan and codes are left for you'
     : `drafted ${where(draftedInCloud)}`;
   const hops =
     !keywordStub &&
