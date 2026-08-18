@@ -143,12 +143,22 @@ function WebSideNav() {
 
 export default function AppLayout() {
   const theme = useTheme();
+  const pathname = usePathname();
   // Route guard (F2): the (app) group holds the entire caseload. It renders ONLY when the vault is
   // open. Signing out (and a plain reload) locks the vault, so any direct navigation here — e.g.
   // typing /patterns while signed out — is bounced back to the unlock screen instead of exposing
   // client data. isUnlocked() is in-memory, so a reload also re-locks and re-challenges.
+  // The bounce carries WHERE the clinician was as `next` (validated by unlock's safeNext), so a
+  // mid-work reload re-challenges without also discarding their place — sign-in returns them to the
+  // page they were interrupted on, not the day board. On web the browser URL is the source of truth
+  // (usePathname can still read "/" on the first render of a reloaded deep link, before the router
+  // has resolved it) and the query string rides along (review needs its clientId/note params);
+  // native falls back to the router's pathname.
   if (!vaultStorage.isUnlocked()) {
-    return <Redirect href="/unlock" />;
+    const webLocation = IS_WEB && typeof window !== 'undefined' ? window.location : null;
+    const place = webLocation ? webLocation.pathname + webLocation.search : pathname;
+    const next = place && place !== '/' ? `/(app)${place}` : undefined;
+    return <Redirect href={next ? { pathname: '/unlock', params: { next } } : '/unlock'} />;
   }
   return (
     <DataProvider>

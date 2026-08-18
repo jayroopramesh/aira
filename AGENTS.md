@@ -568,6 +568,20 @@ via the standalone-binary method — see `infra/README.md` "Prerequisites". CI i
   tell "never signed" apart from "unlocked after being signed" — `!!draft.signedAt` on a
   draft-status note — and say so in the trust pill rather than reading as an ordinary first draft.
 - Sparse series (≤ 2 readings) render as a dot-strip with no trend line.
+- **Re-entry recognises the returning clinician** (round 5, 2026-08-18): boot routing at `/`
+  (`src/app/index.tsx`) is decided from the device's own evidence, never a hardcoded "everyone is
+  new" — vault already open → `/(app)/today`; persisted account evidence (known email or clinician
+  name, via `authService.whenHydrated()`) → `/unlock`; genuinely fresh device → `/welcome`
+  onboarding. The `(app)` guard's locked-vault bounce carries the interrupted location as
+  `next=/(app)<path><search>` (web reads `window.location` — `usePathname()` can still be `/` on the
+  first render of a reloaded deep link — native falls back to the router pathname), so sign-in
+  returns the clinician to the page they were on, query params included; `safeNext` in
+  `unlock/index.tsx` still validates every `next`. The unlock greeting name goes through STATE
+  hydrated in an effect — a bare `authService.getClinicianName()` render read is frozen by the React
+  Compiler in the compiled bundle (stuck on "Doctor" while jest passed; same trap as the audio-vault
+  card). Proved by `src/app/__tests__/index.test.tsx`, the locked-vault case in
+  `(app)/__tests__/_layout.test.tsx`, and the greeting/prefill case in
+  `unlock/__tests__/index.test.tsx`; compiler-sensitive parts re-verified in the compiled export.
 - Login + recovery copy is isolated in `src/strings/recovery.ts`; the recovery-key policy is
   captain-resolved (`decision-recovery-key-policy`): account creation + one-time recovery code,
   shown once. The account/session lifecycle lives in the `AuthService` seam (`src/services/auth.ts`,
