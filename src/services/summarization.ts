@@ -92,6 +92,43 @@ function toRiskLevel(level?: string): RiskLevel | undefined {
   return v === 'clear' || v === 'watch' || v === 'elevated' || v === 'acute' ? v : undefined;
 }
 
+/**
+ * May the model's `subjective.quote` honestly wear quotation marks? Only if it is VERBATIM in the
+ * transcript the note stores — quotation marks are the record's strongest claim ("the client said
+ * exactly these words"), and an external auditor verifies a quote against the transcript, where a
+ * composed one appears nowhere. The live model, asked for a "verbatim-style" quote over a
+ * retrospective dictation containing no client speech at all, converted the clinician's indirect
+ * report ("she told me the worst part is the mornings, when she reaches for a routine…") into a
+ * first-person client utterance ("The worst part is the mornings, when I reach for a routine…") —
+ * a fabricated quotation in the permanent record (round 5, 2026-08-18, live walk).
+ *
+ * Matching is tolerant of what transcription itself does not fix (case, whitespace, punctuation,
+ * curly vs straight quotes) and of ellipsis-marked omissions — each `…`-separated fragment must
+ * appear in the transcript, in order. It is NOT tolerant of changed words: person shifts,
+ * paraphrase, or tense repair all fail, which is the point.
+ */
+export function quoteIsVerbatim(quote: string, transcript: string): boolean {
+  const normalize = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[‘’]/g, "'")
+      .replace(/[^a-z0-9']+/g, ' ')
+      .trim();
+  const haystack = ` ${normalize(transcript)} `;
+  const fragments = quote
+    .split(/\.{3}|…/)
+    .map(normalize)
+    .filter(Boolean);
+  if (!fragments.length) return false;
+  let from = 0;
+  for (const fragment of fragments) {
+    const at = haystack.indexOf(` ${fragment} `, from);
+    if (at === -1) return false;
+    from = at + fragment.length;
+  }
+  return true;
+}
+
 const SYSTEM_PROMPT = `You are a clinical documentation assistant for a licensed mental-health counselor.
 You turn a single-session, English, single-speaker-assumed therapy transcript into a DRAFT progress note.
 The note is NOT authoritative — the clinician reviews, edits, and signs it. Be faithful to the transcript;
@@ -110,7 +147,7 @@ Phrase a screened-and-not-present risk item's row value as "Not indicated" (neve
 
 Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY this shape:
 {
-  "subjective": { "body": ["1-3 short paragraphs, the client's reported experience"], "quote": "one short verbatim-style client quote or empty string" },
+  "subjective": { "body": ["1-3 short paragraphs, the client's reported experience"], "quote": "one short quote copied EXACTLY word-for-word from the transcript, or empty string. Never compose, paraphrase, or convert reported speech ('she said she felt…') into a first-person quote; if the transcript contains no directly quotable client speech (e.g. the clinician dictating a recap), return empty string" },
   "objective": { "body": ["1-2 short paragraphs: observed presentation, engagement, mental status observations"] },
   "riskSafety": { "summary": "one plain sentence on risk screened this session", "rows": [ { "label": "Suicidal ideation", "value": "Not indicated / Passive / ..." }, { "label": "Self-harm", "value": "..." }, { "label": "Safety plan", "value": "..." } ], "level": "clear | watch | elevated | acute" },
   "assessment": { "body": ["1-2 short paragraphs: clinical impression and progress toward goals"] },
@@ -425,12 +462,19 @@ function buildDraft(
   const { draftedInCloud, keywordStub = false } = origin;
   const sections: NoteSection[] = [];
 
+  // A quote the transcript cannot back is dropped, never rendered: the review screen wraps this
+  // field in quotation marks, and an unverifiable quotation is a fabricated one (see
+  // `quoteIsVerbatim`). Wrapping quote marks the model added are shed first so a kept quote isn't
+  // double-quoted by the UI.
+  const rawQuote = (d.subjective?.quote ?? '').trim().replace(/^["'“‘]+|["'”’]+$/g, '').trim();
+  const quote = rawQuote && quoteIsVerbatim(rawQuote, input.transcript) ? rawQuote : undefined;
+
   sections.push({
     id: 'subjective',
     marker: 'S',
     title: 'Subjective',
     body: nonEmpty(d.subjective?.body) ?? [NOT_CAPTURED],
-    quote: d.subjective?.quote || undefined,
+    quote,
   });
 
   sections.push({
